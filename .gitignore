@@ -1,0 +1,40 @@
+# Node dependencies
+node_modules/
+
+# dotenv environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# SQLite database files
+memory.db
+memory.db-journal*
+
+# Vector data storage
+vector_data/
+
+# Build output
+/dist/
+/build/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# ESLint cache
+.eslintcache
+
+# Editor directories and files
+.vscode/
+.idea/
+.DS_Store
+
+# Test coverage
+overage/
+
+# Cache directories
+.cache/ 
