@@ -1,6 +1,8 @@
-# Jeeves II Ground-Up Rebuild Plan
+# Wooster Ground-Up Rebuild Plan
 
-This guide walks you through building Jeeves II from scratch on macOS with TypeScript, pnpm, SQLite DAG memory, a local vector store, LangChain RAG, and an extensible plugin architecture.
+Wooster is a modular, extensible command-line AI assistant built from the ground up using TypeScript, pnpm, SQLite DAG memory, a local vector store, and LangChain for RAG. It features a plugin architecture for easy extension and integration.
+
+This guide walks you through building Wooster from scratch on macOS with TypeScript, pnpm, SQLite DAG memory, a local vector store, LangChain RAG, and an extensible plugin architecture.
 
 ## 0. License & README
 
@@ -35,7 +37,7 @@ npm install -g pnpm
 ```bash
 # 1) Clone or create project directory
 cd ~/projects
-git clone https://github.com/your-org/jeeves_ii.git || mkdir jeeves_ii && cd jeeves_ii
+git clone https://github.com/your-org/wooster.git || mkdir wooster && cd wooster
 
 # Initialize git and make initial commit
 git init
@@ -54,7 +56,7 @@ pnpm add -D typescript ts-node @types/node tsx
 # Create a `.env.example` for onboarding
 cat <<EOF > .env.example
 OPENAI_API_KEY=your_api_key_here
-EMAIL_ADDRESS=your_email_address_here          # The address to send Jeeves emails to/from
+EMAIL_ADDRESS=your_email_address_here          # The address to send Wooster emails to/from
 GMAIL_CLIENT_ID=your_gmail_oauth_client_id      # OAuth2 credentials from Google Cloud Console
 GMAIL_CLIENT_SECRET=your_gmail_oauth_client_secret
 GMAIL_REFRESH_TOKEN=your_gmail_oauth_refresh_token
@@ -220,7 +222,7 @@ export async function handleAssistantResponse(resp: string) {
 
 ### 8.a Email Plugin
 
-Add an email plugin so Jeeves will send each assistant response to you via Gmail SMTP with OAuth2:
+Add an email plugin so Wooster will send each assistant response to you via Gmail SMTP with OAuth2:
 
 ```typescript
 // src/plugins/emailPlugin.ts
@@ -243,7 +245,7 @@ const emailPlugin: Plugin = {
     await transporter.sendMail({
       from: process.env.EMAIL_ADDRESS,
       to: process.env.EMAIL_ADDRESS,
-      subject: 'Jeeves says:',
+      subject: 'Wooster says:',
       text: response,
     })
   },
@@ -298,35 +300,6 @@ function startREPL() {
 
 ```bash
 pnpm run dev
-# > Hello, Jeeves!
+# > Hello, Wooster!
 # Assistant: Hi there! How can I help?
 ```
-
-## 12. Linting, Testing & CI
-
-- Install dev dependencies:
-  ```bash
-  pnpm add -D eslint prettier husky lint-staged jest @types/jest ts-jest
-  ```
-- Initialize ESLint & Prettier:
-  ```bash
-  pnpm exec eslint --init
-  ```
-- Setup Husky & lint-staged:
-  ```bash
-  pnpm dlx husky-init && pnpm install
-  pnpm pkg set scripts.prepare="husky install"
-  npx husky add .husky/pre-commit "pnpm lint-staged"
-  ```
-- Add `lint-staged` config in `package.json`:
-  ```json
-  "lint-staged": {
-    "*.ts": ["eslint --fix", "prettier --write"]
-  }
-  ```
-- Create basic Jest tests under `src/__tests__/`.
-- Add a GitHub Actions workflow in `.github/workflows/ci.yml` to run lint, typechecks, and tests on push.
-
----
-
-With this plan you'll have a modular, extensible CLI assistant ready for further plugin integrations (Obsidian, filesystem ops, etc.). Happy coding! 
