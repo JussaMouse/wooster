@@ -1,7 +1,7 @@
 import 'dotenv/config'
 import readline from 'readline'
 
-import type { MemoryVectorStore } from 'langchain/vectorstores/memory'
+import type { FaissStore } from '@langchain/community/vectorstores/faiss'
 
 import { addNode } from './memorySql'
 import { initVectorStore, upsertDocument } from './memoryVector'
@@ -12,9 +12,10 @@ import {
   handleUserInput,
   handleAssistantResponse,
 } from './pluginManager'
+import { createProjectStore } from './projectIngestor'
 
 // Module-scoped variables for REPL handlers
-let vectorStore: MemoryVectorStore
+let vectorStore: FaissStore
 let ragChain: any
 
 async function main() {
@@ -47,6 +48,30 @@ function startREPL() {
   rl.on('line', async (line) => {
     const input = line.trim()
     if (!input) {
+      rl.prompt()
+      return
+    }
+
+    // Project load/unload commands
+    const loadMatch = input.match(/^load project\s+(.+)$/i)
+    if (loadMatch) {
+      const projectName = loadMatch[1].trim()
+      const apiKey = process.env.OPENAI_API_KEY as string
+      try {
+        vectorStore = await createProjectStore(projectName)
+        ragChain = await buildRagChain(apiKey, vectorStore)
+        console.log(`✅ Project "${projectName}" loaded.`)
+      } catch (e: any) {
+        console.error(`❌ Failed to load project "${projectName}": ${e.message}`)
+      }
+      rl.prompt()
+      return
+    }
+    if (/^unload project$/i.test(input)) {
+      const apiKey = process.env.OPENAI_API_KEY as string
+      vectorStore = await initVectorStore()
+      ragChain = await buildRagChain(apiKey, vectorStore)
+      console.log('✅ Project context cleared.')
       rl.prompt()
       return
     }

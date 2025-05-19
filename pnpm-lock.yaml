@@ -32,6 +32,9 @@ importers:
       faiss-node:
         specifier: ^0.5.1
         version: 0.5.1
+      fast-glob:
+        specifier: ^3.3.3
+        version: 3.3.3
       hf_transformers:
         specifier: link:@langchain/community/embeddings/hf_transformers
         version: link:@langchain/community/embeddings/hf_transformers
