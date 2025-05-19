@@ -19,6 +19,9 @@
     "better-sqlite3": "^11.9.1",
     "chromadb": "^2.3.0",
     "dotenv": "^16.5.0",
+    "faiss": "link:@langchain/community/vectorstores/faiss",
+    "faiss-node": "^0.5.1",
+    "hf_transformers": "link:@langchain/community/embeddings/hf_transformers",
     "langchain": "^0.3.24",
     "nodemailer": "^6.10.1",
     "openai": "^4.96.2"

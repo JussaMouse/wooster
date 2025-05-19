@@ -26,6 +26,15 @@ importers:
       dotenv:
         specifier: ^16.5.0
         version: 16.5.0
+      faiss:
+        specifier: link:@langchain/community/vectorstores/faiss
+        version: link:@langchain/community/vectorstores/faiss
+      faiss-node:
+        specifier: ^0.5.1
+        version: 0.5.1
+      hf_transformers:
+        specifier: link:@langchain/community/embeddings/hf_transformers
+        version: link:@langchain/community/embeddings/hf_transformers
       langchain:
         specifier: ^0.3.24
         version: 0.3.24(@langchain/core@0.3.50(openai@4.96.2(ws@8.18.2)(zod@3.24.3)))(axios@1.9.0)(openai@4.96.2(ws@8.18.2)(zod@3.24.3))(ws@8.18.2)
@@ -2093,6 +2102,10 @@ packages:
 
   extend@3.0.2:
     resolution: {integrity: sha512-fjquC59cD7CyW6urNXK0FBufkZcoiGG80wTuPujX590cB5Ttln20E2UB4S/WARVqhXffZl2LNgS+gQdPIIim/g==}
+
+  faiss-node@0.5.1:
+    resolution: {integrity: sha512-zD8wobJn8C6OLWo68Unho+Ih8l6nSRB2w3Amj01a+xc4bsEvd2mBDLklAn7VocA9XO3WDvQL/bLpi5flkCn/XQ==}
+    engines: {node: '>= 14.0.0'}
 
   fast-deep-equal@3.1.3:
     resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
@@ -5886,6 +5899,12 @@ snapshots:
   expr-eval@2.0.2: {}
 
   extend@3.0.2: {}
+
+  faiss-node@0.5.1:
+    dependencies:
+      bindings: 1.5.0
+      node-addon-api: 6.1.0
+      prebuild-install: 7.1.3
 
   fast-deep-equal@3.1.3: {}
 

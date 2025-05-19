@@ -1,14 +1,11 @@
-import { MemoryVectorStore } from 'langchain/vectorstores/memory'
-import { OpenAIEmbeddings } from '@langchain/openai'
+import { FaissStore } from '@langchain/community/vectorstores/faiss'
+import { HuggingFaceTransformersEmbeddings } from '@langchain/community/embeddings/hf_transformers'
 import { Document } from 'langchain/document'
 import { DirectoryLoader } from 'langchain/document_loaders/fs/directory'
 import { TextLoader } from 'langchain/document_loaders/fs/text'
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter'
 import * as fs from 'fs';
 import * as path from 'path';
-
-// File to persist vectors
-const VECTOR_STORE_PATH = './vector_data/store.json'
 
 /**
  * Load all .ts and .md files from src/ plus README.md into Document[].
@@ -45,49 +42,35 @@ function loadSourceDocs(): Document[] {
  * On first run, ingests all source docs; on subsequent runs, loads existing.
  */
 export async function initVectorStore() {
-  const embeddings = new OpenAIEmbeddings({
-    openAIApiKey: process.env.OPENAI_API_KEY
+  const embeddings = new HuggingFaceTransformersEmbeddings({
+    modelName: "Xenova/all-MiniLM-L6-v2"
   })
   
-  let store: MemoryVectorStore
-
-  // Load from disk if exists
-  if (fs.existsSync(VECTOR_STORE_PATH)) {
-    const data = JSON.parse(fs.readFileSync(VECTOR_STORE_PATH, 'utf8'))
-    store = await MemoryVectorStore.fromDocuments(
-      data.vectors.map((v: any) => new Document(v)),
-      embeddings
-    )
-  } else {
-    store = new MemoryVectorStore(embeddings)
+  let store: FaissStore
+  
+  // Create vector_data directory if it doesn't exist
+  if (!fs.existsSync('./vector_data')) {
+    fs.mkdirSync('./vector_data', { recursive: true })
   }
 
-  const count = store.memoryVectors.length
-  if (!count || count === 0) {
+  try {
+    // Try to load existing store
+    store = await FaissStore.load('./vector_data', embeddings)
+  } catch (e) {
+    // If loading fails, create new store
+    store = await FaissStore.fromDocuments([], embeddings)
     await ingestDocuments(store)
-    // Save to disk after ingestion
-    fs.mkdirSync(path.dirname(VECTOR_STORE_PATH), { recursive: true })
-    fs.writeFileSync(VECTOR_STORE_PATH, JSON.stringify({
-      vectors: store.memoryVectors
-    }))
+    await store.save('./vector_data')
   }
 
   return store
 }
 
 // Ingest src/ + README.md into vector store
-async function ingestDocuments(store: MemoryVectorStore) {
-  // Load all TypeScript and Markdown files
-  const loader = new DirectoryLoader('src', {
-    '.ts': (p) => new TextLoader(p),
-  })
-  const readmeLoader = new TextLoader('README.md')
-
-  const docs = [
-    ...await loader.load(),
-    ...await readmeLoader.load()
-  ]
-
+async function ingestDocuments(store: FaissStore) {
+  // Use our custom loader to get all docs
+  const docs = loadSourceDocs()
+  
   // Split documents into chunks with context overlap
   const splitter = new RecursiveCharacterTextSplitter({
     chunkSize: 1000,
@@ -107,8 +90,9 @@ async function ingestDocuments(store: MemoryVectorStore) {
     })
   ))
 
+  console.log(`Ingesting ${splitDocs.length} document chunks from ${docs.length} files...`)
   await store.addDocuments(splitDocs)
-  console.log(`Ingested ${splitDocs.length} document chunks`)
+  console.log('Ingestion complete!')
 }
 
 // Helper to track code line numbers (for context citations)
@@ -121,7 +105,7 @@ function extractLineNumbers(content: string) {
  * Upsert a document into the vector store.
  */
 export async function upsertDocument(
-  store: MemoryVectorStore,
+  store: FaissStore,
   text: string,
   nodeId: number
 ) {
@@ -133,9 +117,15 @@ export async function upsertDocument(
  * Retrieve nearest neighbors from the vector store.
  */
 export async function retrieveContext(
-  store: MemoryVectorStore,
+  store: FaissStore,
   query: string,
   k = 5
 ): Promise<Document[]> {
-  return store.similaritySearch(query, k);
+  const results = await store.similaritySearch(query, k)
+  console.log(`Found ${results.length} relevant chunks`)
+  return results.sort((a, b) => {
+    const aLine = a.metadata.lines?.start || 0
+    const bLine = b.metadata.lines?.start || 0
+    return aLine - bLine
+  })
 }
