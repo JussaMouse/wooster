@@ -7,28 +7,29 @@ import type { Plugin } from '../pluginManager'
  * Uses Gmail SMTP via OAuth2 to avoid simple password and reduce spam risk.
  */
 
-// State for explicit email requests
-let pendingEmailContent: string | null = null
+// State for explicit email generation requests
+let generateEmailPrompt: string | null = null
 
 const emailPlugin: Plugin = {
   name: 'email',
   // Capture explicit 'send me an email' commands
   onUserInput: (input: string) => {
-    const m = input.match(/^(?:send|email)\s+(?:me\s+)?(?:an\s+)?email\s*(?:that\s+says\s*)?(.+)$/i)
+    // Match commands like 'please send me an email containing...', 'send email with...', etc.
+    const m = input.match(/^(?:please\s+)?(?:send|email)\s+(?:me\s+)?(?:an\s+)?email(?:\s+(?:that\s+says|containing|with))?\s+(.+)$/i)
     if (m) {
-      pendingEmailContent = m[1].trim() || 'Test email'
-      console.log('Email plugin: Queued email content:', pendingEmailContent)
+      generateEmailPrompt = m[1].trim() || 'Test message'
+      console.log('Email plugin: Queued generation prompt:', generateEmailPrompt)
     }
     return input
   },
   onAssistantResponse: async (response: string) => {
-    if (!pendingEmailContent) return
+    if (!generateEmailPrompt) return
     // Ensure email configuration is present
     const from = process.env.EMAIL_ADDRESS
     const to = process.env.EMAIL_TO ?? from
     if (!from || !to) {
       console.warn('Email plugin: EMAIL_ADDRESS or EMAIL_TO not set; skipping email')
-      pendingEmailContent = null
+      generateEmailPrompt = null
       return
     }
     // Determine auth method: use app password if provided, otherwise OAuth2
@@ -64,9 +65,9 @@ const emailPlugin: Plugin = {
       from,
       to,
       subject: 'Wooster says:',
-      text: pendingEmailContent,
+      text: response,
     }
-    pendingEmailContent = null
+    generateEmailPrompt = null
 
     try {
       const info = await transporter.sendMail(mailOptions)

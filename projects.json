@@ -1,0 +1,3 @@
+{
+  "wooster": ["src/**/*.ts", "README.md"]
+} 

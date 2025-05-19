@@ -1,5 +1,7 @@
 import 'dotenv/config'
 import readline from 'readline'
+import fs from 'fs'
+import path from 'path'
 
 import type { FaissStore } from '@langchain/community/vectorstores/faiss'
 
@@ -48,6 +50,39 @@ function startREPL() {
   rl.on('line', async (line) => {
     const input = line.trim()
     if (!input) {
+      rl.prompt()
+      return
+    }
+
+    // Built-in help command
+    if (/^help$/i.test(input)) {
+      console.log('Commands:')
+      console.log('  help')
+      console.log('  list capabilities')
+      console.log('  list projects')
+      console.log('  load project <name>')
+      console.log('  unload project')
+      rl.prompt()
+      return
+    }
+    // List Wooster capabilities
+    if (/^(?:what can you do|list capabilities|capabilities)$/i.test(input)) {
+      console.log('Wooster capabilities:')
+      console.log('  - Project load/unload')
+      console.log('  - Email sending via plugin')
+      console.log('  - RAG-based code/docs lookup')
+      // ... list other capabilities as desired
+      rl.prompt()
+      return
+    }
+    // List projects
+    if (/^list projects$/i.test(input)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(path.resolve('projects.json'), 'utf8'))
+        console.log('Available projects:', Object.keys(data).join(', '))
+      } catch (e: any) {
+        console.error('Error reading projects.json:', e.message)
+      }
       rl.prompt()
       return
     }
