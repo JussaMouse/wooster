@@ -26,7 +26,10 @@ export async function createProjectStore(projectName: string) {
   })
 
   // Collect files matching patterns
-  const files: string[] = await fg(patterns, { onlyFiles: true })
+  const files: string[] = await fg(patterns, {
+    onlyFiles: true,
+    ignore: ['**/.env', '**/.env.*']
+  })
   if (files.length === 0) throw new Error(`No files matched for project ${projectName}`)
 
   // Load file contents into documents
@@ -44,4 +47,53 @@ export async function createProjectStore(projectName: string) {
   const store = await FaissStore.fromDocuments(chunks, embeddings)
 
   return store
+}
+
+/**
+ * List all files for a given project without loading the vector store.
+ */
+export async function listProjectFiles(projectName: string): Promise<string[]> {
+  const projectsPath = path.resolve('projects.json')
+  if (!fs.existsSync(projectsPath)) throw new Error('projects.json not found')
+  const catalog = JSON.parse(fs.readFileSync(projectsPath, 'utf8'))
+  const raw = catalog[projectName]
+  if (!raw) throw new Error(`Unknown project: ${projectName}`)
+  const entries: string[] = typeof raw === 'string' ? [raw] : (raw as string[])
+
+  const result: Set<string> = new Set()
+
+  // Recursive directory walk helper
+  function walkDir(dir: string) {
+    for (const name of fs.readdirSync(dir)) {
+      const full = path.join(dir, name)
+      const stat = fs.statSync(full)
+      if (stat.isDirectory()) {
+        walkDir(full)
+      } else {
+        result.add(full)
+      }
+    }
+  }
+
+  for (const entry of entries) {
+    const fullPath = path.resolve(entry)
+    if (fs.existsSync(fullPath)) {
+      const stat = fs.statSync(fullPath)
+      if (stat.isDirectory()) {
+        walkDir(fullPath)
+        continue
+      }
+      if (stat.isFile()) {
+        result.add(fullPath)
+        continue
+      }
+    }
+    // Treat as glob pattern
+    const matches = await fg(entry, { onlyFiles: true })
+    for (const m of matches) {
+      result.add(path.resolve(m))
+    }
+  }
+
+  return Array.from(result)
 }

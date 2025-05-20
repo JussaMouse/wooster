@@ -37,4 +37,5 @@ vector_data/
 overage/
 
 # Cache directories
-.cache/ 
+.cache/ log*.txt
+*.log

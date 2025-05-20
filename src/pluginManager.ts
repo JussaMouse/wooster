@@ -62,8 +62,12 @@ export async function handleUserInput(input: string): Promise<string> {
  */
 export async function handleAssistantResponse(resp: string): Promise<void> {
   for (const p of plugins) {
-    if (p.onAssistantResponse) {
-      await p.onAssistantResponse(resp)
-    }
+    if (p.onAssistantResponse) await p.onAssistantResponse(resp)
   }
+}
+
+// Add a function to list loaded plugin names
+type PluginName = string;
+export function listPlugins(): PluginName[] {
+  return plugins.map(p => p.name)
 }
