@@ -1,3 +1,4 @@
+import 'dotenv/config'; // Load .env file into process.env
 import readline from 'readline'
 import fs from 'fs'
 import path from 'path'
@@ -318,7 +319,7 @@ function startREPL() {
         const result = await ragChain.invoke({ input: query, chat_history: conversationHistory })
         // log(LogLevel.DEBUG, `RAG callback result:`, result);
         return result.answer
-      }, currentProjectName)
+      }, currentProjectName || undefined)
       
       // console.log(`Assistant response: ${response}`);
       log(LogLevel.INFO, 'Assistant response: %s', response);

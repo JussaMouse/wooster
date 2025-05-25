@@ -131,10 +131,20 @@ Manages plugin activation. See `03 PLUGINS.MD` for plugin details.
 
 The configuration is loaded at startup by `src/configLoader.ts`. If `config.json` is missing, `configLoader.ts` creates it with the default settings described above. Wooster will exit if essential configurations like `openai.apiKey` are missing or still placeholders after loading.
 
-## `.env` File (Secondary Role)
+## `.env` File for Developer and Plugin-Specific Variables
 
-While `config.json` is the primary configuration source for Wooster, a `.env` file can still be used for:
--   Plugin-specific environment variables.
--   Credentials for other third-party services not managed by Wooster.
--   Bootstrap `LOG_LEVEL` for initial console messages before `config.json` is parsed.
-See `README.MD` and `.env.example` for more on the `.env` file's role. 
+Wooster primarily uses `config.json` for all its core operational settings. However, to support plugin development and advanced use cases, Wooster will also automatically load any variables defined in a `.env` file located in the project root (if one exists) into `process.env` at startup. This is facilitated by the `dotenv` package.
+
+**Intended Use for `.env`:**
+
+*   **Plugin-Specific Configurations:** Plugin developers can instruct users to add their plugin-specific API keys or other settings to the `.env` file (e.g., `MY_PLUGIN_API_KEY=somevalue`). The plugin code can then access these via `process.env.MY_PLUGIN_API_KEY`.
+*   **Third-Party Service Credentials:** If you integrate other services not directly managed by Wooster's core configuration, you can store their credentials in `.env`.
+*   **Local Overrides (Not for Wooster Core Settings):** While `process.env` variables can technically override anything, Wooster's core systems are designed to read their primary configuration (like OpenAI keys, email setup, UCM enablement, etc.) exclusively from `config.json`.
+*   **Bootstrap `LOG_LEVEL`:** As before, an initial `LOG_LEVEL` can be set in `.env` to control console messages very early in the startup process, before `config.json` is fully parsed.
+
+**Important Distinction:**
+
+*   **Wooster Core Settings: `config.json` ONLY.** Do not attempt to configure Wooster's main features (OpenAI API key, logging levels defined in `config.json`, email tool settings, UCM settings) via `.env`. These settings are read directly and exclusively from `config.json`.
+*   **Plugin/Developer Settings: `.env` is an option.** This provides a convenient and standard way for developers to manage their own environment-specific variables without modifying Wooster's core `config.json`.
+
+Refer to the `.env.example` file for guidance on structuring your `.env` file. Wooster itself will not create a `.env` file; you must create it manually if you need it for these specific purposes. 

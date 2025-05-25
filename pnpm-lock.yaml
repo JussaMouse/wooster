@@ -29,6 +29,9 @@ importers:
       diff:
         specifier: ^5.2.0
         version: 5.2.0
+      dotenv:
+        specifier: ^16.5.0
+        version: 16.5.0
       faiss:
         specifier: link:@langchain/community/vectorstores/faiss
         version: link:@langchain/community/vectorstores/faiss
