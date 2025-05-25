@@ -1,213 +1,206 @@
-import { ChatOpenAI } from '@langchain/openai';
-import type { FaissStore } from '@langchain/community/vectorstores/faiss';
-import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
-import type { BaseLanguageModel } from '@langchain/core/language_models/base';
-import type { ChatPromptTemplate } from "@langchain/core/prompts";
-import { log, LogLevel, logLLMInteraction } from './logger'; // Import new logger
-import type { AppConfig, EmailConfig } from './configLoader'; // Import AppConfig
-// Logger and config imports related to logging removed
-// import { getConfig } from './configLoader';
+import { ChatOpenAI, ChatOpenAICallOptions } from "@langchain/openai";
+import { HumanMessage, AIMessage, SystemMessage, BaseMessage } from "@langchain/core/messages";
+// import { PromptTemplate } from "@langchain/core/prompts"; // Less likely needed for this direct tool use pattern
+// import { ToolExecutor } from "@langchain/langgraph/prebuilt"; // REMOVE
+// import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents"; // REMOVE
+// import { RunnableSequence } from "@langchain/core/runnables"; // REMOVE
+// import { formatToOpenAIToolMessages } from "langchain/agents/format_scratchpad/openai_tools"; // REMOVE
+// import { OpenAIToolsAgentOutputParser } from "langchain/agents/openai/output_parser"; // REMOVE
+// import { TavilySearchResults } from "@langchain/community/tools/tavily_search_results"; // REMOVE
+// import { createRetrieverTool } from "langchain/tools/retriever"; // REMOVE
+// import type { FaissStore } from "@langchain/community/vectorstores/faiss"; // REMOVE if retriever tool is gone
 
-// Import actual tool functions
-import { sendEmail as sendEmailActual, EmailArgs } from './tools/email';
-import { scheduleAgentTask } from './tools/scheduler'; // Import the new tool
-import { recallUserContextFunc } from "./tools/userContextTool"; // Import UCM tool function
-// import { listFiles } from './tools/filesystem'; // Assuming you will create this
-// import { scheduleAgentTask, ScheduleAgentTaskArgs } from './tools/scheduler'; // We'll create this tool's function later
 
-// Define the structure for our tools recognizable by the agent
+import { sendEmail, EmailArgs } from './tools/email';
+import { scheduleAgentTask } from './tools/scheduler';
+import { recallUserContextFunc } from "./tools/userContextTool";
+// import { queryKnowledgeBaseTool, QueryKnowledgeBaseParams } from './tools/knowledgeBaseTool'; // REMOVE - File missing, handled in agentRespond
+
+import { log, LogLevel, logLLMInteraction } from './logger';
+import { AppConfig, EmailConfig } from "./configLoader";
+import { logWoosterAction } from "./projectMetadataService"; // CORRECTED PATH
+
+// Define a standard interface for our tools
 export interface AgentTool {
   name: string;
   description: string;
-  // JSON schema for parameters, for OpenAI function calling
-  parameters: { type: "object"; properties: Record<string, { type: string, description: string }>; required?: string[] };
-  execute: (args: any, llm?: ChatOpenAI, ragChain?: any) => Promise<string>; // llm and ragChain are optional
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  call: (params: any) => Promise<string>; 
+  // Input schema can be added here for more robust validation if needed later
+  // inputSchema?: z.ZodObject<any, any, any>; 
 }
 
-// Placeholder for RAG chain type
-type RagChain = (input: string) => Promise<string>;
+let availableTools: AgentTool[] = [];
+let appConfigInstance: AppConfig | null = null;
 
-// Module-scoped variable to hold the loaded application configuration
-let agentAppConfig: AppConfig | null = null;
+interface StandardToolInput {
+    query: string; // Standardizing input for UCM tool for simplicity with current agent prompt
+}
 
-/**
- * Sets the application configuration for the agent module.
- * Called once from index.ts after config is loaded.
- */
 export function setAgentConfig(config: AppConfig): void {
-  agentAppConfig = config;
-  log(LogLevel.INFO, "Agent configuration set.");
+  appConfigInstance = config;
+  // Initialize tools based on config if necessary
+  // For now, tools are hardcoded but could be filtered by config.tools array
+  initializeTools(config); 
 }
 
-// Function to dynamically get available tools based on configuration
-function getAvailableTools(): AgentTool[] {
-  if (!agentAppConfig) {
-    log(LogLevel.ERROR, "Agent configuration not set. Cannot determine available tools.");
-    return []; // Or throw an error
-  }
+function initializeTools(config: AppConfig): void {
+  availableTools = []; // Reset tools
 
-  const tools: AgentTool[] = [];
-
-  // Email Tool (conditional)
-  if (agentAppConfig.email.enabled && agentAppConfig.email.sendingEmailAddress && agentAppConfig.email.emailAppPassword) {
-    tools.push({
-      name: 'sendEmail',
-      description: 'Sends an email *immediately*. Use this only if the user requests an email to be sent now, without specifying a future time or delay. If a future time is mentioned, use scheduleAgentTask instead. To send to yourself (i.e., your configured userPersonalEmailAddress, or sendingEmailAddress if the former is not set), use "SELF_EMAIL_RECIPIENT" as the recipient.',
-      parameters: {
-        type: "object",
-        properties: {
-          to: { type: "string", description: "The recipient email address. Use 'SELF_EMAIL_RECIPIENT' to send to your configured personal email address." },
-          subject: { type: "string", description: "The subject of the email." },
-          body: { type: "string", description: "The body content of the email." },
-        },
-        required: ["to", "subject", "body"],
-      },
-      execute: async (args: EmailArgs) => {
-        if (!agentAppConfig) throw new Error("Agent config not available for sendEmail"); // Should not happen if tool is added
-        return sendEmailActual(args, agentAppConfig.email);
-      },
-    });
-  } else {
-    log(LogLevel.INFO, "Email tool not available because it is not enabled or fully configured in config.json.");
-  }
-
-  // Scheduler Tool (always available if defined)
-  tools.push(scheduleAgentTask); 
-
-  // Knowledge Base Tool
-  tools.push({
-    name: 'queryKnowledgeBase',
-    description: "Queries Wooster's internal knowledge base (documents from the active project) to find information. Use this when you need to answer a question based on available documents or to get context before performing another action.",
-    parameters: {
-      type: "object",
-      properties: {
-        queryString: { type: "string", description: "The question or query to search for in the knowledge base." },
-      },
-      required: ["queryString"],
-    },
-    execute: async (args: { queryString: string }, llm?: ChatOpenAI, ragChain?: any) => {
-      if (!ragChain) {
-        log(LogLevel.WARN, 'queryKnowledgeBase tool called but RAG chain is unavailable.');
-        return "Knowledge base (RAG chain) is not available at the moment.";
+  // SendEmail Tool (wrapping sendEmail function)
+  if (sendEmail && config.email) { // Check if function and email config exist
+    availableTools.push({
+      name: "sendEmail", 
+      description: "Sends an email. Use this to send emails to users or other recipients. The input should be an object with 'to', 'subject', and 'body'. Use 'SELF_EMAIL_RECIPIENT' as 'to' to send to your configured personal email.",
+      call: async (params: EmailArgs) => {
+        if (!appConfigInstance?.email) { // Guard against null config, though checked above
+            log(LogLevel.ERROR, "Agent: Email config missing at time of call for sendEmail tool.");
+            return "Error: Email configuration is missing.";
+        }
+        return sendEmail(params, appConfigInstance.email);
       }
-      log(LogLevel.INFO, 'Agent using tool: queryKnowledgeBase with query: "%s"', args.queryString);
-      return ragChain(args.queryString);
-    },
-  });
-
-  // UCM Recall Tool (always available, function itself checks UCM store)
-  tools.push({
-    name: "recall_user_context",
-    description: "Use this tool to retrieve stored preferences, facts, or directives previously stated by the user that could be relevant for personalizing the current response or action. Query with a concise topic, e.g., 'email formality preferences' or 'project X deadlines'.",
-    parameters: {
-      type: "object",
-      properties: {
-        topic: { type: "string", description: "A concise phrase describing the specific user preference, fact, or context needed." },
-      },
-      required: ["topic"],
-    },
-    execute: async (args: { topic: string }) => recallUserContextFunc(args),
-  });
-  
-  return tools;
-}
-
-// Export a function for external modules (like index.ts for 'list tools') to get the current list.
-export function getCurrentAvailableTools(): AgentTool[] {
-    return getAvailableTools();
-}
-
-// Keep the old export for now if something else imports it, but it might become unused.
-// export const availableTools: AgentTool[] = []; // Will be dynamically generated
-
-export async function agentRespond(
-  userInput: string,
-  llm: ChatOpenAI,
-  ragChain: RagChain, // RAG chain for fallback and knowledge base tool
-  promptTemplate?: ChatPromptTemplate, // Optional, for more complex agent prompting
-  isScheduledTaskExecution: boolean = false // New parameter
-): Promise<string> {
-  if (!agentAppConfig) {
-    log(LogLevel.ERROR, "Agent configuration not set. Agent cannot respond.");
-    return "Error: Agent is not properly configured.";
-  }
-
-  log(LogLevel.INFO, 'Agent received input for processing: "%s"', userInput, { isScheduledTask: isScheduledTaskExecution });
-  if (isScheduledTaskExecution) {
-    log(LogLevel.INFO, "Agent is executing a scheduled task.");
-  }
-
-  const currentAvailableTools = getAvailableTools();
-  if (currentAvailableTools.length === 0 && !isScheduledTaskExecution) {
-      // If no tools are available (e.g. email not configured) and it's not a scheduled task (which might not need tools other than scheduler implicitly),
-      // we might just go straight to RAG or simple LLM response.
-      // For now, let it proceed, but this is a point of consideration.
-      log(LogLevel.WARN, "No agent tools are currently available based on configuration.");
-  }
-
-  const llmWithTools = llm.bindTools(
-    currentAvailableTools.map(tool => ({
-      type: "function" as const,
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters,
-      },
-    }))
-  );
-
-  let messages: (HumanMessage | AIMessage | SystemMessage)[] = [];
-  if (isScheduledTaskExecution) {
-    messages.push(new SystemMessage("You are executing a previously scheduled task. The user's request has already been scheduled. Focus on performing the core action described in the user input. Do not try to schedule the task again, even if the user input mentions a time or a delay. Prioritize tools that perform actions directly, like sending an email, if applicable."));
-  }
-
-  if (promptTemplate) {
-    const formattedMessages = await promptTemplate.formatMessages({ input: userInput });
-    messages = messages.concat(formattedMessages as (HumanMessage | AIMessage | SystemMessage)[]);
+    });
+    log(LogLevel.INFO, "Agent: sendEmail tool added.");
   } else {
-    messages.push(new HumanMessage(userInput));
+    log(LogLevel.WARN, "Agent: sendEmail tool not added (function not imported or email config missing).");
   }
   
-  if (agentAppConfig.logging.logAgentLLMInteractions) {
-    logLLMInteraction("LLM Invocation with messages:", JSON.stringify(messages, null, 2));
+  // ScheduleAgentTask Tool
+  if (scheduleAgentTask) { 
+    availableTools.push(scheduleAgentTask); 
+    log(LogLevel.INFO, "Agent: scheduleAgentTask tool added.");
+  } else {
+    log(LogLevel.WARN, "Agent: scheduleAgentTask not found or not imported correctly.");
   }
-  const responseMessage = await llmWithTools.invoke(messages);
   
-  if (agentAppConfig.logging.logAgentLLMInteractions) {
-    logLLMInteraction("LLM Response message:", JSON.stringify(responseMessage, null, 2));
+  // QueryUserContext Tool (wrapping recallUserContextFunc)
+  if (config.ucm?.enabled) {
+    if (recallUserContextFunc) { 
+      availableTools.push({
+        name: "queryUserContext", // Name agent.ts expects
+        description: "Queries the User Context Model (UCM) to retrieve facts previously learned about the user or their preferences. Input should be an object with 'query' detailing what information is sought (e.g., 'what is my preferred programming language?').",
+        call: async (params: StandardToolInput) => recallUserContextFunc({ topic: params.query }), // Adapt to recallUserContextFunc's {topic: string} input
+      });
+      log(LogLevel.INFO, "Agent: queryUserContext tool added (UCM enabled).");
+    } else {
+      log(LogLevel.WARN, "Agent: recallUserContextFunc not found or not imported correctly, though UCM is enabled.");
+    }
+  } else {
+    log(LogLevel.INFO, "Agent: queryUserContext tool not added as UCM is disabled in config.");
   }
+
+  // queryKnowledgeBase is not added here as a separate tool import,
+  // its functionality is directly invoked via ragQueryFunction in agentRespond.
+  log(LogLevel.INFO, `Agent: Total tools initialized: ${availableTools.length}`);
+}
+
+export function getCurrentAvailableTools(): AgentTool[] {
+  return [...availableTools];
+}
+
+// This is a simplified agentRespond. More complex logic will be needed for multi-turn conversations and context management.
+export async function agentRespond(
+  input: string,
+  llm: ChatOpenAI,
+  ragQueryFunction: (query: string) => Promise<string>, // For queryKnowledgeBase
+  projectName?: string, // Added projectName for logging
+  isScheduledTask: boolean = false // To differentiate calls from scheduler
+): Promise<string> {
+  log(LogLevel.INFO, `Agent responding to input (isScheduledTask: ${isScheduledTask}): "${input}"`, { projectName });
+
+  const systemMessageContent = `You are Wooster, a helpful AI assistant.
+  You have access to the following tools:
+  ${availableTools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}
+
+  When deciding which tool to use, consider the user's query carefully.
+  If a user asks for something to be done at a later time (e.g., "in 5 minutes", "tomorrow at 6pm"), you MUST use the 'scheduleAgentTask' tool.
+  The 'taskPayload' for 'scheduleAgentTask' should be the original user query that needs to be executed later, including any specific details.
+  For example, if the user says "email me the weather report tomorrow at 6am", the 'taskPayload' for scheduleAgentTask should be "email me the weather report tomorrow at 6am".
   
-  const toolCalls = responseMessage.tool_calls;
+  If you need to find out information that might be in project documents or general knowledge, use 'queryKnowledgeBase'.
+  If you need to recall specific facts about the user, use 'queryUserContext'.
+  If you need to send an email, use 'sendEmail'.
 
-  if (toolCalls && toolCalls.length > 0) {
-    // Prioritize scheduleAgentTask if it's called among others (though usually it's exclusive)
-    const scheduleToolCall = toolCalls.find(tc => tc.name === 'scheduleAgentTask');
-    const toolToExecuteCall = scheduleToolCall || toolCalls[0]; // Execute scheduler first if present
+  Respond with a JSON object matching the tool to use, and the parameters for that tool.
+  The JSON object should have a "tool" key (the name of the tool) and a "toolInput" key (an object with the parameters for the tool).
+  Example: {"tool": "sendEmail", "toolInput": {"to": "user@example.com", "subject": "Hello", "body": "Hi there!"}}
+  If no tool is appropriate, or if you can answer directly, respond with a JSON object with a "tool" key set to "finalAnswer" and a "toolInput" key containing your answer as a string.
+  Example: {"tool": "finalAnswer", "toolInput": "The capital of France is Paris."}
+  
+  If the user's query involves a time component for a future action (e.g. "in 5 minutes", "tomorrow morning"), you MUST use the scheduleAgentTask. Do not attempt to perform the action directly if it's meant for later.
+  
+  If multiple tools seem appropriate for a single user query (e.g. scheduling an email), prioritize the tool that defers the core action if a time delay is specified. For example, for "email me the weather report in 1 hour", the primary tool should be 'scheduleAgentTask' with the taskPayload "email me the weather report". The actual fetching of the weather report and sending the email will happen when the scheduled task executes. Do not call sendEmail directly in this case.
+  
+  However, if the user asks to "send an email now and also schedule a reminder", then it is appropriate to identify both tools. For now, the system will execute the first tool call identified.
+  
+  Current date and time is: ${new Date().toISOString()}`;
 
-    const selectedTool = currentAvailableTools.find(t => t.name === toolToExecuteCall.name);
 
-    if (selectedTool) {
-      log(LogLevel.INFO, 'Agent selected tool: %s with args: %j', selectedTool.name, toolToExecuteCall.args);
-      try {
-        const toolResult = await selectedTool.execute(toolToExecuteCall.args, llm, ragChain);
-        log(LogLevel.INFO, 'Tool %s executed successfully. Result: %s', selectedTool.name, toolResult);
-        // If the primary tool was the scheduler, we usually return its result directly.
-        // If other tools were called (should be rare if scheduler is also called), this logic might need refinement
-        // or the LLM should be prompted to make only one *primary* tool call.
-        return toolResult;
-      } catch (error: any) {
-        log(LogLevel.ERROR, 'Error executing tool %s. Args: %j', selectedTool.name, toolToExecuteCall.args, error);
-        return `Error during tool execution: ${error.message}`;
+  const messages: BaseMessage[] = [
+    new SystemMessage(systemMessageContent),
+    new HumanMessage(input),
+  ];
+
+  if (appConfigInstance?.logging.logAgentLLMInteractions) {
+    logLLMInteraction('Agent Prompt', messages.map(m => ({ type: m._getType(), content: m.content }) ));
+  }
+
+  const response = await llm.invoke(messages);
+  let toolResponse = "";
+
+  if (appConfigInstance?.logging.logAgentLLMInteractions) {
+    logLLMInteraction('Agent Raw LLM Response', { content: response.content });
+  }
+
+  try {
+    const toolChoice = JSON.parse(response.content as string);
+    log(LogLevel.DEBUG, "Agent parsed LLM tool choice:", toolChoice);
+
+    if (toolChoice.tool && toolChoice.toolInput) {
+      const selectedTool = availableTools.find(t => t.name === toolChoice.tool);
+
+      if (selectedTool) {
+        log(LogLevel.INFO, `Agent selected tool: ${selectedTool.name} with input:`, toolChoice.toolInput);
+        if (selectedTool.name === 'queryKnowledgeBase') {
+          // Special handling for queryKnowledgeBase as it uses the passed-in RAG function
+          toolResponse = await ragQueryFunction(toolChoice.toolInput.query);
+        } else {
+          toolResponse = await selectedTool.call(toolChoice.toolInput);
+        }
+        log(LogLevel.INFO, `Agent tool "${selectedTool.name}" executed. Result: ${toolResponse}`);
+
+        // Log Wooster Action
+        if (projectName) {
+          try {
+            await logWoosterAction(projectName, selectedTool.name, toolChoice.toolInput, toolResponse);
+            log(LogLevel.INFO, `Wooster action logged for project: ${projectName}, tool: ${selectedTool.name}`);
+          } catch (logError) {
+            log(LogLevel.ERROR, `Failed to log Wooster action for project ${projectName}:`, logError);
+          }
+        }
+
+
+      } else if (toolChoice.tool === "finalAnswer") {
+        toolResponse = toolChoice.toolInput as string;
+        log(LogLevel.INFO, `Agent providing final answer: ${toolResponse}`);
+      } else {
+        toolResponse = "I'm not sure how to respond to that, or the tool chosen was invalid.";
+        log(LogLevel.WARN, `Agent: Invalid tool choice or 'finalAnswer' structure from LLM: ${toolChoice.tool}`);
       }
     } else {
-      log(LogLevel.ERROR, 'Tool %s called by LLM but not found in availableTools.', toolToExecuteCall.name);
-      return "I tried to use a tool, but I couldn't find the right one based on current configuration.";
+      // If LLM doesn't return a valid JSON tool/finalAnswer structure, treat its response as a direct answer.
+      toolResponse = response.content as string;
+      log(LogLevel.WARN, "Agent: LLM response was not a valid tool/finalAnswer JSON. Treating as direct answer.", { responseContent: response.content});
     }
-  } else if (responseMessage.content && typeof responseMessage.content === 'string') {
-    log(LogLevel.INFO, "Agent providing direct LLM response (no tool called).");
-    return responseMessage.content;
-  } else {
-    log(LogLevel.INFO, "Agent falling back to RAG chain (no tool called, no direct content).");
-    return ragChain(userInput);
+  } catch (error) {
+    log(LogLevel.ERROR, "Agent: Error parsing LLM response or executing tool. LLM raw response:", response.content, error);
+    // Fallback: return the raw LLM content if parsing fails or it's not a structured tool call.
+    // This can happen if the LLM directly answers without using the JSON format.
+    toolResponse = response.content as string; 
   }
+
+  if (appConfigInstance?.logging.logAgentLLMInteractions && !isScheduledTask) {
+    logLLMInteraction('Agent Final Response', { content: toolResponse });
+  }
+  return toolResponse;
 } 

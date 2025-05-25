@@ -40,7 +40,8 @@ Wooster is a modular, extensible CLI assistant. This document explains its boot 
 14. Initialize RAG chain (`initializeRagChain()`).
 15. Load plugins (`loadPlugins()`), respecting `config.plugins`.
 16. Initialize enabled plugins (`initPlugins()`), passing `config.openai.apiKey` if needed.
-17. Start interactive REPL (`startREPL()`).
+17. Initialize Project Metadata Service (ensures `[projectName].md` exists for the current project).
+18. Start interactive REPL (`startREPL()`).
 
 ## 4. REPL Loop & RAG Integration
 - Prompts `> ` using Node's `readline`. Startup message lists available REPL commands.
@@ -56,6 +57,7 @@ Wooster is a modular, extensible CLI assistant. This document explains its boot 
      - **Document Combination:** The retrieved document chunks, conversation history, and original input are passed to another LLM to synthesize a final answer.
   5. The agent's final response is printed and added to `conversationHistory`.
   6. If `config.ucm.enabled` is true, `extractUserKnowledge` analyzes the turn.
+  7. Significant interactions and Wooster actions may be logged to the project-specific `[projectName].md` file (see Section 10).
 - On `exit`, `quit`, or Ctrl+C, the application shuts down gracefully.
 
 ## 5. Built-in REPL Commands
@@ -109,3 +111,14 @@ Wooster has a capability to learn user preferences and facts from conversations,
 - **Custom Prompt**: The prompt used by the `userKnowledgeExtractor` can be customized via `ucm.extractorLlmPrompt` in `config.json`.
 - **Recall**: The agent can access learned user context via the `recall_user_context` tool.
 - **Details**: See `07 UCM.MD` and `06 CONFIG.MD` for configuration options.
+
+## 10. Project Metadata & Notes
+Wooster maintains a project-specific metadata file, typically named `[projectName].md`, in the root of the active project directory. This file serves as a "living document" that records:
+- Ingested documents and data sources for the project.
+- Summaries of key conversations and decisions.
+- Significant actions performed by Wooster.
+- Identified tasks or TODOs.
+
+Wooster automatically creates this file if it doesn't exist and appends new information as relevant events occur. Periodically, or upon user request, Wooster can summarize and rewrite this file to keep it concise and organized. Proposed changes to this file are shown to the user via a colored diff in the terminal.
+
+For full details on the structure, maintenance, and diff display of this system, see `01 PROJECTS.MD` (specifically, the section on "Project-Specific Notes").

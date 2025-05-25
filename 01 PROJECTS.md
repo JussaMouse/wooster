@@ -110,3 +110,96 @@ Assistant: (Responds based on content in `projects/meeting_notes/`)
 - **REPL Commands**: Handled in `src/index.ts`.
 
 This project system allows Wooster to maintain a focused context, improving relevance and performance, while providing flexibility in how you organize and access your information. 
+
+## 8. Project-Specific Notes (`[projectName].md`)
+
+### Overview of Project Notes
+
+The Project Notes system is designed to enhance Wooster's contextual understanding and provide users with a persistent, evolving record of their interactions and Wooster's activities within a specific project. This is achieved through an automatically managed Markdown file, typically named `[projectName].md`, located in the root of the project directory.
+
+### The `[projectName].md` File
+
+#### Purpose
+
+This file serves as a "living document" or a project diary, maintained by Wooster. Its goals are to:
+
+1.  **Track Project Context:** Record key information relevant to the current project.
+2.  **Log Ingested Knowledge:** Keep a list of documents and data sources fed into Wooster for the project.
+3.  **Summarize Interactions:** Capture the essence of significant conversations, decisions made, and tasks identified.
+4.  **Record Wooster's Actions:** Log important actions taken by Wooster, such as file creation, scheduling tasks, or significant information retrieval.
+5.  **Improve Transparency:** Allow users to see and understand what Wooster "knows" or "remembers" about the project over time.
+
+#### Automatic Creation and Naming
+
+-   When Wooster starts or a new project context is established, it will check for the existence of `[projectName].md` (e.g., `my-web-app.md` if the project is `my-web-app`).
+-   If the file does not exist, Wooster will automatically create it using a default template.
+
+#### Default File Structure
+
+The `[projectName].md` file is organized into several sections:
+
+```markdown
+# Project: [ProjectName]
+
+## Project Overview
+(A brief, high-level summary of the project. Wooster may attempt to populate this based on interactions, or the user can edit it directly.)
+
+## Ingested Documents
+(A list of documents, data sources, or URLs that have been ingested by Wooster for RAG and knowledge base purposes within this project.)
+- Example: `specification-v1.pdf` ( ingested on YYYY-MM-DD)
+- Example: `https://api.example.com/docs` (crawled on YYYY-MM-DD)
+
+## Conversation Log & Key Decisions
+(Chronological or summarized log of important user-Wooster interactions, questions, answers, and decisions made.)
+- YYYY-MM-DD: User asked to implement feature X. Wooster outlined steps A, B, C.
+- YYYY-MM-DD: Decision made to use library Y for Z functionality.
+
+## Wooster Actions
+(A log of significant, non-trivial actions performed by Wooster within the project.)
+- YYYY-MM-DD: Created files `src/components/NewFeature.tsx` and `src/styles/NewFeature.css`.
+- YYYY-MM-DD: Scheduled an email reminder for "Project Review" in 3 days.
+
+## Tasks & TODOs
+(A list of tasks or to-do items identified during conversations or by Wooster.)
+- [ ] Refactor the authentication module.
+- [ ] Research alternative data storage solutions.
+```
+
+### Maintenance and Updates
+
+#### Logging New Information
+
+Wooster will automatically append information to the relevant sections of `[projectName].md` as events occur:
+
+-   **Ingested Documents:** When a new document/source is successfully processed for the project.
+-   **Conversation Log & Wooster Actions:** Periodically, or after significant interactions/tool uses, Wooster will add concise summaries or logs. The exact trigger and level of detail will be based on heuristics to keep the log meaningful without being overly verbose.
+
+#### Summarization and Rewriting
+
+To prevent the file from becoming excessively long and to maintain clarity, Wooster will periodically (or when triggered by a user command) perform a summarization and rewriting pass:
+
+1.  The existing content of `[projectName].md` is read.
+2.  This content is provided to an LLM with instructions to:
+    -   Summarize and condense verbose sections (especially the "Conversation Log").
+    -   Ensure consistent formatting.
+    -   Organize information logically.
+    -   Update the "Project Overview" if new insights have been gained.
+3.  The LLM-generated refined version of the notes is then proposed to the user.
+
+#### Displaying Proposed Changes (Diff View)
+
+When Wooster proposes updates to `[projectName].md` (especially after a summarization/rewriting pass), it will display the changes in the terminal before applying them. This view will use a colored "diff" format:
+
+-   **Added lines** will be highlighted (e.g., in green).
+-   **Removed lines** will be highlighted (e.g., in red).
+-   Unchanged lines will be shown for context.
+
+This allows the user to review the proposed modifications and understand what Wooster intends to change in the project notes. Users will typically be prompted to accept or reject these changes.
+
+### User Interaction with Project Notes
+
+While much of the maintenance is automatic, users may have commands (refer to `04 TOOLS.MD`, specifically the `manageProjectNotes` tool) to:
+
+-   Manually trigger an update/summarization of the notes.
+-   View the current notes.
+-   (Potentially in the future) Revert to previous versions or edit notes via Wooster. 

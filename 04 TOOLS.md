@@ -36,6 +36,16 @@ This document covers the **tool** layer—functions that Wooster's LLM agent can
    - This tool would call `projectIngestor.listProjectFiles(currentProjectName)`.
    - Currently, `list files` is primarily a REPL command.
 
+6. **`manageProjectNotes({ action: string }) → string`**
+   - Interacts with the `ProjectMetadataService` to manage the `[projectName].md` file.
+   - This file serves as a living document logging ingested documents, conversation summaries, Wooster actions, and tasks for the current project.
+   - **`action`**: Specifies the operation to perform. Valid actions include:
+     - `"update"`: Triggers a summarization and rewrite pass of the `[projectName].md` file by an LLM. Proposed changes will be displayed to the user in a colored diff format in the terminal for review before applying.
+     - `"view"`: Displays the current content of the `[projectName].md` file in the terminal.
+     - `"log"`: (Primarily for internal use by the agent) Appends a specific piece of information (e.g., a Wooster action or conversation summary) to the appropriate section. The agent would typically formulate the content to be logged.
+   - Returns a confirmation message or the content of the notes for the `view` action.
+   - See `01 PROJECTS.MD` (section "Project-Specific Notes") for full details on the `[projectName].md` file and its maintenance.
+
 ## Agent Integration (`src/agent.ts`)
 
 Wooster routes user input not handled by REPL commands through an `agentRespond` function. This function orchestrates the agent's interaction with tools and the RAG system.

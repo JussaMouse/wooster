@@ -26,6 +26,7 @@ import { initSchedulerService } from './scheduler/schedulerService'
 import { initHeartbeatService, stopHeartbeatService } from './heartbeat'
 import { loadConfig, getConfig, AppConfig } from './configLoader'
 import { bootstrapLogger, applyLoggerConfig, log, LogLevel, logLLMInteraction } from './logger'
+import { initProjectMetadataService, logConversationTurn } from './projectMetadataService'
 // Removed placeholder imports: яйцо, 간단한툴, وزارة_الداخلية, списокИнструментов
 
 import { createRetrievalChain } from 'langchain/chains/retrieval'
@@ -135,6 +136,11 @@ async function main() {
   await initPlugins({ apiKey: appConfig.openai.apiKey, vectorStore, ragChain })
   log(LogLevel.INFO, 'Plugins initialized.');
 
+  // Initialize Project Metadata Service for the current (default) project
+  if (currentProjectName) {
+    initProjectMetadataService(currentProjectName);
+  }
+
   // Start interactive REPL
   startREPL()
   log(LogLevel.INFO, 'REPL started. Wooster operational.');
@@ -194,6 +200,8 @@ function startREPL() {
               vectorStore = await createProjectStore(currentProjectName);
               await initializeRagChain(); 
               log(LogLevel.INFO, 'Existing project "%s" loaded.', currentProjectName);
+              // Initialize Project Metadata Service for the newly loaded project
+              if (currentProjectName) initProjectMetadataService(currentProjectName);
             } catch (error: any) {
               log(LogLevel.ERROR, 'Failed to load existing project "%s": %s', currentProjectName, error.message);
               // Revert to home project if loading failed
@@ -212,6 +220,8 @@ function startREPL() {
             vectorStore = await createProjectStore(currentProjectName);
             await initializeRagChain(); // Re-initialize RAG chain with the new store
             log(LogLevel.INFO, 'Newly created project "%s" is now active.', currentProjectName);
+            // Initialize Project Metadata Service for the newly created project
+            if (currentProjectName) initProjectMetadataService(currentProjectName);
           } catch (error: any) {
             log(LogLevel.ERROR, 'Failed to create project directory ""%s"". Error: %s', projectPath, error.message);
           }
@@ -230,6 +240,8 @@ function startREPL() {
             currentProjectName = projectNameToLoad;
             await initializeRagChain();
             log(LogLevel.INFO, 'Project "%s" loaded successfully and is now active.', currentProjectName);
+            // Initialize Project Metadata Service for the newly loaded project
+            initProjectMetadataService(currentProjectName);
           } catch (error: any) {
             log(LogLevel.ERROR, 'Failed to load project "%s": %s. Previous project "%s" remains active.', projectNameToLoad, error.message, currentProjectName);
             // Optionally, try to reload the currentProjectName's store if it failed mid-switch, 
@@ -242,19 +254,17 @@ function startREPL() {
         log(LogLevel.INFO, "Please specify a project name. Usage: load project <name>");
       }
     } else if (input.toLowerCase() === 'quit project' || input.toLowerCase() === 'exit project') {
-      log(LogLevel.INFO, 'Command: quit project / exit project');
-      if (currentProjectName === 'home') {
-        log(LogLevel.INFO, 'Already in "home" project. No change.');
-      } else {
-        try {
-          currentProjectName = 'home';
-          vectorStore = await createProjectStore(currentProjectName);
-          await initializeRagChain();
-          log(LogLevel.INFO, 'Switched to "home" project.');
-        } catch (error: any) {
-          log(LogLevel.ERROR, 'Failed to switch to "home" project: %s. Current project remains "%s"', error.message, currentProjectName || "None");
-          // Attempt to keep the current project or handle error more gracefully if needed
-        }
+      log(LogLevel.INFO, 'Command: quit project. Reverting to "home" project.');
+      currentProjectName = 'home';
+      try {
+        vectorStore = await createProjectStore(currentProjectName);
+        await initializeRagChain();
+        log(LogLevel.INFO, 'Switched to "home" project.');
+        // Initialize Project Metadata Service for the home project
+        initProjectMetadataService(currentProjectName);
+      } catch (error: any) {
+        log(LogLevel.ERROR, 'Failed to load "home" project: %s', error.message);
+        // This is a critical state, consider exiting or specific recovery
       }
     } else if (input.toLowerCase() === 'list files') {
       // console.log('Command: list files');
@@ -308,7 +318,7 @@ function startREPL() {
         const result = await ragChain.invoke({ input: query, chat_history: conversationHistory })
         // log(LogLevel.DEBUG, `RAG callback result:`, result);
         return result.answer
-      }) // Removed currentProjectName from here as agentRespond doesn't take it directly
+      }, currentProjectName)
       
       // console.log(`Assistant response: ${response}`);
       log(LogLevel.INFO, 'Assistant response: %s', response);
@@ -316,6 +326,13 @@ function startREPL() {
       // log(LogLevel.INFO, "Assistant:", response); // Redundant if above is good.
       if (response) {
         conversationHistory.push(new AIMessage(response))
+
+        // Log conversation turn to project notes
+        if (currentProjectName) {
+          logConversationTurn(currentProjectName, input, response).catch(err => {
+            log(LogLevel.ERROR, 'Failed to log conversation turn to project notes: %s', err.message ? err.message : err);
+          });
+        }
 
         // UCM Learning Step (only if UCM is enabled)
         if (appConfig.ucm.enabled && userContextStore) { 
