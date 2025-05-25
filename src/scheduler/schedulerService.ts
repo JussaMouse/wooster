@@ -9,7 +9,8 @@ import {
   getReminderById as dbGetReminderById,
   Reminder,
 } from './reminderRepository';
-import { parseReminderTextAndDate, ParsedReminder } from './scheduleParser';
+import { parseReminderTextAndDate, ParsedReminder, parseDateString } from './scheduleParser';
+import { log, LogLevel } from '../logger'; // Import logger
 
 // In-memory store for active node-schedule jobs. Key is reminder ID.
 const activeJobs = new Map<string, schedule.Job>();
@@ -23,14 +24,18 @@ let agentExecutionCallback: ((taskPayload: string) => Promise<void>) | null = nu
  */
 async function executeReminder(reminder: Reminder): Promise<void> {
   console.log(`Executing reminder ID: ${reminder.id}, Type: ${reminder.task_type}`);
+  log(LogLevel.INFO, `Executing reminder:`, { id: reminder.id, type: reminder.task_type, message: reminder.message });
 
   if (reminder.task_type === 'agentIntent' && reminder.task_payload && agentExecutionCallback) {
     console.log(`Executing agent intent for reminder ID ${reminder.id}. Payload: ${reminder.task_payload}`);
+    log(LogLevel.DEBUG, `Calling agentExecutionCallback for agentIntent`, { reminderId: reminder.id, payload: reminder.task_payload });
     try {
       await agentExecutionCallback(reminder.task_payload);
       console.log(`Agent intent for reminder ID ${reminder.id} processed.`);
+      log(LogLevel.INFO, `Agent intent processed for reminder.`, { reminderId: reminder.id });
     } catch (error) {
       console.error(`Error executing agent intent for reminder ID ${reminder.id}:`, error);
+      log(LogLevel.ERROR, `Error executing agent intent for reminder.`, { reminderId: reminder.id, error });
       // Optionally, update reminder status to 'error' or retry logic here
     }
   } else if (reminder.task_type === 'logMessage') {
@@ -53,6 +58,7 @@ Payload: ${reminder.task_payload || 'N/A'}
     dbDeactivateReminder(reminder.id);
     activeJobs.delete(reminder.id);
     console.log(`One-off reminder ID ${reminder.id} processed and deactivated.`);
+    log(LogLevel.INFO, `One-off reminder processed and deactivated.`, { reminderId: reminder.id });
   }
   // For cron jobs, they will continue to run based on their schedule
 }
@@ -64,6 +70,7 @@ Payload: ${reminder.task_payload || 'N/A'}
 function scheduleJob(reminder: Reminder): boolean {
   if (!reminder.is_active) {
     console.log(`Reminder ID ${reminder.id} is not active. Skipping scheduling.`);
+    log(LogLevel.DEBUG, `Skipping scheduling for non-active reminder.`, { reminderId: reminder.id });
     return false;
   }
 
@@ -72,6 +79,7 @@ function scheduleJob(reminder: Reminder): boolean {
   const jobFunction = () => {
     executeReminder(reminder).catch(err => {
         console.error(`Unhandled error in executeReminder for job ${reminder.id}:`, err);
+        log(LogLevel.ERROR, `Unhandled error in executeReminder for job.`, { reminderId: reminder.id, err });
     });
   };
 
@@ -87,6 +95,7 @@ function scheduleJob(reminder: Reminder): boolean {
   if (job) {
     activeJobs.set(reminder.id, job);
     console.log(`Reminder ID ${reminder.id} ("${reminder.message || 'Agent Task'}") of type "${reminder.task_type}" scheduled for ${job.nextInvocation()?.toISOString() || 'N/A'}`);
+    log(LogLevel.INFO, `Reminder scheduled.`, { reminderId: reminder.id, message: reminder.message, type: reminder.task_type, nextInvocation: job.nextInvocation()?.toISOString() });
     const nextRun = job.nextInvocation()?.toISOString();
     if (nextRun && reminder.next_run_time !== nextRun) {
         dbUpdateReminder(reminder.id, { next_run_time: nextRun });
@@ -96,11 +105,14 @@ function scheduleJob(reminder: Reminder): boolean {
     if (reminder.schedule_type === 'one-off' && new Date(reminder.when_date!).getTime() <= Date.now()) { // Added null assertion for when_date
         console.log(`Reminder ID ${reminder.id} ("${reminder.message || 'Agent Task'}") was in the past. Deactivating.`);
         dbDeactivateReminder(reminder.id);
+        log(LogLevel.INFO, `Deactivated past-due one-off reminder during scheduleJob.`, { reminderId: reminder.id });
     } else {
         console.log(`Reminder ID ${reminder.id} ("${reminder.message || 'Agent Task'}") could not be scheduled (possibly invalid cron or other issue).`);
+        log(LogLevel.WARN, `Reminder could not be scheduled.`, { reminderId: reminder.id, message: reminder.message, type: reminder.task_type });
         // If it's a one-off that somehow wasn't caught by past check, but still didn't schedule, maybe deactivate.
         if (reminder.schedule_type === 'one-off') {
             dbDeactivateReminder(reminder.id);
+            log(LogLevel.INFO, `Deactivated unschedulable one-off reminder.`, { reminderId: reminder.id });
         }
     }
     return false;
@@ -118,11 +130,14 @@ export async function initSchedulerService(
   callback?: (taskPayload: string) => Promise<void> // Optional for now to avoid breaking existing calls immediately
 ): Promise<void> {
   console.log('Initializing SchedulerService...');
+  log(LogLevel.INFO, 'Initializing SchedulerService...');
   if (callback) {
     agentExecutionCallback = callback;
     console.log('Agent execution callback registered with SchedulerService.');
+    log(LogLevel.INFO, 'Agent execution callback registered with SchedulerService.');
   } else {
     console.warn('SchedulerService initialized without an agent execution callback. Agent intents will only be logged.');
+    log(LogLevel.WARN, 'SchedulerService initialized without an agent execution callback.');
   }
 
   const activeReminders = dbGetActiveReminders();
@@ -136,6 +151,7 @@ export async function initSchedulerService(
         dbDeactivateReminder(reminder.id);
         pastDueDeactivatedCount++;
         console.log(`Deactivated past-due one-off reminder ID ${reminder.id}: ${reminder.message || 'Agent Task'}`);
+        log(LogLevel.INFO, `Deactivated past-due one-off reminder during init.`, { reminderId: reminder.id, message: reminder.message });
         continue; 
       }
     }
@@ -144,6 +160,7 @@ export async function initSchedulerService(
     }
   }
   console.log(`SchedulerService initialized: ${rescheduledCount} reminders rescheduled, ${pastDueDeactivatedCount} past-due one-off reminders deactivated.`);
+  log(LogLevel.INFO, `SchedulerService initialized.`, { rescheduledCount, pastDueDeactivatedCount });
 }
 
 /**
@@ -160,6 +177,7 @@ export async function createAgentTaskSchedule(
 ): Promise<Reminder | null> {
   if (scheduleDate.getTime() <= Date.now()) {
     console.warn('Attempted to schedule an agent task in the past.');
+    log(LogLevel.WARN, 'Attempted to schedule an agent task in the past.', { taskName, scheduleDate: scheduleDate.toISOString(), taskPayload });
     // Optionally throw an error or return a specific message
     return null; 
   }
@@ -197,16 +215,19 @@ export async function createAgentTaskSchedule(
 
     if (scheduled) {
       console.log(`Agent task "${taskName}" scheduled for ${scheduleDate.toLocaleString()}. ID: ${newAgentReminder.id}`);
+      log(LogLevel.INFO, `Agent task scheduled.`, { taskName, scheduleDate: scheduleDate.toLocaleString(), id: newAgentReminder.id });
       return newAgentReminder; // Return the full reminder object
     } else {
       // This might happen if scheduleJob itself fails for other reasons post past-check
       console.error(`Failed to schedule agent task ID ${newAgentReminder.id} even after past-time check.`);
+      log(LogLevel.ERROR, `Failed to schedule agent task even after past-time check.`, { id: newAgentReminder.id });
       // Deactivate if it was added to DB but not scheduled
       dbDeactivateReminder(newAgentReminder.id); 
       return null;
     }
   } catch (error: any) {
     console.error('Error creating agent task schedule:', error);
+    log(LogLevel.ERROR, 'Error creating agent task schedule:', { error: error.message, taskName });
     return null;
   }
 }
@@ -226,6 +247,7 @@ export async function createReminderFromText(fullText: string): Promise<string> 
   const { date: scheduleDate, reminderText } = parsed;
 
   if (scheduleDate.getTime() <= Date.now()) {
+    log(LogLevel.WARN, 'Attempted to schedule a log reminder in the past.', { reminderText, scheduleDate: scheduleDate.toISOString() });
     return 'The specified time is in the past. Please provide a future time for the reminder.';
   }
 
@@ -254,17 +276,17 @@ export async function createReminderFromText(fullText: string): Promise<string> 
     const scheduled = scheduleJob(newLogReminder);
 
     if (scheduled) {
-      return `Okay, I will remind you to "${reminderText}" on ${scheduleDate.toLocaleString()}. (ID: ${newLogReminder.id})`;
+      log(LogLevel.INFO, `Log reminder scheduled: "${reminderText}"`, { id: newLogReminder.id, time: scheduleDate.toLocaleString() });
+      return `Reminder set: "${reminderText}" for ${scheduleDate.toLocaleString()}. (ID: ${newLogReminder.id})`;
+    } else {
+      log(LogLevel.ERROR, `Log reminder "${reminderText}" failed to schedule (post-parse).`, { id: newLogReminder.id });
+      // Deactivate if it was added to DB but not scheduled
+      dbDeactivateReminder(newLogReminder.id); 
+      return 'Failed to schedule reminder even after parsing. Please try again.';
     }
-    // If not scheduled, it might be because it was (erroneously) in the past, or scheduleJob failed.
-    // The record would be in the DB but inactive if scheduleJob itself deactivated it.
-    // If it failed to schedule for other reasons, we might want to ensure it's not left active in DB.
-    dbDeactivateReminder(newLogReminder.id); // Ensure it's not left active if scheduling failed
-    return 'Failed to schedule the reminder. It might be in the past or another issue occurred.';
-
   } catch (error: any) {
-    console.error('Error creating log reminder:', error);
-    return `Sorry, I couldn't save your log reminder due to an error: ${error.message}`;
+    log(LogLevel.ERROR, `Error creating log reminder from text: "${fullText}"`, { error: error.message });
+    return `Error creating reminder: ${error.message}`;
   }
 }
 
@@ -274,23 +296,23 @@ export async function createReminderFromText(fullText: string): Promise<string> 
  * @returns A boolean indicating if the cancellation was successful.
  */
 export function cancelReminderById(reminderId: string): boolean {
+  log(LogLevel.INFO, `Attempting to cancel reminder by ID: ${reminderId}`);
   const job = activeJobs.get(reminderId);
   if (job) {
     job.cancel();
     activeJobs.delete(reminderId);
-    dbDeactivateReminder(reminderId); // Or dbDeleteReminder(reminderId) for hard delete
-    console.log(`Reminder ID ${reminderId} cancelled and deactivated.`);
-    return true;
-  }
-  // If job not in activeJobs, it might be already fired or not scheduled.
-  // Still try to deactivate it in DB if it exists as active there.
-  const dbReminder = dbGetReminderById(reminderId);
-  if (dbReminder && dbReminder.is_active) {
     dbDeactivateReminder(reminderId);
-    console.log(`Reminder ID ${reminderId} (not in active jobs) deactivated in DB.`);
+    log(LogLevel.INFO, `Reminder ID ${reminderId} cancelled and deactivated successfully.`);
     return true;
   }
-  console.log(`Reminder ID ${reminderId} not found or already inactive.`);
+  // If job not in activeJobs, it might be already inactive or past.
+  // Still try to deactivate in DB just in case.
+  const dbResult = dbDeactivateReminder(reminderId);
+  if (dbResult) {
+    log(LogLevel.INFO, `Reminder ID ${reminderId} was not in active jobs map, but deactivated in DB.`);
+    return true; // Considered success if DB deactivation happened
+  }
+  log(LogLevel.WARN, `Reminder ID ${reminderId} not found for cancellation or already inactive.`);
   return false;
 }
 
@@ -324,14 +346,11 @@ export function getNextInvocations(): { id: string; message: string; nextRun: st
 
 // Gracefully shut down scheduled jobs on exit
 function gracefulShutdown() {
-  console.log('Shutting down scheduler... cancelling all active jobs.');
-  schedule.gracefulShutdown().then(() => {
-    console.log('All scheduled jobs have been shut down.');
-    process.exit(0); 
-  }).catch(err => {
-    console.error('Error during graceful shutdown of scheduler:', err);
-    process.exit(1);
-  });
+  log(LogLevel.INFO, 'SchedulerService shutting down gracefully...');
+  const jobsToCancel = Array.from(activeJobs.values());
+  jobsToCancel.forEach(job => job.cancel(false)); // false = don't execute on cancel
+  activeJobs.clear();
+  log(LogLevel.INFO, `Cancelled ${jobsToCancel.length} active jobs. SchedulerService shutdown complete.`);
 }
 
 process.on('SIGINT', gracefulShutdown);

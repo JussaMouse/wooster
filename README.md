@@ -1,305 +1,134 @@
-# Wooster Ground-Up Rebuild Plan
+# Wooster: Your Agentic CLI Assistant
 
-Wooster is a modular, extensible command-line AI assistant built from the ground up using TypeScript, pnpm, SQLite DAG memory, a local vector store, and LangChain for RAG. It features a plugin architecture for easy extension and integration.
+Wooster is a TypeScript-based, extensible command-line AI assistant. It leverages a Language Model (LLM) to understand your requests, interact with its tools, and access knowledge. Wooster can learn from documents you provide (organized into "Projects"), send emails, schedule tasks, and more. Its capabilities are expanded through a system of agent-callable **Tools**.
 
-This guide walks you through building Wooster from scratch on macOS with TypeScript, pnpm, SQLite DAG memory, a local vector store, LangChain RAG, and an extensible plugin architecture.
+## Core Concepts
 
-## 0. License & README
+*   **Agent (`src/agent.ts`)**: The LLM-powered core of Wooster. It interprets your input, maintains conversational context, and decides whether to call a specific Tool, query its knowledge base, or respond directly. It is currently configured to use OpenAI models.
+*   **Tools (`src/tools/` & `src/agent.ts`)**: These are specific, self-contained functions that the Agent can decide to call to perform actions or retrieve information. Examples include `sendEmail`, `scheduleAgentTask`, and `search_knowledge_base`. New tools are added by defining them and making them available to the agent in `src/agent.ts`.
+*   **Knowledge Base & RAG (`src/projectIngestor.ts`, `src/memoryVector.ts`)**: Wooster can ingest documents and code into a local FAISS vector store using HuggingFace embeddings. This knowledge is organized into "Projects."
+    *   A default project named **"home"** (located in `projects/home/`) is automatically created and loaded on startup. This serves as the base context if no other project is specified.
+    *   Additional projects can be defined by creating a directory under `projects/` (e.g., `projects/my_notes/`) or by specifying paths and glob patterns in an optional `projects.json` file.
+    *   The Agent uses Retrieval Augmented Generation (RAG), typically via the `search_knowledge_base` tool or as a fallback, to answer questions based on the currently active project's ingested knowledge.
+*   **Scheduler (`src/scheduler/`, `src/tools/scheduler.ts`)**: A core system that allows users (or the agent itself via the `scheduleAgentTask` tool) to schedule tasks or set reminders using natural language (e.g., "remind me to check emails in 1 hour"). It uses `node-schedule` and `chrono-node`, persisting tasks in an SQLite database (`database/memory.db`).
+*   **Heartbeat (`src/heartbeat.ts`)**: A mechanism where Wooster periodically writes a timestamp to its database, allowing external systems to monitor its operational status.
+*   **Plugins (`src/plugins/`, `src/pluginManager.ts`)**: Modules that can hook into Wooster's lifecycle events (e.g., `onInit`, `onUserInput`, `onAssistantResponse`) for specific side-effects like logging or analytics. They are distinct from Agent Tools, which provide capabilities for the agent to use in its decision-making process. This system is configurable via `wooster.config.json`.
+*   **User Contextual Memory (UCM) (`src/userKnowledgeExtractor.ts`, `src/tools/userContextTool.ts`)**: Wooster can learn and recall user-specific facts and preferences, storing them in a dedicated vector store. This feature can be enabled/disabled and configured via `wooster.config.json`.
+*   **Logging (`src/logger.ts`, `08 LOGGING.MD`)**: Wooster uses a simple logging system that outputs to both the console and a log file. Log levels and file paths can be configured via environment variables (e.g., `LOG_LEVEL`, `LOG_FILE`).
 
-- Add a `LICENSE` file (MIT or Apache-2.0) at the project root.
-- Create `README.md` with project overview, prerequisites, and quick-start steps.
+## Features
+
+*   **Conversational REPL Interface**: Interact with Wooster using natural language.
+*   **Agent-Driven Tool Use**: Wooster intelligently selects and uses available tools to fulfill requests.
+*   **Project-Based Knowledge Management**:
+    *   Always operates within an active project context, defaulting to "home".
+    *   Load local documents and codebases as "Projects" for Wooster to learn from and answer questions about.
+    *   Easily create and switch between projects.
+*   **Task Scheduling**: Schedule reminders and future tasks using natural language, handled by the agent.
+*   **Conversation History**: Maintains context from recent interactions (in-memory) to inform responses.
+*   **Persistent Task Storage**: Scheduled tasks are saved in an SQLite database.
+*   **Personalized Interaction**: Learns user-specific facts and preferences with User Contextual Memory (UCM).
+*   **Configurable Logging**: Control log verbosity and output.
+
+## Installation
+
+1.  **Prerequisites**:
+    *   Node.js (>= 18, LTS recommended)
+    *   pnpm (or npm/yarn, but `pnpm-lock.yaml` is provided)
+    *   Git
+
+2.  **Clone the Repository**:
+    ```bash
+    git clone <repository-url>
+    cd wooster
+    ```
+
+3.  **Install Dependencies**:
+    ```bash
+    pnpm install
+    ```
+
+4.  **Set up Environment Variables**:
+    *   Copy the example environment file:
+        ```bash
+        cp .env.example .env
+        ```
+    *   Edit `.env` and add your `OPENAI_API_KEY`.
+    *   To enable email functionality, provide relevant email credentials (e.g., for Gmail, an App Password or OAuth2 details). See `.env.example` for variables like `EMAIL_ADDRESS`, `EMAIL_APP_PASSWORD`, `GMAIL_CLIENT_ID`, etc.
+    *   Configure logging behavior using `LOG_LEVEL` (e.g., `DEBUG`, `INFO`, `WARN`, `ERROR`) and `LOG_FILE` (e.g., `wooster_session.log` or an absolute path) in the `.env` file.
+
+## Usage
+
+1.  **Start Wooster**:
+    ```bash
+    pnpm dev
+    ```
+    This will start Wooster in development mode. The "home" project will be active by default.
+
+2.  **Interacting with Wooster**:
+    Once Wooster is running, you'll see a `>` prompt. You can type commands or ask questions. Wooster's initial startup message lists available REPL commands.
+
+    **Built-in REPL Commands** (Wooster is primarily interacted with via natural language, but these direct commands are available):
+    *   `create project <name_or_path>`: Creates a new project directory (e.g., in `projects/<name>` or at a specified path) and makes it the active project.
+    *   `load project <name>`: Load a project's files, making it the active project.
+    *   `quit project` (or `exit project`): Switches the active project to "home".
+    *   `list files`: List files in the currently active project.
+    *   `list plugins`: Show loaded plugin modules (if any are enabled).
+    *   `list tools`: Show available agent tools.
+    *   `list reminders`: Show pending scheduled tasks.
+    *   `cancel <id>`: Cancel a scheduled task by its ID.
+    *   `status`: Show scheduler status and last heartbeat.
+    *   `exit` or `quit` (or Ctrl+C): Exit Wooster.
+
+    **Example Interactions**:
+    *   `> What can you do?`
+    *   `> create project my_research_notes` (Wooster will switch to this project)
+    *   (Manually add files to `projects/my_research_notes/`)
+    *   `> load project my_research_notes` (To re-scan files if added after initial creation/load)
+    *   `> What did I write about project X in my_research_notes?`
+    *   `> please send an email to test@example.com with subject Hello and body This is a test.`
+    *   `> remind me to take out the trash in 1 hour`
+    *   `> list reminders`
+    *   `> quit project` (Switches back to the "home" project)
+
+## Configuration
+
+*   **`.env`**: For API keys, sensitive credentials, and logging settings (`LOG_LEVEL`, `LOG_FILE`).
+*   **`config.json`**: For operational settings like UCM feature enablement and plugin activation. Wooster creates a default version if one isn't found. See `06 CONFIG.MD` for full details.
+*   **`projects.json` (Optional)**: Can be used to define named collections of files/directories that Wooster can ingest as "Projects", especially for projects outside the default `projects/` directory or those requiring complex glob patterns. If a project name is used with `load project` that isn't in `projects.json`, Wooster will look for a corresponding directory in `projects/<name>`.
+    Example `projects.json`:
+    ```json
+    {
+      "wooster_codebase": ["src/**/*.ts", "README.md"],
+      "external_research": "/Users/me/Documents/ResearchPapers"
+    }
+    ```
+
+## Extending Wooster
+
+Wooster's primary method for adding new capabilities is through **Agent Tools**.
+
+*   **Creating Agent Tools**:
+    1.  Develop your tool's logic as a function/class, typically in a new file within `src/tools/`.
+    2.  In `src/agent.ts`, import your tool and add it to the `availableTools` array. This involves providing a name, a clear description for the agent to understand its purpose, the function to execute, and an argument schema (see the `parameters` field in the `AgentTool` interface).
+    3.  The agent framework will then be able to consider and use your new tool.
+    4.  Refer to `04 TOOLS.MD` for more details.
+
+*   **Creating Plugins** (for lifecycle hooks and side-effects):
+    1.  Create a plugin file in `src/plugins/`.
+    2.  Export a default object conforming to the `Plugin` interface (see `src/pluginManager.ts`).
+    3.  Plugins can hook into events like `onInit`, `onUserInput`, and `onAssistantResponse`. This feature is configurable in `wooster.config.json`.
+    4.  Refer to `03 PLUGINS.MD` for detailed guidance.
 
 ---
 
-## Prerequisites
+This README provides a high-level overview of Wooster. For more detailed information on specific aspects, refer to the other markdown documents in the root directory:
 
-- macOS with Homebrew installed
-- Node.js ≥ 18 (LTS)
-- pnpm installed globally
-- OpenAI API key in a `.env` file
-- ESLint & Prettier for code quality
-- Husky + lint-staged for pre-commit hooks
-
-### Install Dependencies
-```bash
-# 1) If you don't have Homebrew:
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# 2) Install Node.js
-brew install node
-
-# 3) Install pnpm globally
-npm install -g pnpm
-```
-
-## 1. Initialize the Project
-
-```bash
-# 1) Clone or create project directory
-cd ~/projects
-git clone https://github.com/your-org/wooster.git || mkdir wooster && cd wooster
-
-# Initialize git and make initial commit
-git init
-git add .
-git commit -m "chore: initial scaffold"
-
-# 2) Initialize pnpm & TypeScript
-pnpm init
-pnpm add openai dotenv better-sqlite3 langchain @chromadb/chromadb
-pnpm add -D typescript ts-node @types/node tsx
-```
-
-## 2. Set Up Environment Files & Git Ignore
-
-```bash
-# Create a `.env.example` for onboarding
-cat <<EOF > .env.example
-OPENAI_API_KEY=your_api_key_here
-EMAIL_ADDRESS=your_email_address_here          # The address to send Wooster emails to/from
-GMAIL_CLIENT_ID=your_gmail_oauth_client_id      # OAuth2 credentials from Google Cloud Console
-GMAIL_CLIENT_SECRET=your_gmail_oauth_client_secret
-GMAIL_REFRESH_TOKEN=your_gmail_oauth_refresh_token
-EOF
-
-# Copy to `.env` and fill in real secrets
-cp .env.example .env
-
-cat <<EOF >> .gitignore
-node_modules/
-.env
-memory.db
-vector_data/
-EOF
-```
-
-## 3. Configure TypeScript (`tsconfig.json`)
-
-```bash
-pnpm exec tsc --init --rootDir src --outDir dist --target es2017 \
-  --module commonjs --strict true --skipLibCheck true
-```
-
-Ensure the `include` section covers your source:
-```json
-// tsconfig.json
-{
-  // ... other settings ...
-  "include": ["src/**/*.ts"]
-}
-```
-
-## 4. Create Source Structure
-
-```bash
-mkdir src
-cd src
-# Create core modules
-touch index.ts memorySql.ts memoryVector.ts ragChain.ts pluginManager.ts
-
-cd ..
-```
-
-## 5. Implement SQLite DAG Memory (`src/memorySql.ts`)
-
-Manually paste or write your SQLite DAG memory code:
-```typescript
-// src/memorySql.ts
-import Database from 'better-sqlite3'
-const db = new Database('memory.db')
-// CREATE TABLE nodes(id INTEGER PRIMARY KEY, content TEXT, speaker TEXT)
-// CREATE TABLE edges(parent INTEGER, child INTEGER)
-// Export addNode(content, speaker, parents?) → nodeId
-export function addNode(
-  content: string,
-  speaker: 'user' | 'assistant',
-  parents: number[] = []
-): number {
-  // ... implementation here ...
-}
-```
-
-## 6. Implement In-Memory Vector Memory (`src/memoryVector.ts`)
-```typescript
-import { MemoryVectorStore } from 'langchain/vectorstores/memory'
-import { FakeEmbeddings } from 'langchain/embeddings/fake'
-import { Document } from 'langchain/document'
-
-export async function initVectorStore() {
-  const embeddings = new FakeEmbeddings()
-  return MemoryVectorStore.fromTexts([], [], embeddings)
-}
-
-export async function upsertDocument(
-  store: MemoryVectorStore,
-  text: string,
-  nodeId: number
-) {
-  const doc: Document = { pageContent: text, metadata: { nodeId } }
-  await store.addDocuments([doc])
-}
-
-export async function retrieveContext(
-  store: MemoryVectorStore,
-  query: string,
-  k = 5
-): Promise<Document[]> {
-  return store.similaritySearch(query, k)
-}
-```
-
-## 7. Build the RAG Chain (`src/ragChain.ts`)
-```typescript
-// src/ragChain.ts
-import { ChatOpenAI } from '@langchain/openai'
-import { createStuffDocumentsChain } from 'langchain/chains/combine_documents'
-import { createRetrievalChain } from 'langchain/chains/retrieval'
-import { ChatPromptTemplate } from '@langchain/core/prompts'
-
-export async function buildRagChain(apiKey: string, store: any) {
-  const llm = new ChatOpenAI({ openAIApiKey: apiKey })
-
-  // 1) Define prompt with context and user question
-  const prompt = ChatPromptTemplate.fromTemplate(
-    "Answer the user's question: {input} based on the following context {context}"
-  )
-
-  // 2) Build a chain to stuff docs into prompt
-  const combineDocsChain = await createStuffDocumentsChain({ llm, prompt })
-
-  // 3) Wire up retriever + QA chain
-  return createRetrievalChain({
-    retriever: store.asRetriever(),
-    combineDocsChain,
-  })
-}
-```
-
-## 8. Add Plugin Architecture (`src/pluginManager.ts`)
-
-Create a plugin manager with hooks for future extensibility:
-```typescript
-// src/pluginManager.ts
-import { readdirSync } from 'fs'
-import { join } from 'path'
-
-export type PluginContext = { apiKey: string; vectorStore: any; ragChain: any }
-
-export interface Plugin {
-  name: string
-  onInit?: (ctx: PluginContext) => Promise<void> | void
-  onUserInput?: (input: string) => Promise<string> | string
-  onAssistantResponse?: (response: string) => Promise<void> | void
-}
-
-const plugins: Plugin[] = []
-
-export async function loadPlugins() {
-  const dir = join(__dirname, 'plugins')
-  let files: string[] = []
-  try { files = readdirSync(dir).filter(f => /\.(ts|js)$/.test(f)) } catch { return }
-  for (const f of files) {
-    const mod = await import(join(dir, f))
-    const plugin: Plugin = mod.default
-    if (plugin?.name) { plugins.push(plugin); console.log(`Loaded: ${plugin.name}`) }
-  }
-}
-
-export async function initPlugins(ctx: PluginContext) {
-  for (const p of plugins) if (p.onInit) await p.onInit(ctx)
-}
-
-export async function handleUserInput(input: string) {
-  let out = input
-  for (const p of plugins) if (p.onUserInput) out = await p.onUserInput(out)
-  return out
-}
-
-export async function handleAssistantResponse(resp: string) {
-  for (const p of plugins) if (p.onAssistantResponse) await p.onAssistantResponse(resp)
-}
-```
-
-### 8.a Email Plugin
-
-Add an email plugin so Wooster will send each assistant response to you via Gmail SMTP with OAuth2:
-
-```typescript
-// src/plugins/emailPlugin.ts
-import nodemailer from 'nodemailer'
-import type { Plugin } from '../pluginManager'
-
-const emailPlugin: Plugin = {
-  name: 'email',
-  onAssistantResponse: async (response: string) => {
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        type: 'OAuth2',
-        user: process.env.EMAIL_ADDRESS,
-        clientId: process.env.GMAIL_CLIENT_ID,
-        clientSecret: process.env.GMAIL_CLIENT_SECRET,
-        refreshToken: process.env.GMAIL_REFRESH_TOKEN,
-      },
-    })
-    await transporter.sendMail({
-      from: process.env.EMAIL_ADDRESS,
-      to: process.env.EMAIL_ADDRESS,
-      subject: 'Wooster says:',
-      text: response,
-    })
-  },
-}
-export default emailPlugin
-```
-
-The plugin manager auto-loads anything in `src/plugins/`. Just drop `emailPlugin.ts` there and restart the CLI. Ensure your `.env` has the four new vars above. Happy emailing!
-
-## 9. Glue Everything in the CLI (`src/index.ts`)
-```diff
-import dotenv from 'dotenv'
-import readline from 'readline'
-import { addNode } from './memorySql'
-import { initVectorStore, upsertDocument, retrieveContext } from './memoryVector'
-import { buildRagChain } from './ragChain'
-import { loadPlugins, initPlugins, handleUserInput, handleAssistantResponse } from './pluginManager'
-
-async function main() {
-  vectorStore = await initVectorStore()
-  ragChain = await buildRagChain(apiKey, vectorStore)
-  await loadPlugins()
-  await initPlugins({ apiKey, vectorStore, ragChain })
-  startREPL()
-}
-
-function startREPL() {
-  rl.on('line', async (line) => {
-    const userText = await handleUserInput(line.trim())
-    // record in memory & vector store...
-    const { answer: assistant } = await ragChain.invoke({ input: userText })
-    console.log('Assistant:', assistant)
-    await handleAssistantResponse(assistant)
-    rl.prompt()
-  })
-}
-```
-
-## 10. Update `package.json` Scripts
-
-```json
-{
-  "scripts": {
-    "dev": "tsx src/index.ts",
-    "build": "tsc",
-    "start": "pnpm run build && node dist/index.js"
-  }
-}
-```
-
-## 11. Run & Test
-
-```bash
-pnpm run dev
-# > Hello, Wooster!
-# Assistant: Hi there! How can I help?
-```
+- `00 SYSTEM.MD`: Overall system architecture, boot sequence, and REPL loop.
+- `01 PROJECTS.MD`: Managing and using project-specific knowledge.
+- `03 PLUGINS.MD`: Creating plugins for lifecycle hooks.
+- `04 TOOLS.MD`: Defining and using agent tools.
+- `05 SCHEDULER.MD`: In-depth look at the task scheduling subsystem.
+- `06 CONFIG.MD`: Details on configuring Wooster via `config.json`.
+- `07 UCM.MD`: Detailed design for User Contextual Memory.
+- `08 LOGGING.MD`: Details on the logging system and its configuration.

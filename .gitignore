@@ -10,10 +10,15 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
+logs/ # Wooster specific session logs
+*.log
 
 # SQLite database files
+# Used by scheduler and heartbeat
 memory.db
 memory.db-journal*
+memory.db-shm
+memory.db-wal
 
 # Vector data storage
 vector_data/
@@ -34,8 +39,21 @@ vector_data/
 .DS_Store
 
 # Test coverage
-overage/
+coverage/
 
 # Cache directories
-.cache/ log*.txt
-*.log
+.cache/
+
+# Temporary files
+tmp*
+
+# User-specific Configuration Files
+# These should not be committed as they are user/environment specific.
+config.json
+projects.json
+
+# User-specific Project Data
+# The 'projects' directory itself is ignored.
+# If you want to commit a default 'projects/home/' or example projects,
+# remove 'projects/' from this file and manage its contents with Git.
+projects/

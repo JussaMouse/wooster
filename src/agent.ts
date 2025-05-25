@@ -2,11 +2,15 @@ import { ChatOpenAI } from '@langchain/openai';
 import type { FaissStore } from '@langchain/community/vectorstores/faiss';
 import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
 import type { BaseLanguageModel } from '@langchain/core/language_models/base';
-import { type ChatPromptTemplate } from "@langchain/core/prompts";
+import type { ChatPromptTemplate } from "@langchain/core/prompts";
+import { log, LogLevel } from './logger'; // Import new logger
+// Logger and config imports related to logging removed
+// import { getConfig } from './configLoader';
 
 // Import actual tool functions
 import { sendEmail, EmailArgs } from './tools/email';
 import { scheduleAgentTask } from './tools/scheduler'; // Import the new tool
+import { recallUserContextFunc } from "./tools/userContextTool"; // Import UCM tool function
 // import { listFiles } from './tools/filesystem'; // Assuming you will create this
 // import { scheduleAgentTask, ScheduleAgentTaskArgs } from './tools/scheduler'; // We'll create this tool's function later
 
@@ -42,7 +46,7 @@ export const availableTools: AgentTool[] = [
   scheduleAgentTask,
   {
     name: 'queryKnowledgeBase',
-    description: 'Queries Wooster\'s internal knowledge base (documents, previous conversations) to find information. Use this when you need to answer a question based on available documents or to get context before performing another action.',
+    description: "Queries Wooster's internal knowledge base (documents, previous conversations) to find information. Use this when you need to answer a question based on available documents or to get context before performing another action.",
     parameters: {
       type: "object",
       properties: {
@@ -52,12 +56,25 @@ export const availableTools: AgentTool[] = [
     },
     execute: async (args: { queryString: string }, llm?: ChatOpenAI, ragChain?: any) => {
       if (!ragChain) {
+        log(LogLevel.WARN, 'queryKnowledgeBase tool called but RAG chain is unavailable.');
         return "Knowledge base (RAG chain) is not available at the moment.";
       }
-      console.log(`Agent using queryKnowledgeBase with query: "${args.queryString}"`);
+      log(LogLevel.INFO, 'Agent using tool: queryKnowledgeBase with query: "%s"', args.queryString);
       return ragChain(args.queryString);
     },
   },
+  {
+    name: "recall_user_context",
+    description: "Use this tool to retrieve stored preferences, facts, or directives previously stated by the user that could be relevant for personalizing the current response or action. Query with a concise topic, e.g., 'email formality preferences' or 'project X deadlines'.",
+    parameters: {
+      type: "object",
+      properties: {
+        topic: { type: "string", description: "A concise phrase describing the specific user preference, fact, or context needed." },
+      },
+      required: ["topic"],
+    },
+    execute: async (args: { topic: string }) => recallUserContextFunc(args),
+  }
   // Add other tools like listFiles here once they are created in src/tools/
 ];
 
@@ -68,9 +85,9 @@ export async function agentRespond(
   promptTemplate?: ChatPromptTemplate, // Optional, for more complex agent prompting
   isScheduledTaskExecution: boolean = false // New parameter
 ): Promise<string> {
-  console.log(`Agent received input: "${userInput}"`);
+  log(LogLevel.INFO, 'Agent received input for processing: "%s"', userInput, { isScheduledTask: isScheduledTaskExecution });
   if (isScheduledTaskExecution) {
-    console.log("Agent is executing a scheduled task.");
+    log(LogLevel.INFO, "Agent is executing a scheduled task.");
   }
 
   const llmWithTools = llm.bindTools(
@@ -105,8 +122,12 @@ export async function agentRespond(
   // If promptTemplate exists, its messages will be added.
 
   const responseMessage = await llmWithTools.invoke(messages);
-
-  console.log("LLM response with tool binding:", JSON.stringify(responseMessage, null, 2));
+  log(LogLevel.DEBUG, "[Agent LLM Interaction] Response received from LLM.", 
+    { 
+      hasContent: !!responseMessage.content,
+      toolCallCount: responseMessage.tool_calls?.length || 0,
+      firstToolName: responseMessage.tool_calls?.[0]?.name 
+    });
 
   const toolCalls = responseMessage.tool_calls;
 
@@ -114,44 +135,45 @@ export async function agentRespond(
     const scheduleToolCall = toolCalls.find(tc => tc.name === 'scheduleAgentTask');
 
     if (scheduleToolCall) {
-      console.log(`Agent prioritizing tool: ${scheduleToolCall.name} with args: ${JSON.stringify(scheduleToolCall.args)}`);
+      log(LogLevel.INFO, 'Agent prioritizing tool: %s with args: %j', scheduleToolCall.name, scheduleToolCall.args);
       const schedulerTool = availableTools.find(t => t.name === 'scheduleAgentTask');
       if (schedulerTool) {
         try {
-          return await schedulerTool.execute(scheduleToolCall.args, llm, ragChain);
+          const toolResult = await schedulerTool.execute(scheduleToolCall.args, llm, ragChain);
+          log(LogLevel.INFO, 'Tool %s executed successfully. Result: %s', scheduleToolCall.name, toolResult);
+          return toolResult;
         } catch (error: any) {
-          console.error(`Error executing scheduled tool ${scheduleToolCall.name}:`, error);
+          log(LogLevel.ERROR, 'Error executing scheduled tool %s. Args: %j', scheduleToolCall.name, scheduleToolCall.args, error);
           return `Error during scheduled tool execution: ${error.message}`;
         }
       } else {
+           log(LogLevel.ERROR, "Scheduler tool 'scheduleAgentTask' not found in availableTools.");
            return "I tried to use the scheduler tool, but I couldn't find it.";
       }
     } else {
-      // Original logic: execute the first tool call if scheduler is not present
       const toolCall = toolCalls[0];
       const selectedTool = availableTools.find(t => t.name === toolCall.name);
 
       if (selectedTool) {
-        console.log(`Agent selected tool: ${selectedTool.name} with args: ${JSON.stringify(toolCall.args)}`);
+        log(LogLevel.INFO, 'Agent selected tool: %s with args: %j', selectedTool.name, toolCall.args);
         try {
-          return await selectedTool.execute(toolCall.args, llm, ragChain);
+          const toolResult = await selectedTool.execute(toolCall.args, llm, ragChain);
+          log(LogLevel.INFO, 'Tool %s executed successfully. Result: %s', selectedTool.name, toolResult);
+          return toolResult;
         } catch (error: any) {
-          console.error(`Error executing tool ${selectedTool.name}:`, error);
+          log(LogLevel.ERROR, 'Error executing tool %s. Args: %j', selectedTool.name, toolCall.args, error);
           return `Error during tool execution: ${error.message}`;
         }
       } else {
+        log(LogLevel.ERROR, 'Tool %s called by LLM but not found in availableTools.', toolCall.name);
         return "I tried to use a tool, but I couldn't find the right one.";
       }
     }
   } else if (responseMessage.content && typeof responseMessage.content === 'string') {
-    // If no tool is called, and there's direct content, return it.
-    // This could be a direct answer from the LLM without needing a tool.
-    console.log("Agent providing direct LLM response.");
+    log(LogLevel.INFO, "Agent providing direct LLM response (no tool called).");
     return responseMessage.content;
   } else {
-    // Fallback if LLM doesn't call a tool and doesn't provide direct content.
-    // This was the original RAG fallback.
-    console.log("Agent falling back to RAG chain.");
+    log(LogLevel.INFO, "Agent falling back to RAG chain (no tool called, no direct content).");
     return ragChain(userInput);
   }
 } 

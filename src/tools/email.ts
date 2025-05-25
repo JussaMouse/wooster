@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { log, LogLevel } from '../logger'; // Revert to standard import
 
 export interface EmailArgs {
   to: string;
@@ -12,13 +13,16 @@ const USER_PLACEHOLDERS = ['me', 'myemail', 'user@example.com', 'your-email@exam
  * Send an email via Gmail SMTP (App Password or OAuth2).
  * Returns the SMTP response string on success.
  */
-export async function sendEmail({ to, subject, body }: EmailArgs): Promise<string> {
+export async function sendEmail(args: EmailArgs): Promise<string> {
+  const { to, subject, body } = args;
+  log(LogLevel.INFO, 'Attempting to send email with tool: sendEmail', { to, subject, bodyLength: body.length });
+
   console.log(`sendEmail tool called with args: to="${to}", subject="${subject}", body="${body}"`);
   console.log(`sendEmail: process.env.USER_EMAIL_ADDRESS = "${process.env.USER_EMAIL_ADDRESS}"`);
   console.log(`sendEmail: process.env.EMAIL_ADDRESS (sender) = "${process.env.EMAIL_ADDRESS}"`);
 
-  const from = process.env.EMAIL_ADDRESS;
-  if (!from) throw new Error('Sender EMAIL_ADDRESS not set in .env');
+  const userEmail = process.env.EMAIL_ADDRESS;
+  if (!userEmail) throw new Error('Sender EMAIL_ADDRESS not set in .env');
 
   let recipientEmail = to;
   if (USER_PLACEHOLDERS.includes(to.toLowerCase())) {
@@ -39,7 +43,7 @@ export async function sendEmail({ to, subject, body }: EmailArgs): Promise<strin
   const appPassword = process.env.EMAIL_APP_PASSWORD;
   let authConfig: any;
   if (appPassword) {
-    authConfig = { user: from, pass: appPassword };
+    authConfig = { user: userEmail, pass: appPassword };
   } else {
     // Ensure all OAuth2 ENV vars are present if this path is taken
     if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET || !process.env.GMAIL_REFRESH_TOKEN) {
@@ -47,7 +51,7 @@ export async function sendEmail({ to, subject, body }: EmailArgs): Promise<strin
     }
     authConfig = {
       type: 'OAuth2',
-      user: from,
+      user: userEmail,
       clientId: process.env.GMAIL_CLIENT_ID,
       clientSecret: process.env.GMAIL_CLIENT_SECRET,
       refreshToken: process.env.GMAIL_REFRESH_TOKEN,
@@ -59,10 +63,17 @@ export async function sendEmail({ to, subject, body }: EmailArgs): Promise<strin
     auth: authConfig,
   });
 
-  const mailOptions = { from, to: recipientEmail, subject, text: body };
+  const mailOptions = { from: userEmail, to: recipientEmail, subject, text: body };
 
-  console.log(`Attempting to send email: From: ${from}, To: ${recipientEmail}, Subject: ${subject}`);
-  const info = await transporter.sendMail(mailOptions);
-  console.log('Email sent successfully. SMTP Response:', info.response);
-  return info.response;
+  console.log(`Attempting to send email: From: ${userEmail}, To: ${recipientEmail}, Subject: ${subject}`);
+
+  try {
+    await transporter.sendMail(mailOptions);
+    log(LogLevel.INFO, `Email sent successfully to ${recipientEmail}`);
+    return `Email successfully sent to ${recipientEmail} with subject "${subject}".`;
+  } catch (error: any) {
+    log(LogLevel.ERROR, `Error sending email to ${recipientEmail}: ${error.message}`, { error });
+    // console.error(`Error sending email to ${recipientEmail}:`, error); // Keeping this commented out or remove
+    return `Failed to send email to ${recipientEmail}. Error: ${error.message}`; 
+  }
 } 

@@ -1,66 +1,75 @@
-import { AgentTool } from '../agent';
-import { createAgentTaskSchedule } from '../scheduler/schedulerService';
-import { parseReminderTextAndDate } from '../scheduler/scheduleParser';
-import { ChatOpenAI } from '@langchain/openai'; // For type hint if llm is passed to execute
+import { AgentTool } from "../agent";
+import { log, LogLevel } from '../logger';
+import { createAgentTaskSchedule } from "../scheduler/schedulerService"; // Should be the ONLY import from schedulerService
+import { parseDateString } from "../scheduler/scheduleParser";   // Should be the ONLY import from scheduleParser for date parsing
+
+interface ScheduleAgentTaskArgs {
+  taskPayload: string;
+  timeExpression: string;
+  humanReadableDescription: string;
+}
 
 export const scheduleAgentTask: AgentTool = {
   name: 'scheduleAgentTask',
-  description:
-    'Schedules a task to be performed by the agent at a specified time. Input must be the full natural language request that specifies both the task and the time (e.g., "email me the project status update tomorrow at 9am", "remind me to call support in 3 hours").',
+  description: "Schedules a task for the agent to perform at a specified future time. The agent should provide the core task, a natural language time expression, and a human-readable description.",
   parameters: {
     type: "object",
     properties: {
-      userInput: { 
+      taskPayload: { 
         type: "string", 
-        description: "The full natural language request for scheduling a task, including what to do and when. E.g., 'email me the weather report tomorrow at 6am' or 'remind me to check the project status in 2 hours'." 
+        description: "The core task or query for the agent to execute at the scheduled time (e.g., 'What is the weather in London?', or 'Send an email to mom saying happy birthday.'). This should be the underlying request, stripped of the scheduling instruction itself." 
       },
+      timeExpression: { 
+        type: "string", 
+        description: "A natural language expression for when the task should run (e.g., 'tomorrow at 10am', 'in 2 hours', 'next Monday at noon')." 
+      },
+      humanReadableDescription: { 
+        type: "string", 
+        description: "A brief, human-readable description of the task being scheduled (e.g., 'Check London weather', 'Email mom for birthday')." 
+      }
     },
-    required: ["userInput"],
+    required: ["taskPayload", "timeExpression", "humanReadableDescription"]
   },
-  execute: async (args: { userInput: string }, llm?: ChatOpenAI): Promise<string> => {
-    console.log(`scheduleAgentTask execute with userInput: "${args.userInput}"`);
+  execute: async (args: ScheduleAgentTaskArgs): Promise<string> => {
+    const { taskPayload, timeExpression, humanReadableDescription } = args;
+    log(LogLevel.INFO, '[Tool:scheduleAgentTask] Called', { taskPayload, timeExpression, humanReadableDescription });
+
+    if (!taskPayload || !timeExpression || !humanReadableDescription) {
+      log(LogLevel.WARN, '[Tool:scheduleAgentTask] Missing required arguments.', args);
+      return "Missing required arguments for scheduling. I need a task, a time, and a description.";
+    }
+
+    const scheduleDate = parseDateString(timeExpression);
+
+    if (!scheduleDate) {
+      log(LogLevel.WARN, '[Tool:scheduleAgentTask] Could not parse timeExpression.', { timeExpression });
+      return `Could not understand the time expression: "${timeExpression}". Please try a different phrasing.`;
+    }
+
+    if (scheduleDate.getTime() <= Date.now()) {
+      log(LogLevel.WARN, '[Tool:scheduleAgentTask] Attempted to schedule in the past.', { scheduleDate: scheduleDate.toLocaleString(), timeExpression });
+      return `The specified time (${scheduleDate.toLocaleString()}) is in the past. Please provide a future time.`;
+    }
+
     try {
-      const parsed = parseReminderTextAndDate(args.userInput);
-      if (!parsed) {
-        return 'Could not understand the time or task for the schedule. Please be more specific with your request (e.g., "remind me to X tomorrow at Y").';
-      }
-
-      const { reminderText: taskName, date: scheduleDate } = parsed;
-
-      if (!taskName || !scheduleDate) {
-        return 'Failed to parse the task or date from your request. Please specify what to do and when (e.g., "remind me to X tomorrow at Y").';
-      }
-      
-      if (scheduleDate.getTime() <= Date.now()) {
-        return `The specified time (${scheduleDate.toLocaleString()}) is in the past. Please provide a future time.`;
-      }
-
-      // The taskName is the human-readable description parsed from the input.
-      // For agentIntent, the task_payload will be the original user input that was scheduled.
+      log(LogLevel.DEBUG, '[Tool:scheduleAgentTask] Calling createAgentTaskSchedule', { humanReadableDescription, scheduleDate, taskPayload });
       const reminder = await createAgentTaskSchedule(
-        taskName, 
-        scheduleDate, 
-        args.userInput // task_payload: Use the original full user input for re-processing
+        humanReadableDescription, 
+        scheduleDate,
+        taskPayload 
       );
 
       if (reminder && reminder.id) {
-        let confirmationMessage = `Okay, I've scheduled the task: "${taskName}" for ${scheduleDate.toLocaleString()}. Reminder ID: ${reminder.id}`;
-        const taskNameLower = taskName.toLowerCase();
-        if ((taskNameLower.includes('email') || taskNameLower.includes('send')) && (taskNameLower.includes(' me') || taskNameLower.includes(' my ') || taskNameLower.includes('myself'))) {
-          const userEmail = process.env.USER_EMAIL_ADDRESS;
-          if (userEmail) {
-            confirmationMessage += ` (Note: If this task involves sending an email to "me", it will be attempted to your configured address: ${userEmail}).`;
-          } else {
-            confirmationMessage += ` (Note: If this task involves sending an email to "me", USER_EMAIL_ADDRESS is not set in .env, so it may fail or require a specific recipient).`;
-          }
-        }
+        const confirmationMessage = `Okay, I've scheduled "${humanReadableDescription}" for ${scheduleDate.toLocaleString()}. (ID: ${reminder.id})`;
+        log(LogLevel.INFO, '[Tool:scheduleAgentTask] Task scheduled successfully.', { reminderId: reminder.id, confirmationMessage });
         return confirmationMessage;
       } else {
-        return 'There was an unexpected error scheduling your task. It might be because the time was in the past or another issue occurred.';
+        log(LogLevel.ERROR, '[Tool:scheduleAgentTask] createAgentTaskSchedule returned null or reminder without ID.', { args, reminder });
+        return "There was an unexpected error scheduling your task. Please try again.";
       }
     } catch (error: any) {
-      console.error('Error in scheduleAgentTask:', error);
-      return `Error scheduling task: ${error.message}. Please ensure your request is clear (e.g., "remind me to X tomorrow at Y").`;
+      log(LogLevel.ERROR, '[Tool:scheduleAgentTask] Error during execution:', { errorMessage: error.message, errorStack: error.stack, args });
+      return `Failed to schedule task due to an internal error: ${error.message}`;
     }
-  },
+  }
 }; 
