@@ -1,3 +1,8 @@
+**⚠️ Experimental Software Warning ⚠️**
+
+1.  **This is experimental software.** There is no guarantee that it will work correctly or be maintained. Use at your own risk.
+2.  **OpenAI API Usage & Data Privacy (Alpha Stage):** In its current alpha form, Wooster uses the OpenAI API by default for its core agent and other features. If you enable User Contextual Memory (UCM), this means that data Wooster collects about your interactions and preferences will be sent to OpenAI servers as part of the LLM requests. Wooster is planning an update in the future to accommodate local LLMs for users who prefer to keep their UCM data entirely on their own systems.
+
 # Wooster: Your Agentic CLI Assistant
 
 Wooster is a TypeScript-based, extensible command-line AI assistant. It leverages a Language Model (LLM) to understand your requests, interact with its tools, and access knowledge. Wooster can learn from documents you provide (organized into "Projects"), send emails, schedule tasks, and more. Its capabilities are expanded through a system of agent-callable **Tools**.

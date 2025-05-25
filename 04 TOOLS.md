@@ -5,7 +5,7 @@ This document covers the **tool** layer—functions that Wooster's LLM agent can
 ## Core Tools
 
 1. **`sendEmail({ to, subject, body }): Promise<string>`**
-   - Located in `src/tools/email.ts`.
+   - Located in `src/tools/email.ts`.  
    - Sends an email. (Details about SMTP/OAuth2 can be in the tool's own documentation or comments).
    - The agent uses this tool when the user asks Wooster to compose and send an email.
 

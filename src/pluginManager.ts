@@ -32,10 +32,10 @@ export async function loadPlugins() {
 
   for (const f of files) {
     try {
-      const mod = await import(join(dir, f))
-      const plugin: Plugin = mod.default
+    const mod = await import(join(dir, f))
+    const plugin: Plugin = mod.default
       
-      if (plugin?.name) {
+    if (plugin?.name) {
         const pluginConfigEnabled = config.plugins[plugin.name]
         
         if (pluginConfigEnabled === false) {
@@ -44,7 +44,7 @@ export async function loadPlugins() {
         }
         
         // If pluginConfigEnabled is true or undefined (not in config), load it.
-        plugins.push(plugin)
+      plugins.push(plugin)
         log(LogLevel.INFO, 'Loaded plugin: "%s" (Enabled: %s)', plugin.name, (pluginConfigEnabled === undefined ? 'default (true)' : pluginConfigEnabled.toString()));
         // console.log(`Loaded plugin: ${plugin.name}`)
       } else {
@@ -69,7 +69,7 @@ export async function initPlugins(ctx: PluginContext) {
     if (p.onInit) {
       try {
         log(LogLevel.DEBUG, 'Initializing plugin: "%s"', p.name);
-        await p.onInit(ctx)
+      await p.onInit(ctx)
         log(LogLevel.INFO, 'Plugin "%s" initialized successfully.', p.name);
       } catch (error: any) {
         log(LogLevel.ERROR, 'Error initializing plugin "%s": %s', p.name, error.message, { error });
@@ -89,7 +89,7 @@ export async function handleUserInput(input: string): Promise<string> {
     if (p.onUserInput) {
       try {
         log(LogLevel.DEBUG, 'Plugin "%s" processing onUserInput.', p.name);
-        out = await p.onUserInput(out)
+      out = await p.onUserInput(out)
       } catch (error: any) {
         log(LogLevel.ERROR, 'Error in plugin "%s" onUserInput hook: %s', p.name, error.message, { error });
         // Decide if we should continue or stop processing (for now, continue)
@@ -109,7 +109,7 @@ export async function handleAssistantResponse(resp: string): Promise<void> {
     if (p.onAssistantResponse) {
       try {
         log(LogLevel.DEBUG, 'Plugin "%s" processing onAssistantResponse.', p.name);
-        await p.onAssistantResponse(resp)
+      await p.onAssistantResponse(resp)
       } catch (error: any) {
         log(LogLevel.ERROR, 'Error in plugin "%s" onAssistantResponse hook: %s', p.name, error.message, { error });
       }
