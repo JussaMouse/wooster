@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
-import { log, LogLevel } from '../logger'; // Revert to standard import
+import { log, LogLevel } from '../logger';
+import type { EmailConfig } from '../configLoader'; // Import EmailConfig
 
 export interface EmailArgs {
   to: string;
@@ -7,65 +8,63 @@ export interface EmailArgs {
   body: string;
 }
 
-const USER_PLACEHOLDERS = ['me', 'myemail', 'user@example.com', 'your-email@example.com', 'my email', "user's email", "your_email@example.com"];
+// It's better to have a specific placeholder for "self" that the agent can be instructed to use.
+const SELF_EMAIL_PLACEHOLDER = 'SELF_EMAIL_RECIPIENT';
 
 /**
- * Send an email via Gmail SMTP (App Password or OAuth2).
+ * Send an email using credentials and settings from EmailConfig.
  * Returns the SMTP response string on success.
+ * @param args The email arguments (to, subject, body).
+ * @param config The email configuration from AppConfig.
  */
-export async function sendEmail(args: EmailArgs): Promise<string> {
+export async function sendEmail(args: EmailArgs, config: EmailConfig): Promise<string> {
   const { to, subject, body } = args;
   log(LogLevel.INFO, 'Attempting to send email with tool: sendEmail', { to, subject, bodyLength: body.length });
 
-  console.log(`sendEmail tool called with args: to="${to}", subject="${subject}", body="${body}"`);
-  console.log(`sendEmail: process.env.USER_EMAIL_ADDRESS = "${process.env.USER_EMAIL_ADDRESS}"`);
-  console.log(`sendEmail: process.env.EMAIL_ADDRESS (sender) = "${process.env.EMAIL_ADDRESS}"`);
+  if (!config.enabled) {
+    return 'Email functionality is disabled in the configuration.';
+  }
 
-  const userEmail = process.env.EMAIL_ADDRESS;
-  if (!userEmail) throw new Error('Sender EMAIL_ADDRESS not set in .env');
+  const woosterSendingAddress = config.sendingEmailAddress;
+  if (!woosterSendingAddress) {
+    log(LogLevel.ERROR, 'Wooster sending email address not configured in config.json (email.sendingEmailAddress)');
+    return 'Wooster sending email address not configured. Cannot send email.';
+  }
 
   let recipientEmail = to;
-  if (USER_PLACEHOLDERS.includes(to.toLowerCase())) {
-    const userEmail = process.env.USER_EMAIL_ADDRESS;
-    if (userEmail) {
-      recipientEmail = userEmail;
-      console.log(`Resolved recipient "${to}" to user email: ${recipientEmail}`);
+  if (to.toUpperCase() === SELF_EMAIL_PLACEHOLDER) {
+    if (config.userPersonalEmailAddress) {
+      recipientEmail = config.userPersonalEmailAddress;
+      log(LogLevel.INFO, `Resolved recipient placeholder "${SELF_EMAIL_PLACEHOLDER}" to user's personal email: ${recipientEmail}`);
     } else {
-      throw new Error(`Recipient was "${to}", but USER_EMAIL_ADDRESS is not set in .env. Cannot determine recipient.`);
+      recipientEmail = woosterSendingAddress;
+      log(LogLevel.INFO, `Resolved recipient placeholder "${SELF_EMAIL_PLACEHOLDER}" to Wooster's sending email (userPersonalEmailAddress not set): ${recipientEmail}`);
     }
   }
 
-  // Validate recipientEmail (simple check for @ sign)
   if (!recipientEmail || !recipientEmail.includes('@')) {
-    throw new Error(`Invalid or unresolved recipient email address: "${recipientEmail}"`);
+    log(LogLevel.ERROR, `Invalid or unresolved recipient email address: "${recipientEmail}"`);
+    return `Invalid or unresolved recipient email address: "${recipientEmail}"`;
   }
 
-  const appPassword = process.env.EMAIL_APP_PASSWORD;
   let authConfig: any;
-  if (appPassword) {
-    authConfig = { user: userEmail, pass: appPassword };
+  if (config.emailAppPassword) {
+    authConfig = { user: woosterSendingAddress, pass: config.emailAppPassword };
   } else {
-    // Ensure all OAuth2 ENV vars are present if this path is taken
-    if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET || !process.env.GMAIL_REFRESH_TOKEN) {
-      throw new Error('OAuth2 credentials (GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN) are not fully set in .env, and EMAIL_APP_PASSWORD is also missing.');
-    }
-    authConfig = {
-      type: 'OAuth2',
-      user: userEmail,
-      clientId: process.env.GMAIL_CLIENT_ID,
-      clientSecret: process.env.GMAIL_CLIENT_SECRET,
-      refreshToken: process.env.GMAIL_REFRESH_TOKEN,
-    };
+    // Add OAuth2 logic here if you re-introduce those fields in EmailConfig
+    // For now, only App Password is directly supported from the config structure.
+    log(LogLevel.ERROR, 'Email app password not configured in config.json (email.emailAppPassword)');
+    return 'Email sending requires an app password to be configured. OAuth2 not yet supported via this config.';
   }
 
   const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    service: 'gmail', // This might need to be configurable if supporting other services
     auth: authConfig,
   });
 
-  const mailOptions = { from: userEmail, to: recipientEmail, subject, text: body };
+  const mailOptions = { from: woosterSendingAddress, to: recipientEmail, subject, text: body };
 
-  console.log(`Attempting to send email: From: ${userEmail}, To: ${recipientEmail}, Subject: ${subject}`);
+  log(LogLevel.INFO, `Attempting to send email: From: ${woosterSendingAddress}, To: ${recipientEmail}, Subject: ${subject}`);
 
   try {
     await transporter.sendMail(mailOptions);
@@ -73,7 +72,6 @@ export async function sendEmail(args: EmailArgs): Promise<string> {
     return `Email successfully sent to ${recipientEmail} with subject "${subject}".`;
   } catch (error: any) {
     log(LogLevel.ERROR, `Error sending email to ${recipientEmail}: ${error.message}`, { error });
-    // console.error(`Error sending email to ${recipientEmail}:`, error); // Keeping this commented out or remove
-    return `Failed to send email to ${recipientEmail}. Error: ${error.message}`; 
+    return `Failed to send email to ${recipientEmail}. Error: ${error.message}`;
   }
 } 

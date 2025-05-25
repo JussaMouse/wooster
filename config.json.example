@@ -1,0 +1,25 @@
+{
+  "openai": {
+    "apiKey": "YOUR_OPENAI_API_KEY_HERE",
+    "modelName": "gpt-4o-mini"
+  },
+  "logging": {
+    "consoleLogLevel": "INFO",
+    "fileLogLevel": "INFO",
+    "logFile": "wooster_session.log",
+    "logAgentLLMInteractions": false
+  },
+  "email": {
+    "enabled": false,
+    "sendingEmailAddress": "wooster_sender@example.com",
+    "userPersonalEmailAddress": "user_personal_email@example.com",
+    "emailAppPassword": "your_email_app_password_if_using_gmail"
+  },
+  "ucm": {
+    "enabled": false,
+    "extractorLlmPrompt": null
+  },
+  "plugins": {
+    "examplePlugin": true
+  }
+} 

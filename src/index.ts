@@ -1,4 +1,3 @@
-import 'dotenv/config'
 import readline from 'readline'
 import fs from 'fs'
 import path from 'path'
@@ -8,11 +7,12 @@ import { ChatOpenAI } from '@langchain/openai'
 // import type { BaseLanguageModel } from '@langchain/core/language_models/base'
 
 // import { addNode } from './memorySql'
-import { initVectorStore, initUserContextStore, addUserFactToContextStore, USER_CONTEXT_VECTOR_STORE_PATH } from './memoryVector'
+import { initUserContextStore, addUserFactToContextStore } from './memoryVector'
 import { initializeUserKnowledgeExtractor, extractUserKnowledge } from './userKnowledgeExtractor'
 import { setUserContextStore as setUCMStoreForTool } from "./tools/userContextTool"
 // import { buildRagChain } from './ragChain'
-import { agentRespond, availableTools } from './agent'
+import { agentRespond, setAgentConfig, getCurrentAvailableTools } from './agent'
+import type { AgentTool } from './agent'
 import {
   loadPlugins,
   initPlugins,
@@ -25,7 +25,7 @@ import { initDatabase as initSchedulerDB } from './scheduler/reminderRepository'
 import { initSchedulerService } from './scheduler/schedulerService'
 import { initHeartbeatService, stopHeartbeatService } from './heartbeat'
 import { loadConfig, getConfig, AppConfig } from './configLoader'
-import { initLogger, log, LogLevel } from './logger'
+import { bootstrapLogger, applyLoggerConfig, log, LogLevel, logLLMInteraction } from './logger'
 // Removed placeholder imports: яйцо, 간단한툴, وزارة_الداخلية, списокИнструментов
 
 import { createRetrievalChain } from 'langchain/chains/retrieval'
@@ -41,7 +41,7 @@ let ragChain: any
 let llm: ChatOpenAI
 let currentProjectName: string | null = null
 let conversationHistory: (HumanMessage | AIMessage)[] = []
-let config: AppConfig; // Declare module-scoped config
+let appConfig: AppConfig; // Renamed from 'config' to avoid confusion with parameter name
 
 // Prompts moved to module scope
 const historyAwarePrompt = ChatPromptTemplate.fromMessages([
@@ -57,39 +57,40 @@ const answerPrompt = ChatPromptTemplate.fromMessages([
 ])
 
 async function main() {
-  initLogger(); // Initialize logger first
+  bootstrapLogger(); // Bootstrap logger for very early messages
+  // dotenv/config is already loaded at the top for any early .env access
 
-  const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) {
-    // console.error('Error: Missing OPENAI_API_KEY in .env')
-    log(LogLevel.ERROR, 'Error: Missing OPENAI_API_KEY in .env');
-    process.exit(1)
+  loadConfig(); // Load configuration from config.json
+  appConfig = getConfig(); // Initialize module-scoped config
+
+  applyLoggerConfig(appConfig.logging); // Apply full logger config
+
+  log(LogLevel.INFO, 'Starting Wooster...', { initialConfig: appConfig });
+
+  // Validate essential OpenAI configuration
+  if (!appConfig.openai.apiKey || appConfig.openai.apiKey === 'YOUR_OPENAI_API_KEY_HERE') {
+    log(LogLevel.ERROR, 'Critical: Missing or placeholder OpenAI API key in config.json (openai.apiKey). Please set it.');
+    process.exit(1);
   }
-  loadConfig(); // Load configuration first
-  config = getConfig(); // Initialize module-scoped config
-  // initFileLogger() // Initialize logger (logger itself might use config later)
 
-  // console.log('Starting Wooster...', { initialConfig: config }); 
-  log(LogLevel.INFO, 'Starting Wooster...', { initialConfig: config });
-
-  llm = new ChatOpenAI({ apiKey, modelName: process.env.OPENAI_MODEL_NAME || "gpt-3.5-turbo", temperature: 0.2 })
-  // console.log('ChatOpenAI LLM initialized.');
+  llm = new ChatOpenAI({
+    apiKey: appConfig.openai.apiKey,
+    modelName: appConfig.openai.modelName || "gpt-4o-mini", // Default if not in config
+    temperature: 0.2 
+  });
   log(LogLevel.INFO, 'ChatOpenAI LLM initialized with model: %s', llm.modelName);
+  setAgentConfig(appConfig); // Pass full config to agent for its own needs (e.g. logging LLM interactions)
 
   initializeUserKnowledgeExtractor(llm)
-  // console.log('UserKnowledgeExtractor initialized.');
   log(LogLevel.INFO, 'UserKnowledgeExtractor initialized.');
 
   initSchedulerDB()
-  // console.log('Scheduler database initialized.');
   log(LogLevel.INFO, 'Scheduler database initialized.');
 
   await initSchedulerService(schedulerAgentCallback)
-  // console.log('Scheduler service initialized.');
   log(LogLevel.INFO, 'Scheduler service initialized.');
 
   initHeartbeatService()
-  // console.log('Heartbeat service initialized.');
   log(LogLevel.INFO, 'Heartbeat service initialized.');
 
   // Ensure 'home' project directory exists
@@ -114,13 +115,11 @@ async function main() {
     process.exit(1); // Critical failure if default project store can't load
   }
 
-  if (config.ucm.enabled) {
+  if (appConfig.ucm.enabled) {
     userContextStore = await initUserContextStore()
     setUCMStoreForTool(userContextStore)
-    // console.log('User Context Memory (UCM) store initialized and set for tool because ucm.enabled is true.');
     log(LogLevel.INFO, 'User Context Memory (UCM) store initialized and set for tool because ucm.enabled is true.');
   } else {
-    // console.log('User Context Memory (UCM) is disabled via config.ucm.enabled = false.');
     log(LogLevel.INFO, 'User Context Memory (UCM) is disabled via config.ucm.enabled = false.');
     // Ensure ucmStore is not used if disabled; tools should handle it being null.
     // setUserContextStore in userContextTool already sets a global `ucmStore` which defaults to null.
@@ -128,20 +127,16 @@ async function main() {
   }
 
   await initializeRagChain()
-  // console.log('RAG chain initialized.');
   log(LogLevel.INFO, 'RAG chain initialized.');
 
   await loadPlugins()
-  // console.log('Plugins loaded.');
   log(LogLevel.INFO, 'Plugins loaded.');
 
-  await initPlugins({ apiKey, vectorStore, ragChain })
-  // console.log('Plugins initialized.');
+  await initPlugins({ apiKey: appConfig.openai.apiKey, vectorStore, ragChain })
   log(LogLevel.INFO, 'Plugins initialized.');
 
   // Start interactive REPL
   startREPL()
-  // console.log('REPL started. Wooster operational.');
   log(LogLevel.INFO, 'REPL started. Wooster operational.');
 }
 
@@ -162,8 +157,7 @@ function startREPL() {
   rl.prompt()
   rl.on('line', async (line) => {
     const input = line.trim()
-    // console.log(`User input: ${input}`);
-    log(LogLevel.INFO, 'User input: %s', input); // Use %s for string formatting with util.format
+    log(LogLevel.INFO, 'User input: %s', input);
     conversationHistory.push(new HumanMessage(input))
     // Cap history to last 10 messages (5 pairs)
     if (conversationHistory.length > 10) {
@@ -172,7 +166,6 @@ function startREPL() {
 
     if (input.toLowerCase() === 'exit' || input.toLowerCase() === 'quit') {
       stopHeartbeatService()
-      // console.log('Exit command received. Shutting down Wooster...');
       log(LogLevel.INFO, 'Exit command received. Shutting down Wooster...');
       rl.close()
       return
@@ -291,14 +284,14 @@ function startREPL() {
         pluginNames.forEach(name => log(LogLevel.INFO, '- %s', name));
       }
     } else if (input.toLowerCase() === 'list tools') {
-      if (availableTools.length === 0) {
-        // console.log("No tools currently available to the agent.")
-        log(LogLevel.INFO, "No tools currently available to the agent.");
+      const currentTools: AgentTool[] = getCurrentAvailableTools();
+      if (currentTools.length === 0) {
+        log(LogLevel.INFO, "No tools currently available to the agent based on configuration.");
       } else {
-        // console.log("Available agent tools:")
-        // availableTools.forEach(t => console.log(`- ${t.name}: ${t.description}`))
         log(LogLevel.INFO, "Available agent tools:");
-        availableTools.forEach(t => log(LogLevel.INFO, '- %s: %s', t.name, t.description));
+        currentTools.forEach((t: AgentTool) => {
+          log(LogLevel.INFO, '- %s: %s', t.name, t.description);
+        });
       }
     } else {
       if (!ragChain) {
@@ -325,7 +318,7 @@ function startREPL() {
         conversationHistory.push(new AIMessage(response))
 
         // UCM Learning Step (only if UCM is enabled)
-        if (config.ucm.enabled && userContextStore) { 
+        if (appConfig.ucm.enabled && userContextStore) { 
           try {
             const userFact = await extractUserKnowledge(input, response, currentProjectName);
             if (userFact) {
@@ -337,7 +330,7 @@ function startREPL() {
             // console.error("Error during UCM processing:", ucmError);
             log(LogLevel.ERROR, 'Error during UCM processing: %s', ucmError.message ? ucmError.message : ucmError);
           }
-        } else if (config.ucm.enabled && !userContextStore) {
+        } else if (appConfig.ucm.enabled && !userContextStore) {
             // console.warn("UCM is enabled in config, but userContextStore is not initialized. Skipping UCM learning step.");
             log(LogLevel.WARN, "UCM is enabled in config, but userContextStore is not initialized. Skipping UCM learning step.");
         }

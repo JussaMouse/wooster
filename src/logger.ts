@@ -1,67 +1,70 @@
 import fs from 'fs';
 import path from 'path';
 import util from 'util'; // For formatting arguments like console.log does
+import type { LoggingConfig } from './configLoader'; // Import LoggingConfig
+import { LogLevel as ConfigLogLevel } from './configLoader'; // Import LogLevel from configLoader
 
-// LogLevel Enum defined directly in the logger file
-export enum LogLevel {
-  DEBUG = 0,
-  INFO = 1,
-  WARN = 2,
-  ERROR = 3,
-}
+// Use LogLevel from configLoader to ensure consistency
+export const LogLevel = ConfigLogLevel;
+export type LogLevel = ConfigLogLevel;
 
-// Mapping LogLevel to string names for output
-const LOG_LEVEL_NAMES: Record<LogLevel, string> = {
-  [LogLevel.DEBUG]: 'DEBUG',
-  [LogLevel.INFO]: 'INFO',
-  [LogLevel.WARN]: 'WARN',
-  [LogLevel.ERROR]: 'ERROR',
-};
+// Mapping LogLevel to string names for output (already string-based with ConfigLogLevel)
+// const LOG_LEVEL_NAMES: Record<LogLevel, string> = {
+//   [LogLevel.DEBUG]: 'DEBUG',
+//   [LogLevel.INFO]: 'INFO',
+//   [LogLevel.WARN]: 'WARN',
+//   [LogLevel.ERROR]: 'ERROR',
+// };
 
-let configuredLogLevel: LogLevel = LogLevel.INFO; // Default log level
-let logFilePath: string | null = null;
+let configuredConsoleLogLevel: LogLevel = LogLevel.INFO; // Default console log level
+let configuredFileLogLevel: LogLevel = LogLevel.INFO;    // Default file log level
+let currentLogFile: string | null = null;
+let logAgentLLMInteractionsEnabled = false;
 
 /**
- * Initializes the logger based on environment variables.
- * Should be called once at application startup.
+ * Initial, minimal logger setup from environment variables.
+ * This is for messages before config.json is loaded.
+ * Console logging only at this stage.
  */
-export function initLogger() {
-  const envLogLevel = process.env.LOG_LEVEL?.toUpperCase();
-  if (envLogLevel) {
-    const levelKey = envLogLevel as keyof typeof LogLevel; // e.g., "DEBUG"
-    // Check if the string key exists in the LogLevel enum (e.g., LogLevel["DEBUG"] is 0)
-    // And also ensure it's a string key, not a reverse-mapped number key
-    if (typeof LogLevel[levelKey] === 'number') { 
-      configuredLogLevel = LogLevel[levelKey];
-    }
+export function bootstrapLogger() {
+  const envConsoleLogLevel = process.env.LOG_LEVEL?.toUpperCase();
+  if (envConsoleLogLevel && ConfigLogLevel[envConsoleLogLevel as keyof typeof ConfigLogLevel]) {
+    configuredConsoleLogLevel = ConfigLogLevel[envConsoleLogLevel as keyof typeof ConfigLogLevel];
   }
+  console.log(`[${new Date().toISOString()}] [INFO] Logger bootstrapped. Initial console Loglevel: ${configuredConsoleLogLevel}. Full config pending.`);
+}
 
-  const envLogFile = process.env.LOG_FILE;
-  if (envLogFile) {
-    // Default to a 'logs' directory if only a filename is given
-    if (!path.isAbsolute(envLogFile) && !envLogFile.includes(path.sep)) {
-      logFilePath = path.resolve(process.cwd(), 'logs', envLogFile);
+/**
+ * Applies the full logging configuration from the loaded AppConfig.
+ * This should be called after config.json is parsed.
+ * @param config The logging configuration object.
+ */
+export function applyLoggerConfig(config: LoggingConfig): void {
+  configuredConsoleLogLevel = config.consoleLogLevel || LogLevel.INFO;
+  configuredFileLogLevel = config.fileLogLevel || LogLevel.INFO;
+  logAgentLLMInteractionsEnabled = config.logAgentLLMInteractions || false;
+
+  if (config.logFile) {
+    if (!path.isAbsolute(config.logFile) && !config.logFile.includes(path.sep)) {
+      currentLogFile = path.resolve(process.cwd(), 'logs', config.logFile);
     } else {
-      logFilePath = path.resolve(process.cwd(), envLogFile);
+      currentLogFile = path.resolve(process.cwd(), config.logFile);
     }
-    
-    // Ensure the logs directory exists
-    const logDir = path.dirname(logFilePath);
+
+    const logDir = path.dirname(currentLogFile);
     if (!fs.existsSync(logDir)) {
       try {
         fs.mkdirSync(logDir, { recursive: true });
       } catch (err) {
-        // Use console.error for this critical bootstrap phase message
-        console.error(`[${new Date().toISOString()}] [ERROR] Failed to create log directory: ${logDir}. File logging will be disabled.`, err);
-        logFilePath = null; // Disable file logging if dir creation fails
+        console.error(`[${new Date().toISOString()}] [ERROR] Failed to create log directory: ${logDir}. File logging will be disabled. Error: ${util.format(err)}`);
+        currentLogFile = null;
       }
     }
-    // Initial message to console, as logger.log isn't ready/appropriate here for its own init message.
-    console.log(`Logger Initialized. Console Level: ${LOG_LEVEL_NAMES[configuredLogLevel]}. File Logging to: ${logFilePath ? logFilePath : 'DISABLED'}`);
-
   } else {
-    console.log(`Logger Initialized. Console Level: ${LOG_LEVEL_NAMES[configuredLogLevel]}. File logging disabled (LOG_FILE env var not set).`);
+    currentLogFile = null; // Explicitly disable file logging if logFile is null/empty
   }
+  // Log the finalized configuration
+  log(LogLevel.INFO, `Logger fully configured. Console Loglevel: ${configuredConsoleLogLevel}, File Loglevel: ${configuredFileLogLevel}, File Path: ${currentLogFile || 'DISABLED'}, Log Agent LLM Interactions: ${logAgentLLMInteractionsEnabled}`);
 }
 
 /**
@@ -71,38 +74,59 @@ export function initLogger() {
  * @param args Additional arguments to format into the message string (like console.log).
  */
 export function log(level: LogLevel, message: string, ...args: any[]) {
-  if (level < configuredLogLevel) {
-    return; // Skip logging if the message's level is below the configured level
-  }
-
   const timestamp = new Date().toISOString();
-  const levelName = LOG_LEVEL_NAMES[level] || 'LOG'; // Fallback, though should always be found
+  // LogLevel is already a string, e.g., "INFO"
+  const fullLogMessage = `[${timestamp}] [${level}] ${util.format(message, ...args)}`;
+
+  // Console logging
+  // Convert string LogLevel from config to numeric for comparison if needed, or compare strings directly
+  // For simplicity, we'll rely on the direct string values from the enum
+  const levelOrder = { [LogLevel.DEBUG]: 0, [LogLevel.INFO]: 1, [LogLevel.WARN]: 2, [LogLevel.ERROR]: 3 };
   
-  const formattedMessageContent = util.format(message, ...args);
-  const fullLogMessage = `[${timestamp}] [${levelName}] ${formattedMessageContent}`;
-
-  switch (level) {
-    case LogLevel.DEBUG:
-      console.debug(fullLogMessage);
-      break;
-    case LogLevel.INFO:
-      console.info(fullLogMessage);
-      break;
-    case LogLevel.WARN:
-      console.warn(fullLogMessage);
-      break;
-    case LogLevel.ERROR:
-      console.error(fullLogMessage);
-      break;
-    default:
-      console.log(fullLogMessage); 
-  }
-
-  if (logFilePath) {
-    try {
-      fs.appendFileSync(logFilePath, fullLogMessage + '\n', { encoding: 'utf8' });
-    } catch (err) {
-      console.error(`[${new Date().toISOString()}] [ERROR] Failed to write to log file ${logFilePath}:`, err);
+  if (levelOrder[level] >= levelOrder[configuredConsoleLogLevel]) {
+    switch (level) {
+      case LogLevel.DEBUG:
+        console.debug(fullLogMessage);
+        break;
+      case LogLevel.INFO:
+        console.info(fullLogMessage);
+        break;
+      case LogLevel.WARN:
+        console.warn(fullLogMessage);
+        break;
+      case LogLevel.ERROR:
+        console.error(fullLogMessage);
+        break;
+      default:
+        console.log(fullLogMessage); 
     }
   }
-} 
+
+  // File logging
+  if (currentLogFile && (levelOrder[level] >= levelOrder[configuredFileLogLevel])) {
+    try {
+      fs.appendFileSync(currentLogFile, fullLogMessage + '\n', { encoding: 'utf8' });
+    } catch (err) {
+      // Avoid recursive log calls on file write error
+      console.error(`[${new Date().toISOString()}] [ERROR] Failed to write to log file ${currentLogFile}: ${util.format(err)}`);
+    }
+  }
+}
+
+/**
+ * Special logger for agent LLM interactions, controlled by a specific config flag.
+ * @param message The message string (can include format specifiers).
+ * @param args Additional arguments to format into the message string.
+ */
+export function logLLMInteraction(message: string, ...args: any[]) {
+  if (!logAgentLLMInteractionsEnabled) {
+    return;
+  }
+  // Log LLM interactions typically at DEBUG level or a dedicated level if desired.
+  // For now, we'll just use a prefix and log through the main log function at DEBUG level.
+  const formattedMessage = util.format(message, ...args);
+  log(LogLevel.DEBUG, `[LLM_INTERACTION] ${formattedMessage}`);
+}
+
+// Remove old initLogger as its functionality is split between bootstrapLogger and applyLoggerConfig
+// export function initLogger() { ... } 

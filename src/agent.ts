@@ -3,12 +3,13 @@ import type { FaissStore } from '@langchain/community/vectorstores/faiss';
 import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
 import type { BaseLanguageModel } from '@langchain/core/language_models/base';
 import type { ChatPromptTemplate } from "@langchain/core/prompts";
-import { log, LogLevel } from './logger'; // Import new logger
+import { log, LogLevel, logLLMInteraction } from './logger'; // Import new logger
+import type { AppConfig, EmailConfig } from './configLoader'; // Import AppConfig
 // Logger and config imports related to logging removed
 // import { getConfig } from './configLoader';
 
 // Import actual tool functions
-import { sendEmail, EmailArgs } from './tools/email';
+import { sendEmail as sendEmailActual, EmailArgs } from './tools/email';
 import { scheduleAgentTask } from './tools/scheduler'; // Import the new tool
 import { recallUserContextFunc } from "./tools/userContextTool"; // Import UCM tool function
 // import { listFiles } from './tools/filesystem'; // Assuming you will create this
@@ -26,27 +27,57 @@ export interface AgentTool {
 // Placeholder for RAG chain type
 type RagChain = (input: string) => Promise<string>;
 
-// Available tools for the agent
-// TODO: Dynamically load tools?
-export const availableTools: AgentTool[] = [
-  {
-    name: 'sendEmail',
-    description: 'Sends an email *immediately*. Use this only if the user requests an email to be sent now, without specifying a future time or delay. If a future time is mentioned, use scheduleAgentTask instead.',
-    parameters: {
-      type: "object",
-      properties: {
-        to: { type: "string", description: "The recipient email address. If the user says 'me' or 'my email', this tool will attempt to use a pre-configured user email. Otherwise, the specific email address is required." },
-        subject: { type: "string", description: "The subject of the email." },
-        body: { type: "string", description: "The body content of the email." },
+// Module-scoped variable to hold the loaded application configuration
+let agentAppConfig: AppConfig | null = null;
+
+/**
+ * Sets the application configuration for the agent module.
+ * Called once from index.ts after config is loaded.
+ */
+export function setAgentConfig(config: AppConfig): void {
+  agentAppConfig = config;
+  log(LogLevel.INFO, "Agent configuration set.");
+}
+
+// Function to dynamically get available tools based on configuration
+function getAvailableTools(): AgentTool[] {
+  if (!agentAppConfig) {
+    log(LogLevel.ERROR, "Agent configuration not set. Cannot determine available tools.");
+    return []; // Or throw an error
+  }
+
+  const tools: AgentTool[] = [];
+
+  // Email Tool (conditional)
+  if (agentAppConfig.email.enabled && agentAppConfig.email.sendingEmailAddress && agentAppConfig.email.emailAppPassword) {
+    tools.push({
+      name: 'sendEmail',
+      description: 'Sends an email *immediately*. Use this only if the user requests an email to be sent now, without specifying a future time or delay. If a future time is mentioned, use scheduleAgentTask instead. To send to yourself (i.e., your configured userPersonalEmailAddress, or sendingEmailAddress if the former is not set), use "SELF_EMAIL_RECIPIENT" as the recipient.',
+      parameters: {
+        type: "object",
+        properties: {
+          to: { type: "string", description: "The recipient email address. Use 'SELF_EMAIL_RECIPIENT' to send to your configured personal email address." },
+          subject: { type: "string", description: "The subject of the email." },
+          body: { type: "string", description: "The body content of the email." },
+        },
+        required: ["to", "subject", "body"],
       },
-      required: ["to", "subject", "body"],
-    },
-    execute: async (args: EmailArgs) => sendEmail(args), 
-  },
-  scheduleAgentTask,
-  {
+      execute: async (args: EmailArgs) => {
+        if (!agentAppConfig) throw new Error("Agent config not available for sendEmail"); // Should not happen if tool is added
+        return sendEmailActual(args, agentAppConfig.email);
+      },
+    });
+  } else {
+    log(LogLevel.INFO, "Email tool not available because it is not enabled or fully configured in config.json.");
+  }
+
+  // Scheduler Tool (always available if defined)
+  tools.push(scheduleAgentTask); 
+
+  // Knowledge Base Tool
+  tools.push({
     name: 'queryKnowledgeBase',
-    description: "Queries Wooster's internal knowledge base (documents, previous conversations) to find information. Use this when you need to answer a question based on available documents or to get context before performing another action.",
+    description: "Queries Wooster's internal knowledge base (documents from the active project) to find information. Use this when you need to answer a question based on available documents or to get context before performing another action.",
     parameters: {
       type: "object",
       properties: {
@@ -62,8 +93,10 @@ export const availableTools: AgentTool[] = [
       log(LogLevel.INFO, 'Agent using tool: queryKnowledgeBase with query: "%s"', args.queryString);
       return ragChain(args.queryString);
     },
-  },
-  {
+  });
+
+  // UCM Recall Tool (always available, function itself checks UCM store)
+  tools.push({
     name: "recall_user_context",
     description: "Use this tool to retrieve stored preferences, facts, or directives previously stated by the user that could be relevant for personalizing the current response or action. Query with a concise topic, e.g., 'email formality preferences' or 'project X deadlines'.",
     parameters: {
@@ -74,9 +107,18 @@ export const availableTools: AgentTool[] = [
       required: ["topic"],
     },
     execute: async (args: { topic: string }) => recallUserContextFunc(args),
-  }
-  // Add other tools like listFiles here once they are created in src/tools/
-];
+  });
+  
+  return tools;
+}
+
+// Export a function for external modules (like index.ts for 'list tools') to get the current list.
+export function getCurrentAvailableTools(): AgentTool[] {
+    return getAvailableTools();
+}
+
+// Keep the old export for now if something else imports it, but it might become unused.
+// export const availableTools: AgentTool[] = []; // Will be dynamically generated
 
 export async function agentRespond(
   userInput: string,
@@ -85,13 +127,26 @@ export async function agentRespond(
   promptTemplate?: ChatPromptTemplate, // Optional, for more complex agent prompting
   isScheduledTaskExecution: boolean = false // New parameter
 ): Promise<string> {
+  if (!agentAppConfig) {
+    log(LogLevel.ERROR, "Agent configuration not set. Agent cannot respond.");
+    return "Error: Agent is not properly configured.";
+  }
+
   log(LogLevel.INFO, 'Agent received input for processing: "%s"', userInput, { isScheduledTask: isScheduledTaskExecution });
   if (isScheduledTaskExecution) {
     log(LogLevel.INFO, "Agent is executing a scheduled task.");
   }
 
+  const currentAvailableTools = getAvailableTools();
+  if (currentAvailableTools.length === 0 && !isScheduledTaskExecution) {
+      // If no tools are available (e.g. email not configured) and it's not a scheduled task (which might not need tools other than scheduler implicitly),
+      // we might just go straight to RAG or simple LLM response.
+      // For now, let it proceed, but this is a point of consideration.
+      log(LogLevel.WARN, "No agent tools are currently available based on configuration.");
+  }
+
   const llmWithTools = llm.bindTools(
-    availableTools.map(tool => ({
+    currentAvailableTools.map(tool => ({
       type: "function" as const,
       function: {
         name: tool.name,
@@ -108,66 +163,45 @@ export async function agentRespond(
 
   if (promptTemplate) {
     const formattedMessages = await promptTemplate.formatMessages({ input: userInput });
-    // Assuming formatMessages returns an array of message-like objects
-    // We need to ensure they are of the correct type for 'invoke'
-    // For simplicity, let's assume they are compatible or convert them
-    // This part might need adjustment based on actual ChatPromptTemplate output structure
     messages = messages.concat(formattedMessages as (HumanMessage | AIMessage | SystemMessage)[]);
   } else {
     messages.push(new HumanMessage(userInput));
   }
   
-  // Ensure history (if any from promptTemplate) and current HumanMessage are included
-  // If promptTemplate doesn't exist, messages will just be [SystemMessage (optional), HumanMessage]
-  // If promptTemplate exists, its messages will be added.
-
+  if (agentAppConfig.logging.logAgentLLMInteractions) {
+    logLLMInteraction("LLM Invocation with messages:", JSON.stringify(messages, null, 2));
+  }
   const responseMessage = await llmWithTools.invoke(messages);
-  log(LogLevel.DEBUG, "[Agent LLM Interaction] Response received from LLM.", 
-    { 
-      hasContent: !!responseMessage.content,
-      toolCallCount: responseMessage.tool_calls?.length || 0,
-      firstToolName: responseMessage.tool_calls?.[0]?.name 
-    });
-
+  
+  if (agentAppConfig.logging.logAgentLLMInteractions) {
+    logLLMInteraction("LLM Response message:", JSON.stringify(responseMessage, null, 2));
+  }
+  
   const toolCalls = responseMessage.tool_calls;
 
   if (toolCalls && toolCalls.length > 0) {
+    // Prioritize scheduleAgentTask if it's called among others (though usually it's exclusive)
     const scheduleToolCall = toolCalls.find(tc => tc.name === 'scheduleAgentTask');
+    const toolToExecuteCall = scheduleToolCall || toolCalls[0]; // Execute scheduler first if present
 
-    if (scheduleToolCall) {
-      log(LogLevel.INFO, 'Agent prioritizing tool: %s with args: %j', scheduleToolCall.name, scheduleToolCall.args);
-      const schedulerTool = availableTools.find(t => t.name === 'scheduleAgentTask');
-      if (schedulerTool) {
-        try {
-          const toolResult = await schedulerTool.execute(scheduleToolCall.args, llm, ragChain);
-          log(LogLevel.INFO, 'Tool %s executed successfully. Result: %s', scheduleToolCall.name, toolResult);
-          return toolResult;
-        } catch (error: any) {
-          log(LogLevel.ERROR, 'Error executing scheduled tool %s. Args: %j', scheduleToolCall.name, scheduleToolCall.args, error);
-          return `Error during scheduled tool execution: ${error.message}`;
-        }
-      } else {
-           log(LogLevel.ERROR, "Scheduler tool 'scheduleAgentTask' not found in availableTools.");
-           return "I tried to use the scheduler tool, but I couldn't find it.";
+    const selectedTool = currentAvailableTools.find(t => t.name === toolToExecuteCall.name);
+
+    if (selectedTool) {
+      log(LogLevel.INFO, 'Agent selected tool: %s with args: %j', selectedTool.name, toolToExecuteCall.args);
+      try {
+        const toolResult = await selectedTool.execute(toolToExecuteCall.args, llm, ragChain);
+        log(LogLevel.INFO, 'Tool %s executed successfully. Result: %s', selectedTool.name, toolResult);
+        // If the primary tool was the scheduler, we usually return its result directly.
+        // If other tools were called (should be rare if scheduler is also called), this logic might need refinement
+        // or the LLM should be prompted to make only one *primary* tool call.
+        return toolResult;
+      } catch (error: any) {
+        log(LogLevel.ERROR, 'Error executing tool %s. Args: %j', selectedTool.name, toolToExecuteCall.args, error);
+        return `Error during tool execution: ${error.message}`;
       }
     } else {
-      const toolCall = toolCalls[0];
-      const selectedTool = availableTools.find(t => t.name === toolCall.name);
-
-      if (selectedTool) {
-        log(LogLevel.INFO, 'Agent selected tool: %s with args: %j', selectedTool.name, toolCall.args);
-        try {
-          const toolResult = await selectedTool.execute(toolCall.args, llm, ragChain);
-          log(LogLevel.INFO, 'Tool %s executed successfully. Result: %s', selectedTool.name, toolResult);
-          return toolResult;
-        } catch (error: any) {
-          log(LogLevel.ERROR, 'Error executing tool %s. Args: %j', selectedTool.name, toolCall.args, error);
-          return `Error during tool execution: ${error.message}`;
-        }
-      } else {
-        log(LogLevel.ERROR, 'Tool %s called by LLM but not found in availableTools.', toolCall.name);
-        return "I tried to use a tool, but I couldn't find the right one.";
-      }
+      log(LogLevel.ERROR, 'Tool %s called by LLM but not found in availableTools.', toolToExecuteCall.name);
+      return "I tried to use a tool, but I couldn't find the right one based on current configuration.";
     }
   } else if (responseMessage.content && typeof responseMessage.content === 'string') {
     log(LogLevel.INFO, "Agent providing direct LLM response (no tool called).");
