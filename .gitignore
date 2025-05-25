@@ -14,11 +14,12 @@ logs/ # Wooster specific session logs
 *.log
 
 # SQLite database files
-# Used by scheduler and heartbeat
-memory.db
-memory.db-journal*
-memory.db-shm
-memory.db-wal
+# All database files (e.g., memory.db, scheduler.sqlite3) and their
+# associated temporary files (-journal, -shm, -wal) should be placed
+# within the 'database/' directory, which is ignored.
+database/
+*.db
+*/*.db
 
 # Vector data storage
 vector_data/
