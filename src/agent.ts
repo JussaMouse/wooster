@@ -1,6 +1,6 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, AIMessage, SystemMessage, BaseMessage } from "@langchain/core/messages";
-import { executeAgent } from "../agentExecutorService";
+import { executeAgent } from "./agentExecutorService";
 // import { PromptTemplate } from "@langchain/core/prompts"; // Less likely needed for this direct tool use pattern
 // import { ToolExecutor } from "@langchain/langgraph/prebuilt"; // REMOVE
 // import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents"; // REMOVE

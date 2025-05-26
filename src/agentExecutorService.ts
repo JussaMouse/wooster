@@ -190,7 +190,7 @@ async function initializeTools() {
   });
 
   tools = Array.from(allToolsMap.values());
-  log(LogLevel.INFO, "AgentExecutorService: Total tools initialized: %d. Tool names: %s", tools.length, tools.map(t => t.name).join(', '));
+  log(LogLevel.INFO, "AgentExecutorService: Total tools initialized: %d. Tool names: %s", tools.length, tools.map(t => `${t.name} (desc: ${t.description.substring(0, 70)}...)`).join('\n'));
 }
 
 async function getAgentExecutor(): Promise<AgentExecutor> {
@@ -249,8 +249,7 @@ export async function initializeAgentExecutorService(
     projectVectorStoreInstance = projectStore;
     log(LogLevel.INFO, "AgentExecutorService: Project Vector Store initialized with FaissStore.");
   }
-  await initializeTools();
-  await getAgentExecutor();
+  // Ensure tools are not initialized here, but lazily by getAgentExecutor later
 }
 
 export async function executeAgent(

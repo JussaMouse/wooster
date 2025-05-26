@@ -46,15 +46,20 @@ The following core tools are available to the Wooster agent. Each tool has its o
     - Documentation: `docs/tools/TOOL_KnowledgeBaseQuery.MD`
     - Briefly: Searches and answers questions based exclusively on documents within the currently active project.
 
-- **Send Email**
+- **Send Email** (Provided by `GmailPlugin`)
     - Documentation: `docs/tools/TOOL_Email.MD`
     - Briefly: Composes and sends emails on behalf of the user.
+
+- **Google Calendar Tools** (Provided by `GoogleCalendarPlugin`)
+    - Tools: `create_calendar_event`, `list_calendar_events`
+    - Documentation: `docs/tools/TOOL_GoogleCalendar.MD`
+    - Briefly: Creates new events and lists existing events from Google Calendar.
 
 - **Schedule Agent Task**
     - Documentation: `docs/tools/TOOL_TaskScheduler.MD`
     - Briefly: Schedules a task for the agent to perform at a specified future time.
 
-*This list may expand as more capabilities are added to Wooster.*
+*This list may expand as more capabilities and plugins are added to Wooster.*
 
 ## 4. Configuration
 

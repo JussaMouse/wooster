@@ -102,12 +102,12 @@ Manages the agent's ability to send emails. This tool is provided by the `GmailP
     -   **Description**: App password for the `TOOLS_EMAIL_SENDER_EMAIL_ADDRESS` (e.g., Gmail App Password). Required if `TOOLS_EMAIL_ENABLED=true`.
     -   **Default**: (none)
 
-#### 4b. Google Calendar Tool (Plugin Configuration)
+#### 4b. Google Calendar Tool (Provided by GoogleCalendarPlugin)
 
-Configuration for the Google Calendar plugin (if active). Note: This section pertains to a plugin, not necessarily a direct agent tool unless integrated as such in `AgentExecutorService`.
+Configuration for Google Calendar tools (e.g., `create_calendar_event`, `list_calendar_events`), provided by the `GoogleCalendarPlugin`. For these tools to be available, the `GoogleCalendarPlugin` must be active (see Plugin Activation section below), `TOOLS_GOOGLE_CALENDAR_ENABLED` must be `true`, and all necessary Google API credentials must be correctly configured. See `docs/tools/TOOL_GoogleCalendar.MD` for full details on the tools themselves.
 
 -   `TOOLS_GOOGLE_CALENDAR_ENABLED`
-    -   **Description**: Set to `true` to enable Google Calendar features (typically via a plugin).
+    -   **Description**: Set to `true` to enable Google Calendar features within the `GoogleCalendarPlugin`.
     -   **Valid Values**: `true`, `false`
     -   **Default**: `false`
 -   `GOOGLE_CLIENT_ID`
@@ -140,16 +140,17 @@ Manages the agent's ability to perform web searches. See `docs/tools/TOOL_WebSea
 
 ### 5. Plugin Activation
 
-Controls which plugins are active. Wooster discovers plugins from the `src/plugins/` directory (e.g., `myPlugin.ts`, `gmailPlugin.ts`).
+Controls which plugins are active. Wooster discovers plugins from the `src/plugins/` directory (e.g., `myPlugin.ts`, `gmailPlugin.ts`, `googleCalendarPlugin.ts`).
 
 -   **General Rule:** Plugins are **ENABLED BY DEFAULT** if found in the `src/plugins/` directory.
 -   **To Disable a Specific Plugin:** Set an environment variable `PLUGIN_[PLUGINNAME]_ENABLED=false`.
-    -   Replace `[PLUGINNAME]` with the plugin's filename (without `.ts` or `.js`), converted to uppercase. The plugin name should match the `name` property defined within the plugin file if you are unsure.
+    -   Replace `[PLUGINNAME]` with the plugin's `name` property (as defined in the plugin file, e.g., `GmailPlugin`, `GoogleCalendarPlugin`), converted to uppercase. If unsure, it typically matches the filename without `.ts` or `.js`, also uppercased.
     -   Example: For a plugin defined in `src/plugins/myCoolPlugin.ts` with `name: "MyCoolPlugin"`, to disable it, add: `PLUGIN_MYCOOLPLUGIN_ENABLED=false`
-    -   **Example for GmailPlugin**: To disable the Gmail plugin (which provides the `sendEmail` tool), add: `PLUGIN_GMAILPLUGIN_ENABLED=false`. If this is set to `false`, the `sendEmail` tool will not be available, regardless of the `TOOLS_EMAIL_ENABLED` setting.
--   **To Explicitly Enable (Optional):** `PLUGIN_[PLUGINNAME]_ENABLED=true`. Usually not needed due to the default-enabled behavior.
+    -   **Example for GmailPlugin**: To disable the Gmail plugin: `PLUGIN_GMAILPLUGIN_ENABLED=false`.
+    -   **Example for GoogleCalendarPlugin**: To disable the Google Calendar plugin: `PLUGIN_GOOGLECALENDARPLUGIN_ENABLED=false`.
+-   **To Explicitly Enable (Optional):** `PLUGIN_[PLUGINNAME]_ENABLED=true`. Usually not needed.
 
-If a plugin is enabled, its specific tool enablement flags (like `TOOLS_EMAIL_ENABLED` for `GmailPlugin`) then determine if the tools it provides are actually made available to the agent.
+If a plugin is enabled (e.g., `PLUGIN_GOOGLECALENDARPLUGIN_ENABLED=true` or not set), its specific tool enablement flags (like `TOOLS_GOOGLE_CALENDAR_ENABLED`) and credential configurations then determine if the tools it provides are actually made available to the agent and can function correctly.
 
 ## Loading Mechanism
 

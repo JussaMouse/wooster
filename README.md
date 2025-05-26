@@ -20,7 +20,7 @@ Wooster's intelligence comes from its ability to orchestrate several components:
     *   **Web Search (`src/tools/webSearchTool.ts`)**: Wooster can perform real-time web searches using the Tavily AI API to fetch current information. Requires a `TAVILY_API_KEY` and is enabled/disabled via environment variables in your `.env` file (e.g., `TOOLS_WEB_SEARCH_ENABLED`).
 *   **Scheduler (`src/scheduler/`, `src/tools/scheduler.ts`)**: Allows scheduling tasks or reminders using natural language.
 *   **Heartbeat (`src/heartbeat.ts`)**: A mechanism for monitoring Wooster's operational status.
-*   **Plugins (`src/plugins/`, `src/pluginManager.ts`)**: Modules for lifecycle hooks. Plugin enablement is managed via environment variables in your `.env` file (e.g., `PLUGIN_MYPLUGIN_ENABLED=false`).
+*   **Plugins (`src/plugins/`, `src/pluginManager.ts`, `src/pluginTypes.ts`)**: Extensible modules that can provide new **Agent Tools** to Wooster (e.g., for Gmail, Google Calendar) and potentially hook into its lifecycle. Plugin enablement and tool provision are managed via environment variables and the plugin's own logic. See `03 PLUGINS.MD` and `06 CONFIG.MD`.
 *   **Logging (`src/logger.ts`)**: Wooster uses a configurable logging system (console and file output) managed via environment variables in your `.env` file (e.g., `LOGGING_CONSOLE_LOG_LEVEL`).
 *   **Configuration (`src/configLoader.ts`, `.env` file)**: Wooster's behavior, including logging, UCM, tool enablement, and plugin activation, is controlled by environment variables set in an `.env` file in the project root. See `06 CONFIG.MD` for a full list.
 
@@ -50,7 +50,7 @@ Wooster's intelligence comes from its ability to orchestrate several components:
 
 3.  **Install Dependencies**:
     ```bash
-    pnpm install 
+    pnpm install
     # This will install all necessary packages, including Langchain, OpenAI, Tavily, etc.
     ```
 
@@ -100,19 +100,27 @@ Wooster's behavior is controlled by environment variables set in your `.env` fil
 
 ## Extending Wooster
 
-Wooster's primary method for adding new capabilities is through **Agent Tools**.
+Wooster's primary method for adding new capabilities is by creating **Plugins** that provide **Agent Tools**.
 
-*   **Creating Agent Tools**:
-    1.  Develop your tool's logic, often in a new file in `src/tools/`.
-    2.  Integrate it into `src/agentExecutorService.ts` as a new `DynamicTool` instance, providing a clear `name` and `description`. Add it to the `tools` array within the `initializeTools` function.
-    3.  Ensure the tool can be enabled/disabled via an environment variable in `.env` if appropriate (e.g., `TOOLS_MYNEWTOOL_ENABLED=true`), and handle this in `src/agentExecutorService.ts` and/or the tool's own logic.
-    4.  Document your new tool by creating a `docs/tools/TOOL_YourToolName.MD` file, following the existing examples.
-    5.  Refer to `04 TOOLS.MD` for a general overview of the tooling system.
+*   **Creating Plugins that Provide Agent Tools**:
+    1.  **Define Plugin Logic**: Create your plugin file in `src/plugins/` (e.g., `mySuperPlugin.ts`). Implement the `WoosterPlugin` interface from `src/pluginTypes.ts`.
+    2.  **Implement `initialize(config)` (Optional)**: If your plugin needs setup or to access configuration, implement the `initialize` method. This is where you might set up API clients (like for Google Calendar).
+    3.  **Implement `getAgentTools()`**: This method should return an array of `DynamicTool` instances. Each tool will need a unique `name`, a clear `description` for the agent, and a `func` to execute its logic.
+        *   The `func` will typically call specific functions you've implemented (e.g., in a separate `src/tools/mySuperApiClient.ts` file).
+    4.  **Configuration**: 
+        *   Allow your plugin to be enabled/disabled via `PLUGIN_[YOURPLUGINNAME]_ENABLED` in `.env` (handled by `pluginManager.ts`).
+        *   Control specific features or tool availability within your plugin using `TOOLS_[YOURSERVICE]_[FEATURE]_ENABLED` variables (e.g., `TOOLS_GOOGLE_CALENDAR_ENABLED`), checking these in your plugin's `initialize` or `getAgentTools` methods.
+    5.  **Documentation**: 
+        *   Create a `docs/tools/TOOL_YourToolName.MD` file for each tool or group of tools your plugin provides, following existing examples.
+        *   Update `04 TOOLS.MD` to list your new plugin-provided tools and link to their documentation.
+        *   Update `06 CONFIG.MD` to document any new environment variables your plugin introduces.
+    6.  **Examples**: See `src/plugins/gmailPlugin.ts` and `src/plugins/googleCalendarPlugin.ts` for examples of plugins providing tools.
 
-*   **Creating Plugins** (for lifecycle hooks):
-    1.  Create plugin files in `src/plugins/`.
-    2.  Ensure plugins can be enabled/disabled via environment variables in `.env` (e.g., `PLUGIN_MYPLUGIN_ENABLED=false`).
-    3.  Refer to `03 PLUGINS.MD`.
+*   **Legacy Tool Integration (Directly in AgentExecutorService)**: While the preferred method is now plugin-based, some core tools are still initialized directly within `src/agentExecutorService.ts`. This approach might be suitable for very tightly coupled core functionalities, but plugins offer better modularity.
+
+*   **Old-Style Plugins (Lifecycle Hooks Only)**: The plugin system previously focused only on lifecycle hooks. While `WoosterPlugin` can still support other methods, the primary extension point for agent capabilities is now tool provision.
+
+Refer to `03 PLUGINS.MD` for more on the plugin structure and `04 TOOLS.MD` for an overview of the tooling system.
 
 ---
 
@@ -122,7 +130,7 @@ This README provides a high-level overview. For more details, refer to the other
 - `01 PROJECTS.MD`: Managing project-specific knowledge (RAG).
 - `02 UCM.MD`: User Contextual Memory for personalization.
 - `docs/03 AGENT.MD`: Details of the LangChain `AgentExecutor` based agent architecture.
-- `03 PLUGINS.MD`: Creating plugins.
+- `03 PLUGINS.MD`: Creating plugins that provide tools and/or lifecycle hooks.
 - `04 TOOLS.MD`: Overview of the agent's tooling system and an index to individual tool documentation (found in `docs/tools/`).
 - `05 SCHEDULER.MD`: Task scheduling.
 - `06 CONFIG.MD`: Configuration via `.env` environment variables.

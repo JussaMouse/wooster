@@ -172,9 +172,9 @@ export function loadConfig(): AppConfig {
   currentConfig.tools = {
     email: {
       enabled: parseBoolean(getEnvVar('TOOLS_EMAIL_ENABLED'), DEFAULT_CONFIG.tools.email.enabled),
-      senderEmailAddress: parseNullableString(getEnvVar('EMAIL_SENDING_EMAIL_ADDRESS'), DEFAULT_CONFIG.tools.email.senderEmailAddress),
-      userPersonalEmailAddress: parseNullableString(getEnvVar('EMAIL_USER_PERSONAL_EMAIL_ADDRESS'), DEFAULT_CONFIG.tools.email.userPersonalEmailAddress),
-      emailAppPassword: parseNullableString(getEnvVar('EMAIL_EMAIL_APP_PASSWORD'), DEFAULT_CONFIG.tools.email.emailAppPassword),
+      senderEmailAddress: parseNullableString(getEnvVar('TOOLS_EMAIL_SENDER_EMAIL_ADDRESS'), DEFAULT_CONFIG.tools.email.senderEmailAddress),
+      userPersonalEmailAddress: parseNullableString(getEnvVar('TOOLS_EMAIL_USER_PERSONAL_EMAIL_ADDRESS'), DEFAULT_CONFIG.tools.email.userPersonalEmailAddress),
+      emailAppPassword: parseNullableString(getEnvVar('TOOLS_EMAIL_EMAIL_APP_PASSWORD'), DEFAULT_CONFIG.tools.email.emailAppPassword),
     },
     googleCalendar: {
       enabled: parseBoolean(getEnvVar('TOOLS_GOOGLE_CALENDAR_ENABLED'), DEFAULT_CONFIG.tools.googleCalendar.enabled),
@@ -191,6 +191,13 @@ export function loadConfig(): AppConfig {
       ),
     }
   };
+
+  // TEMPORARY DEBUG LOGGING START - REMOVE AFTER CONFIRMATION
+  // console.log('[DEBUG ConfigLoader] Email Config Loaded:');
+  // console.log(`  Enabled: ${currentConfig.tools.email.enabled}`);
+  // console.log(`  Sender Address: '${currentConfig.tools.email.senderEmailAddress}'`); // Log with quotes to see if it's empty or null
+  // console.log(`  App Password: '${currentConfig.tools.email.emailAppPassword}'`); // Log with quotes
+  // TEMPORARY DEBUG LOGGING END
 
   currentConfig.tavilyApiKey = getEnvVar('TAVILY_API_KEY') || undefined;
   if (currentConfig.tools.webSearch.enabled && !currentConfig.tavilyApiKey) {

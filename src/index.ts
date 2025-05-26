@@ -9,7 +9,7 @@ import type { FaissStore } from '@langchain/community/vectorstores/faiss'
 // import type { BaseLanguageModel } from '@langchain/core/language_models/base'
 
 // import { addNode } from './memorySql'
-import { initUserContextStore, addUserFactToContextStore, IProjectVectorStore } from './memoryVector' // Added IProjectVectorStore
+import { initUserContextStore, addUserFactToContextStore } from './memoryVector'
 import { initializeUserKnowledgeExtractor, extractUserKnowledge } from './userKnowledgeExtractor'
 import { setUserContextStore as setUCMStoreForTool } from "./tools/userContextTool"
 // import { buildRagChain } from './ragChain'
@@ -17,7 +17,6 @@ import { agentRespond, setAgentConfig } from './agent' // Removed getCurrentAvai
 // import type { AgentTool } from './agent' // AgentTool interface is removed from agent.ts
 import {
   loadPlugins,
-  initPlugins,
   // handleUserInput, // Part of pluginManager, but direct calls might be superseded by agent logic
   // handleAssistantResponse, // Part of pluginManager
   listPlugins,
@@ -154,9 +153,6 @@ async function main() {
 
   await loadPlugins()
   log(LogLevel.INFO, 'Plugins loaded.');
-
-  await initPlugins({ apiKey: appConfig.openai.apiKey, vectorStore, ragChain })
-  log(LogLevel.INFO, 'Plugins initialized.');
 
   // Initialize Project Metadata Service for the current (default) project
   if (currentProjectName) {
@@ -415,9 +411,34 @@ async function schedulerAgentCallback(taskPayload: string): Promise<void> {
   }
 }
 
-main().catch((error: any) => {
-  // console.error("Critical error in main:", error); // Fallback for now
-  log(LogLevel.ERROR, "Critical error in main function."); // Changed to double quotes
-  stopHeartbeatService();
+main().catch((error) => {
+  let errorDetails: any = { message: 'No message available', stack: 'No stack available' };
+  if (error instanceof Error) {
+    errorDetails.message = error.message;
+    errorDetails.stack = error.stack;
+    errorDetails.name = error.name;
+    // Capture additional properties if any
+    const additionalProps: Record<string, any> = {};
+    for (const key in error) {
+      if (key !== 'message' && key !== 'stack' && key !== 'name') {
+        additionalProps[key] = (error as any)[key];
+      }
+    }
+    if (Object.keys(additionalProps).length > 0) {
+      errorDetails.additionalProps = additionalProps;
+    }
+  } else if (typeof error === 'string') {
+    errorDetails.message = error;
+    errorDetails.type = 'string';
+  } else if (typeof error === 'object' && error !== null) {
+    errorDetails.message = JSON.stringify(error);
+    errorDetails.type = 'object';
+  } else {
+    errorDetails.message = String(error);
+    errorDetails.type = typeof error;
+  }
+  
+  log(LogLevel.ERROR, 'Critical error in main function. Error details:', errorDetails);
+  stopHeartbeatService(); // Attempt to clean up
   process.exit(1);
 });
