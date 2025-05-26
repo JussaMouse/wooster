@@ -1,21 +1,16 @@
 import { readdirSync } from 'fs'
 import { join } from 'path'
-import { getConfig } from './configLoader'
+import { AppConfig, getConfig } from './configLoader'
 import { log, LogLevel } from './logger'
+import { WoosterPlugin } from './pluginTypes'
+import { DynamicTool } from '@langchain/core/tools'
 
-export type PluginContext = { apiKey: string; vectorStore: any; ragChain: any }
-
-export interface Plugin {
-  name: string
-  onInit?: (ctx: PluginContext) => Promise<void> | void
-  onUserInput?: (input: string) => Promise<string> | string
-  onAssistantResponse?: (response: string) => Promise<void> | void
-}
-
-const plugins: Plugin[] = []
+const plugins: WoosterPlugin[] = []
+const pluginProvidedAgentTools: DynamicTool[] = []
 
 /**
  * Dynamically load plugins from the `plugins/` directory.
+ * Initializes them and collects any agent tools they provide.
  */
 export async function loadPlugins() {
   const dir = join(__dirname, 'plugins')
@@ -29,105 +24,76 @@ export async function loadPlugins() {
   }
 
   log(LogLevel.INFO, 'Found %d potential plugin files in %s.', files.length, dir);
+  pluginProvidedAgentTools.length = 0;
+  plugins.length = 0;
 
   for (const f of files) {
     try {
-    const mod = await import(join(dir, f))
-    const plugin: Plugin = mod.default
+      const mod = await import(join(dir, f))
+      const plugin: WoosterPlugin = mod.default
       
-    if (plugin?.name) {
+      if (plugin?.name && plugin.description && plugin.version) {
         const isEnabled = config.plugins[plugin.name];
 
         if (isEnabled === false) {
-          log(LogLevel.INFO, 'Plugin "%s" is disabled via configuration. Skipping load.', plugin.name);
+          log(LogLevel.INFO, 'Plugin "%s" (v%s) is disabled via configuration. Skipping load.', plugin.name, plugin.version);
           continue;
         }
         
-        if (isEnabled === undefined) {
-          log(LogLevel.WARN, 'Plugin "%s" was not found in the centrally managed plugin configuration. Assuming enabled, but this might indicate an issue.', plugin.name);
+        log(LogLevel.INFO, 'Loading plugin: "%s" v%s (Description: %s)', plugin.name, plugin.version, plugin.description);
+
+        if (plugin.initialize) {
+          try {
+            await plugin.initialize(config);
+            log(LogLevel.INFO, 'Plugin "%s" initialized successfully.', plugin.name);
+          } catch (initError: any) {
+            log(LogLevel.ERROR, 'Error initializing plugin "%s": %s. Plugin will not be fully active.', plugin.name, initError.message, { error: initError });
+            continue;
+          }
         }
 
+        if (plugin.getAgentTools) {
+          try {
+            const toolsFromPlugin = plugin.getAgentTools();
+            if (Array.isArray(toolsFromPlugin)) {
+              pluginProvidedAgentTools.push(...toolsFromPlugin);
+              log(LogLevel.INFO, 'Plugin "%s" provided %d agent tool(s): %s', plugin.name, toolsFromPlugin.length, toolsFromPlugin.map(t => t.name).join(', '));
+            } else if (toolsFromPlugin) {
+              log(LogLevel.WARN, 'Plugin "%s" getAgentTools() did not return an array. Tools not loaded from this plugin.', plugin.name);
+            }
+          } catch (toolError: any) {
+            log(LogLevel.ERROR, 'Error calling getAgentTools() on plugin "%s": %s. Tools not loaded from this plugin.', plugin.name, toolError.message, { error: toolError });
+          }
+        }
         plugins.push(plugin);
-        log(LogLevel.INFO, 'Loaded plugin: "%s" (Enabled: %s)', plugin.name, isEnabled === undefined ? "true (implicit)" : isEnabled.toString());
+
       } else {
-        log(LogLevel.WARN, 'File "%s" in plugins directory does not export a valid plugin (missing default export or name property).', f);
+        log(LogLevel.WARN, 'File "%s" in plugins directory does not export a valid Wooster plugin (missing default export, or name/description/version properties).', f);
       }
     } catch (error: any) {
-      log(LogLevel.ERROR, 'Error loading plugin from file "%s": %s', f, error.message, { error });
+      log(LogLevel.ERROR, 'Error loading plugin module from file "%s": %s', f, error.message, { error });
     }
   }
+  log(LogLevel.INFO, 'Plugin loading complete. Total active plugins: %d. Total tools provided by plugins: %d.', plugins.length, pluginProvidedAgentTools.length);
 }
 
 /**
- * Call each plugin's initialization hook.
+ * Returns a list of names of all loaded and active plugins.
  */
-export async function initPlugins(ctx: PluginContext) {
-  if (plugins.length === 0) {
-    log(LogLevel.INFO, "No enabled plugins to initialize.");
-    return
-  }
-  log(LogLevel.INFO, 'Initializing %d enabled plugins...', plugins.length);
-  for (const p of plugins) {
-    if (p.onInit) {
-      try {
-        log(LogLevel.DEBUG, 'Initializing plugin: "%s"', p.name);
-      await p.onInit(ctx)
-        log(LogLevel.INFO, 'Plugin "%s" initialized successfully.', p.name);
-      } catch (error: any) {
-        log(LogLevel.ERROR, 'Error initializing plugin "%s": %s', p.name, error.message, { error });
-      }
-    }
-  }
+export function listPlugins(): string[] {
+  return plugins.map(p => p.name);
 }
 
 /**
- * Pass user input through each plugin's onUserInput hook.
+ * Returns a list of all agent tools collected from active plugins.
  */
-export async function handleUserInput(input: string): Promise<string> {
-  let out = input
-  if (plugins.length === 0) return out
-
-  for (const p of plugins) {
-    if (p.onUserInput) {
-      try {
-        log(LogLevel.DEBUG, 'Plugin "%s" processing onUserInput.', p.name);
-      out = await p.onUserInput(out)
-      } catch (error: any) {
-        log(LogLevel.ERROR, 'Error in plugin "%s" onUserInput hook: %s', p.name, error.message, { error });
-        // Decide if we should continue or stop processing (for now, continue)
-      }
-    }
-  }
-  return out
-}
-
-/**
- * Pass assistant response through each plugin's onAssistantResponse hook.
- */
-export async function handleAssistantResponse(resp: string): Promise<void> {
-  if (plugins.length === 0) return
-
-  for (const p of plugins) {
-    if (p.onAssistantResponse) {
-      try {
-        log(LogLevel.DEBUG, 'Plugin "%s" processing onAssistantResponse.', p.name);
-      await p.onAssistantResponse(resp)
-      } catch (error: any) {
-        log(LogLevel.ERROR, 'Error in plugin "%s" onAssistantResponse hook: %s', p.name, error.message, { error });
-      }
-    }
-  }
-}
-
-// Add a function to list loaded plugin names
-type PluginName = string
-export function listPlugins(): PluginName[] {
-  return plugins.map(p => p.name)
+export function getPluginAgentTools(): DynamicTool[] {
+  return [...pluginProvidedAgentTools];
 }
 
 /**
  * Returns a list of potential plugin filenames from the plugins directory.
- * This is used by configLoader to determine default enablement states.
+ * This is used by configLoader to help determine default enablement states.
  */
 export function getPluginFileNames(): string[] {
   const dir = join(__dirname, 'plugins');

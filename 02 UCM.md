@@ -61,7 +61,7 @@ To populate UCM accurately and distinguish its content from ProjectRAG, a "User 
 
 When the assistant needs to access information *about the user* (e.g., to tailor a suggestion, recall a preference when a new task is initiated, or personalize responses):
 
-1.  It would query the UCM system.
+1.  It would query the UCM system, primarily via the `recall_user_context` agent tool.
 2.  The query to UCM could be augmented with the *current project context* (if a project is loaded). For instance: "What are the user's known writing style preferences relevant to the 'Romantic Comedy Screenplay' project, or any general writing preferences?"
 3.  UCM would retrieve facts, prioritizing those that match the current project context. It would also provide general preferences if no project-specific ones are found, or if the query is broad and not tied to a specific project.
 
@@ -110,19 +110,17 @@ Wooster's current architecture already possesses several components that would b
 *   **User Knowledge Extractor Module:** A new TypeScript module (e.g., `src/userKnowledgeExtractor.ts`) containing the LLM prompting logic to analyze conversations and extract user-specific facts with context. This module forms the heart of the UCM's learning capability.
 *   **UCM Vector Store Initialization & Management:** Specific logic to create, load, and save the `user_context_store/` (likely in `src/memoryVector.ts` or a new dedicated file, e.g., `src/userContextMemory.ts`).
 *   **Integration into REPL/Agent Flow (Learning Aspect):** Code in `src/index.ts` (REPL loop) to call the User Knowledge Extractor after each relevant conversational turn and add extracted information to the UCM store. This is a core system process.
-*   **UCM Query Mechanism (Recall Aspect - via Agent Tool):**
-    *   The primary way the agent will access UCM is through a dedicated **agent tool**. This allows the agent to make an intentional decision to query for user-specific information when it deems it relevant for personalizing its response or action.
-    *   **Tool Name Example:** `recall_user_context`
-    *   **Tool Description (critical for agent usage):** A detailed description guiding the agent on *when* and *why* to use the tool (e.g., "Use this tool to retrieve stored preferences, facts, or directives previously stated by the user that could be relevant for personalizing the current response or action. Consider using this BEFORE generating content, making a suggestion, or performing an action where knowing a specific user preference could lead to a more tailored outcome. Only query for information directly relevant to the task at hand.")
-    *   **Tool Arguments:** Likely a single `topic: string` argument, described to guide the agent in formulating a concise query for the needed information (e.g., "email formality preferences", "preferred project update frequency").
-    *   This tool would be added to `availableTools` in `src/agent.ts`. Its function would query the UCM vector store and return the retrieved facts.
+*   **Agent Tool: `recall_user_context` (Recall Aspect):**
+    *   The primary way the agent accesses UCM is through the dedicated `recall_user_context` agent tool. This allows the agent (via `AgentExecutor`) to make an intentional decision to query for user-specific information when it deems it relevant.
+    *   This tool is defined as a `DynamicTool` within `src/agentExecutorService.ts`.
+    *   **For the detailed specification of this tool, including its exact name, the description provided to the agent, input/output schemas, and specific configuration notes, please see its dedicated documentation file: `docs/tools/TOOL_UserContextRecall.MD`.**
     *   *(Passive context enhancement, e.g., via MultiRetriever in the main RAG, could be a secondary, more advanced option but the explicit tool is the primary design for active recall).*
 *   **Metadata Handling:** A clear way to pass metadata (like `currentProjectName` and whether ProjectRAG was used) to the User Knowledge Extractor.
 *   **(Optional) UCM Management Plugin:** A separate plugin could be developed to offer user-facing REPL commands for managing their UCM data (e.g., `list_my_learned_facts`, `forget_ucm_fact <id>`).
 
 ## Simplest Path to Initial UCM Setup (Proof of Concept for Learning & Tool-Based Recall)
 
-To implement a basic version of UCM, focusing on the core learning loop and a conceptual agent tool for recall:
+To implement a basic version of UCM, focusing on the core learning loop and the agent tool for recall:
 
 1.  **Create `userKnowledgeExtractor.ts`:**
     *   Define a function, e.g., `extractUserKnowledge(userInput: string, assistantResponse: string, currentProjectName: string | null): Promise<string | null>`.
@@ -159,42 +157,11 @@ To implement a basic version of UCM, focusing on the core learning loop and a co
             *   `await userContextStore.save('path/to/user_context_store/');` (Save after each addition for simplicity in PoC).
             *   Optionally, log that a fact was learned: `console.log('[UCM Learned]:', userFact);`
 
-4.  **Define the `recall_user_context` Agent Tool (Conceptual for PoC):**
-    *   **Tool Definition (in `src/tools/userContextTool.ts` or similar):**
-        ```typescript
-        // import { FaissStore } from '@langchain/community/vectorstores/faiss';
-        // import { HuggingFaceTransformersEmbeddings } from '@langchain/community/embeddings/hf_transformers';
-        // Assume userContextStore and embeddings are accessible here or passed in
-
-        async function recallUserContextFunc(args: { topic: string }): Promise<string> {
-          // const userContextStore = getUserContextStore(); // Placeholder for store access
-          // const embeddings = getEmbeddingsModel(); // Placeholder for embeddings access
-          if (!userContextStore || !embeddings) return "UCM store not available.";
-
-          const { topic } = args;
-          const results = await userContextStore.similaritySearch(topic, 2); // Retrieve top 2 relevant facts
-          if (results.length === 0) {
-            return "No specific preferences or context found for that topic.";
-          }
-          return results.map(doc => doc.pageContent).join('\n');
-        }
-        ```
-    *   **Add to `availableTools` (in `src/agent.ts`):**
-        ```typescript
-        // import { DynamicTool } from "langchain/tools"; // Or your tool definition class
-        // import { z } from "zod";
-
-        // ... other tools ...
-        new DynamicTool({
-          name: "recall_user_context",
-          description: "Use this tool to retrieve stored preferences, facts, or directives previously stated by the user that could be relevant for personalizing the current response or action. Query with a concise topic, e.g., 'email formality preferences'.",
-          func: recallUserContextFunc, // The function defined above
-          // schema: z.object({
-          //   topic: z.string().describe("A concise phrase describing the specific user preference or context needed.")
-          // })
-        }),
-        ```
-    *   **Testing:** The agent should now theoretically be able to decide to use this tool. You'd prompt Wooster with tasks where recalling user preferences would be beneficial and observe if the agent attempts to use `recall_user_context`.
+4.  **Define the `recall_user_context` Agent Tool (Implemented in `agentExecutorService.ts`):**
+    *   The `recall_user_context` tool is implemented as a `DynamicTool` within `src/agentExecutorService.ts`.
+    *   It uses a function like `recallUserContextFunc` (from `src/tools/userContextTool.ts`) to perform the similarity search against the UCM store.
+    *   **Refer to `docs/tools/TOOL_UserContextRecall.MD` for the complete definition, agent-facing description, and usage guidelines for this tool.**
+    *   **Testing:** The agent, as part of the `AgentExecutor` framework, should now be able to decide to use this tool based on its description. You'd prompt Wooster with tasks where recalling user preferences would be beneficial and observe if the agent attempts to use `recall_user_context`.
 
 **This "simplest path" PoC focuses on:**
 

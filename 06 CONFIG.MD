@@ -79,28 +79,35 @@ Controls the User Contextual Memory feature.
 
 ### 4. Tools Configuration
 
-Enable/disable and configure specific agent tools.
+Enable/disable and configure specific agent tools. The agent uses these tools to perform actions and access information. For detailed information on each tool, including its purpose, agent-facing description, input/output schemas, and specific usage guidance, please refer to:
 
-#### 4a. Email Tool
+- `04 TOOLS.MD`: For an overview of the tooling system and an index of available tools.
+- Individual tool documentation files in the `docs/tools/` directory (e.g., `docs/tools/TOOL_WebSearch.MD`).
+
+#### 4a. Email Tool (Provided by GmailPlugin)
+
+Manages the agent's ability to send emails. This tool is provided by the `GmailPlugin`. For the tool to be available, the `GmailPlugin` must be active (see Plugin Activation section below) AND `TOOLS_EMAIL_ENABLED` must be `true`. See `docs/tools/TOOL_Email.MD` for full details on the tool itself.
 
 -   `TOOLS_EMAIL_ENABLED`
-    -   **Description**: Set to `true` to enable the email tool.
+    -   **Description**: Set to `true` to enable the email tool features within the `GmailPlugin`.
     -   **Valid Values**: `true`, `false`
     -   **Default**: `false`
--   `EMAIL_SENDING_EMAIL_ADDRESS`
+-   `TOOLS_EMAIL_SENDER_EMAIL_ADDRESS`
     -   **Description**: Email address from which Wooster will send emails. Required if `TOOLS_EMAIL_ENABLED=true`.
     -   **Default**: (none)
--   `EMAIL_USER_PERSONAL_EMAIL_ADDRESS`
-    -   **Description**: User's personal email, can be used as a default recipient or for CC.
+-   `TOOLS_EMAIL_USER_PERSONAL_EMAIL_ADDRESS`
+    -   **Description**: User's personal email, can be used as a default recipient (e.g., for `SELF_EMAIL_RECIPIENT`).
     -   **Default**: (none)
--   `EMAIL_EMAIL_APP_PASSWORD`
-    -   **Description**: App password for the `EMAIL_SENDING_EMAIL_ADDRESS` (e.g., Gmail App Password). Required if `TOOLS_EMAIL_ENABLED=true`.
+-   `TOOLS_EMAIL_EMAIL_APP_PASSWORD`
+    -   **Description**: App password for the `TOOLS_EMAIL_SENDER_EMAIL_ADDRESS` (e.g., Gmail App Password). Required if `TOOLS_EMAIL_ENABLED=true`.
     -   **Default**: (none)
 
-#### 4b. Google Calendar Tool
+#### 4b. Google Calendar Tool (Plugin Configuration)
+
+Configuration for the Google Calendar plugin (if active). Note: This section pertains to a plugin, not necessarily a direct agent tool unless integrated as such in `AgentExecutorService`.
 
 -   `TOOLS_GOOGLE_CALENDAR_ENABLED`
-    -   **Description**: Set to `true` to enable Google Calendar features.
+    -   **Description**: Set to `true` to enable Google Calendar features (typically via a plugin).
     -   **Valid Values**: `true`, `false`
     -   **Default**: `false`
 -   `GOOGLE_CLIENT_ID`
@@ -118,6 +125,8 @@ Enable/disable and configure specific agent tools.
 
 #### 4c. Web Search Tool
 
+Manages the agent's ability to perform web searches. See `docs/tools/TOOL_WebSearch.MD` for full details.
+
 -   `TOOLS_WEB_SEARCH_ENABLED`
     -   **Description**: Set to `true` to enable the web search tool. Requires `TAVILY_API_KEY` to be set.
     -   **Valid Values**: `true`, `false`
@@ -127,15 +136,20 @@ Enable/disable and configure specific agent tools.
     -   **Required**: If `TOOLS_WEB_SEARCH_ENABLED=true`.
     -   **Default**: (none)
 
+*(Note: The User Context Recall (`recall_user_context`) and Project Knowledge Base (`queryKnowledgeBase`) tools are core capabilities. Their availability is primarily determined by `UCM_ENABLED` for UCM and the presence of a project vector store for the knowledge base, rather than specific `TOOLS_*_ENABLED` flags for these two.)*
+
 ### 5. Plugin Activation
 
-Controls which plugins are active. Wooster discovers plugins from the `src/plugins/` directory (e.g., `myPlugin.ts`).
+Controls which plugins are active. Wooster discovers plugins from the `src/plugins/` directory (e.g., `myPlugin.ts`, `gmailPlugin.ts`).
 
--   **General Rule:** Plugins are **ENABLED BY DEFAULT** if found.
+-   **General Rule:** Plugins are **ENABLED BY DEFAULT** if found in the `src/plugins/` directory.
 -   **To Disable a Specific Plugin:** Set an environment variable `PLUGIN_[PLUGINNAME]_ENABLED=false`.
-    -   Replace `[PLUGINNAME]` with the plugin's filename (without `.ts`), converted to uppercase.
-    -   Example: For `src/plugins/myCoolPlugin.ts`, to disable it, add: `PLUGIN_MYCOOLPLUGIN_ENABLED=false`
+    -   Replace `[PLUGINNAME]` with the plugin's filename (without `.ts` or `.js`), converted to uppercase. The plugin name should match the `name` property defined within the plugin file if you are unsure.
+    -   Example: For a plugin defined in `src/plugins/myCoolPlugin.ts` with `name: "MyCoolPlugin"`, to disable it, add: `PLUGIN_MYCOOLPLUGIN_ENABLED=false`
+    -   **Example for GmailPlugin**: To disable the Gmail plugin (which provides the `sendEmail` tool), add: `PLUGIN_GMAILPLUGIN_ENABLED=false`. If this is set to `false`, the `sendEmail` tool will not be available, regardless of the `TOOLS_EMAIL_ENABLED` setting.
 -   **To Explicitly Enable (Optional):** `PLUGIN_[PLUGINNAME]_ENABLED=true`. Usually not needed due to the default-enabled behavior.
+
+If a plugin is enabled, its specific tool enablement flags (like `TOOLS_EMAIL_ENABLED` for `GmailPlugin`) then determine if the tools it provides are actually made available to the agent.
 
 ## Loading Mechanism
 

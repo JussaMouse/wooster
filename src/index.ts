@@ -5,16 +5,16 @@ import path from 'path'
 import chalk from 'chalk'
 
 import type { FaissStore } from '@langchain/community/vectorstores/faiss'
-import { ChatOpenAI } from '@langchain/openai'
+// import { ChatOpenAI } from '@langchain/openai' // LLM now managed by AgentExecutorService
 // import type { BaseLanguageModel } from '@langchain/core/language_models/base'
 
 // import { addNode } from './memorySql'
-import { initUserContextStore, addUserFactToContextStore } from './memoryVector'
+import { initUserContextStore, addUserFactToContextStore, IProjectVectorStore } from './memoryVector' // Added IProjectVectorStore
 import { initializeUserKnowledgeExtractor, extractUserKnowledge } from './userKnowledgeExtractor'
 import { setUserContextStore as setUCMStoreForTool } from "./tools/userContextTool"
 // import { buildRagChain } from './ragChain'
-import { agentRespond, setAgentConfig, getCurrentAvailableTools } from './agent'
-import type { AgentTool } from './agent'
+import { agentRespond, setAgentConfig } from './agent' // Removed getCurrentAvailableTools
+// import type { AgentTool } from './agent' // AgentTool interface is removed from agent.ts
 import {
   loadPlugins,
   initPlugins,
@@ -30,21 +30,23 @@ import { loadConfig, getConfig, AppConfig } from './configLoader'
 import { bootstrapLogger, applyLoggerConfig, log, LogLevel, logLLMInteraction } from './logger'
 import { initProjectMetadataService, logConversationTurn } from './projectMetadataService'
 import { initializeWebSearchTool } from "./tools/webSearchTool"; // Added for Tavily
+import { initializeAgentExecutorService } from './agentExecutorService'; // New import
 // Removed placeholder imports: яйцо, 간단한툴, وزارة_الداخلية, списокИнструментов
 
 import { createRetrievalChain } from 'langchain/chains/retrieval'
 import { createStuffDocumentsChain } from "langchain/chains/combine_documents"
 import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts"
-import { AIMessage, HumanMessage } from "@langchain/core/messages"
+import { AIMessage, HumanMessage, BaseMessage } from "@langchain/core/messages" // Added BaseMessage
 import { createHistoryAwareRetriever } from "langchain/chains/history_aware_retriever"
+import { ChatOpenAI } from '@langchain/openai'; // Keep for RAG chain if needed, or move to AgentExecutorService later
 
 // Module-scoped variables
-let vectorStore: FaissStore
-let userContextStore: FaissStore
-let ragChain: any
-let llm: ChatOpenAI
+let vectorStore: FaissStore // Changed back to FaissStore
+let userContextStore: FaissStore | undefined // Can be undefined if UCM is disabled
+let ragChain: any // This will be specific to the project vector store
+let llmForRag: ChatOpenAI // Specifically for RAG chain, agent has its own LLM
 let currentProjectName: string | null = null
-let conversationHistory: (HumanMessage | AIMessage)[] = []
+let conversationHistory: BaseMessage[] = [] // Changed to BaseMessage[] to match agent.ts expectations
 let appConfig: AppConfig; // Renamed from 'config' to avoid confusion with parameter name
 
 // Prompts moved to module scope
@@ -60,16 +62,16 @@ const answerPrompt = ChatPromptTemplate.fromMessages([
     ["user", "{input}"],
 ])
 
-// RAG Query function
+// RAG Query function - This might be refactored or moved if AgentExecutorService handles RAG internally via a tool
 async function performRagQuery(query: string): Promise<string> {
   if (!ragChain) {
     log(LogLevel.WARN, "RAG chain not ready for query.");
-    return "Knowledge base is not ready.";
+    return "Knowledge base is not ready for the current project.";
   }
-  // Correctly use conversationHistory for the RAG chain context
-  const relevantHistory = conversationHistory.map(m => ({ role: m_roleToString(m), content: m.content as string }));
-  const result = await ragChain.invoke({ input: query, chat_history: relevantHistory });
-  return result.answer;
+  // Convert BaseMessage to the format expected by this specific RAG chain if necessary
+  const ragHistory = conversationHistory.map(m => ({ role: m._getType(), content: m.content as string }));
+  const result = await ragChain.invoke({ input: query, chat_history: ragHistory });
+  return result.answer || "No answer found from knowledge base.";
 }
 
 async function main() {
@@ -85,19 +87,21 @@ async function main() {
 
   // Validate essential OpenAI configuration
   if (!appConfig.openai.apiKey || appConfig.openai.apiKey === 'YOUR_OPENAI_API_KEY_HERE') {
-    log(LogLevel.ERROR, 'Critical: Missing or placeholder OpenAI API key in config.json (openai.apiKey). Please set it.');
+    log(LogLevel.ERROR, 'Critical: Missing or placeholder OpenAI API key. Please set OPENAI_API_KEY environment variable.');
     process.exit(1);
   }
 
-  llm = new ChatOpenAI({
+  // LLM for RAG chain specifically. AgentExecutorService will create its own LLM.
+  llmForRag = new ChatOpenAI({
     apiKey: appConfig.openai.apiKey,
-    modelName: appConfig.openai.modelName || "gpt-4o-mini", // Default if not in config
-    temperature: 0.2 
+    modelName: appConfig.openai.modelName, 
+    temperature: appConfig.openai.temperature 
   });
-  log(LogLevel.INFO, 'ChatOpenAI LLM initialized with model: %s', llm.modelName);
-  setAgentConfig(appConfig); // Pass full config to agent for its own needs (e.g. logging LLM interactions)
+  log(LogLevel.INFO, 'ChatOpenAI LLM for RAG initialized with model: %s', llmForRag.modelName);
+  
+  setAgentConfig(appConfig); // Pass config to agent.ts (mainly for logging settings now)
 
-  initializeUserKnowledgeExtractor(llm)
+  initializeUserKnowledgeExtractor(llmForRag) // UCM extractor can use the RAG LLM for now
   log(LogLevel.INFO, 'UserKnowledgeExtractor initialized.');
 
   initializeWebSearchTool(appConfig); // Initialize Tavily Search Tool
@@ -127,25 +131,25 @@ async function main() {
   log(LogLevel.INFO, 'Default project set to "home".');
 
   try {
-    vectorStore = await createProjectStore(currentProjectName); // Load 'home' project store
+    vectorStore = await createProjectStore(currentProjectName); // Directly assign FaissStore
     log(LogLevel.INFO, 'Vector store for default project "home" initialized.');
   } catch (error: any) {
     log(LogLevel.ERROR, 'Failed to initialize vector store for default project "home": %s', error.message);
-    process.exit(1); // Critical failure if default project store can't load
+    process.exit(1); 
   }
 
   if (appConfig.ucm.enabled) {
     userContextStore = await initUserContextStore()
-    setUCMStoreForTool(userContextStore)
-    log(LogLevel.INFO, 'User Context Memory (UCM) store initialized and set for tool because ucm.enabled is true.');
+    setUCMStoreForTool(userContextStore) 
+    log(LogLevel.INFO, 'User Context Memory (UCM) store initialized and set for tool.');
   } else {
-    log(LogLevel.INFO, 'User Context Memory (UCM) is disabled via config.ucm.enabled = false.');
-    // Ensure ucmStore is not used if disabled; tools should handle it being null.
-    // setUserContextStore in userContextTool already sets a global `ucmStore` which defaults to null.
-    // If we don't call setUCMStoreForTool, it remains null, which is desired.
+    log(LogLevel.INFO, 'User Context Memory (UCM) is disabled.');
   }
 
-  await initializeRagChain()
+  await initializeAgentExecutorService(userContextStore, vectorStore); // Pass FaissStore as projectStore
+  log(LogLevel.INFO, 'AgentExecutorService initialized.');
+
+  await initializeRagChain(); 
   log(LogLevel.INFO, 'RAG chain initialized.');
 
   await loadPlugins()
@@ -166,7 +170,7 @@ async function main() {
 
 function startREPL() {
   log(LogLevel.INFO, "Wooster is operational. Type 'exit' or 'quit' to stop.");
-  log(LogLevel.INFO, "Available commands: 'create project <name_or_path>', 'load project <name>', 'quit project', 'list files', 'list plugins', 'list tools', 'exit'.");
+  log(LogLevel.INFO, "Available commands: 'create project <name_or_path>', 'load project <name>', 'quit project', 'list files', 'list plugins', 'exit'.");
   log(LogLevel.INFO, "Otherwise, type your query for Wooster.");
   // console.log("Wooster is operational. Type 'exit' or 'quit' to stop.")
   // console.log("Available commands: 'list files', 'list plugins', 'list tools', 'ingest default', 'exit', 'quit'.")
@@ -215,7 +219,8 @@ function startREPL() {
           if (projectArg === path.basename(projectPath)) { // was a name, not a full path
             currentProjectName = path.basename(projectPath);
             try {
-              vectorStore = await createProjectStore(currentProjectName);
+              vectorStore = await createProjectStore(currentProjectName); // Assign FaissStore
+              await initializeAgentExecutorService(userContextStore, vectorStore); // Re-initialize with new project store
               await initializeRagChain(); 
               log(LogLevel.INFO, 'Existing project "%s" loaded.', currentProjectName);
               // Initialize Project Metadata Service for the newly loaded project
@@ -224,7 +229,8 @@ function startREPL() {
               log(LogLevel.ERROR, 'Failed to load existing project "%s": %s', currentProjectName, error.message);
               // Revert to home project if loading failed
               currentProjectName = 'home';
-              vectorStore = await createProjectStore(currentProjectName);
+              vectorStore = await createProjectStore(currentProjectName); // Assign FaissStore
+              await initializeAgentExecutorService(userContextStore, vectorStore); // Re-initialize with home store
               await initializeRagChain(); 
               log(LogLevel.WARN, 'Reverted to "home" project due to loading error.');
             }
@@ -235,7 +241,8 @@ function startREPL() {
             log(LogLevel.INFO, 'Project directory ""%s"" created successfully.', projectPath);
             // Automatically load the newly created project
             currentProjectName = path.basename(projectPath);
-            vectorStore = await createProjectStore(currentProjectName);
+            vectorStore = await createProjectStore(currentProjectName); // Assign FaissStore
+            await initializeAgentExecutorService(userContextStore, vectorStore); // Re-initialize with new project store
             await initializeRagChain(); // Re-initialize RAG chain with the new store
             log(LogLevel.INFO, 'Newly created project "%s" is now active.', currentProjectName);
             // Initialize Project Metadata Service for the newly created project
@@ -253,9 +260,9 @@ function startREPL() {
         } else {
           log(LogLevel.INFO, 'Command: load project "%s". Attempting to switch from "%s"', projectNameToLoad, currentProjectName);
           try {
-            // vectorStore = await initVectorStore(); // This is not needed anymore, createProjectStore handles all.
             vectorStore = await createProjectStore(projectNameToLoad);
             currentProjectName = projectNameToLoad;
+            await initializeAgentExecutorService(userContextStore, vectorStore); // Re-initialize with new project store
             await initializeRagChain();
             log(LogLevel.INFO, 'Project "%s" loaded successfully and is now active.', currentProjectName);
             // Initialize Project Metadata Service for the newly loaded project
@@ -275,7 +282,8 @@ function startREPL() {
       log(LogLevel.INFO, 'Command: quit project. Reverting to "home" project.');
       currentProjectName = 'home';
       try {
-        vectorStore = await createProjectStore(currentProjectName);
+        vectorStore = await createProjectStore(currentProjectName); // Assign FaissStore
+        await initializeAgentExecutorService(userContextStore, vectorStore); // Re-initialize with home store
         await initializeRagChain();
         log(LogLevel.INFO, 'Switched to "home" project.');
         // Initialize Project Metadata Service for the home project
@@ -311,44 +319,26 @@ function startREPL() {
         log(LogLevel.INFO, "Registered plugin names:");
         pluginNames.forEach(name => log(LogLevel.INFO, '- %s', name));
       }
-    } else if (input.toLowerCase() === 'list tools') {
-      const currentTools: AgentTool[] = getCurrentAvailableTools();
-      if (currentTools.length === 0) {
-        log(LogLevel.INFO, "No tools currently available to the agent based on configuration.");
-      } else {
-        log(LogLevel.INFO, "Available agent tools:");
-        currentTools.forEach((t: AgentTool) => {
-          log(LogLevel.INFO, '- %s: %s', t.name, t.description);
-        });
-      }
     } else {
-      // Default to treating input as a query for the agent
-      const mappedHistory = conversationHistory.map(m => ({ role: m_roleToString(m), content: m.content as string }));
-      const agentLLMResponse = await agentRespond(
-        input,
-        llm,
-        performRagQuery,
-        mappedHistory, // Pass the mapped history
-        currentProjectName || undefined,
-        false // isScheduledTask
-      );
-      log(LogLevel.INFO, "Agent's response: %s", agentLLMResponse);
-      console.log(chalk.cyan("Wooster:"), agentLLMResponse);
-      conversationHistory.push(new AIMessage(agentLLMResponse));
+      // Default to Wooster agent response
+      const mappedHistory = conversationHistory.map(m => ({role: m._getType() === 'human' ? 'user' : 'assistant', content: m.content as string}));
+      const assistantResponse = await agentRespond(input, mappedHistory, currentProjectName || undefined);
+      console.log(chalk.cyan("Wooster:"), assistantResponse);
+      conversationHistory.push(new AIMessage(assistantResponse));
       // Cap history
       if (conversationHistory.length > 10) {
         conversationHistory = conversationHistory.slice(-10);
       }
 
       if (currentProjectName) {
-        await logConversationTurn(currentProjectName, input, agentLLMResponse);
+        await logConversationTurn(currentProjectName, input, assistantResponse);
       }
 
       // Post-response UCM learning cycle
       if (appConfig.ucm.enabled && userContextStore) {
         log(LogLevel.INFO, "UCM: Extracting knowledge from conversation turn for UCM.");
         // Pass conversation history to extractUserKnowledge as well
-        const extractedFact: string | null = await extractUserKnowledge(input, agentLLMResponse, currentProjectName);
+        const extractedFact: string | null = await extractUserKnowledge(input, assistantResponse, currentProjectName);
         if (extractedFact) {
           log(LogLevel.INFO, `UCM: Adding new fact to UCM: "${extractedFact}"`);
           await addUserFactToContextStore(extractedFact, userContextStore);
@@ -372,33 +362,28 @@ function startREPL() {
 
 async function initializeRagChain() {
   if (!vectorStore) {
-    // console.error("Vector store not initialized. Cannot create RAG chain.");
     log(LogLevel.ERROR, "Vector store not initialized. Cannot create RAG chain.");
-    return
+    return; 
   }
-  // console.debug('Initializing RAG chain...');
-  log(LogLevel.DEBUG, 'Initializing RAG chain...');
-  const retriever = vectorStore.asRetriever()
-  // No need to check if retriever is null, asRetriever() should return one or throw if store is invalid
+  // vectorStore is now directly FaissStore
+  const retriever = vectorStore.asRetriever();
 
-  const historyAwareRetrieverChain = await createHistoryAwareRetriever({
-    llm,
+  const historyAwareRetriever = await createHistoryAwareRetriever({
+    llm: llmForRag,
     retriever,
     rephrasePrompt: historyAwarePrompt,
   })
 
   const stuffDocumentsChain = await createStuffDocumentsChain({
-    llm,
+    llm: llmForRag,
     prompt: answerPrompt,
   })
 
   ragChain = await createRetrievalChain({
-    retriever: historyAwareRetrieverChain,
+    retriever: historyAwareRetriever,
     combineDocsChain: stuffDocumentsChain,
   })
-  // console.log("RAG chain initialized successfully.")
   log(LogLevel.INFO, "RAG chain initialized successfully.");
-  // console.log("RAG chain initialized successfully."); // Redundant
 }
 
 // Helper to convert Langchain message role type to string for history
@@ -418,8 +403,6 @@ async function schedulerAgentCallback(taskPayload: string): Promise<void> {
     // We could potentially retrieve relevant past context if tasks were more complex or linked.
     const response = await agentRespond(
       taskPayload, 
-      llm, 
-      performRagQuery, 
       [], // Empty chat history for scheduled tasks
       currentProjectName || undefined, 
       true // isScheduledTask = true

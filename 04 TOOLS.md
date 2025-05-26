@@ -1,99 +1,63 @@
-# Wooster Tools Guide
+# 04 Wooster Tools System
 
-This document covers the **tool** layer—functions that Wooster's LLM agent can call at runtime to interact with the filesystem or external services, or to explicitly query its internal knowledge base.
+This document provides an overview of the tooling system used by Wooster's AI agent. Tools are specialized functions that the agent can use to interact with external services, access specific data stores, or perform actions beyond its immediate knowledge.
 
-## Core Tools
+## 1. Tools and the AgentExecutor
 
-1. **`sendEmail({ to, subject, body }): Promise<string>`**
-   - Located in `src/tools/email.ts`.  
-   - Sends an email.
-   - The agent uses this tool when the user asks Wooster to compose and send an email.
-   - Agent tool name: `send_email`
-   - Configuration: Requires `TOOLS_EMAIL_ENABLED=true` in `.env`, along with `EMAIL_SENDING_EMAIL_ADDRESS` and `EMAIL_EMAIL_APP_PASSWORD`. See `06 CONFIG.MD`.
+Wooster's agent, built on LangChain's `AgentExecutor` (specifically an OpenAI Tools Agent), relies on a collection of tools to perform its tasks effectively. These tools are instances of LangChain's `DynamicTool` class, each encapsulating specific functionality.
 
-2. **`scheduleAgentTask({ taskPayload: object, timeExpression: string, humanReadableDescription: string }) → string`**
-   - Implemented via `src/tools/scheduler.ts` which interacts with `src/scheduler/schedulerService.ts`.
-   - **`taskPayload`**: A JSON object (often just a string query) representing the core agent query or intent to be executed at the scheduled time.
-   - **`timeExpression`**: A natural language string for when the task should run (e.g., "tomorrow at noon", "in 2 hours").
-   - **`humanReadableDescription`**: A brief string describing the scheduled task.
-   - Registers the task with the `SchedulerService`. Returns a confirmation message.
-   - Agent tool name: `schedule_agent_task`
+Key aspects of how tools integrate with the agent:
 
-3. **`queryKnowledgeBase({ query: string }) → string`** 
-   - Allows the agent to explicitly perform a RAG query against the active knowledge base.
-   - **`query`**: The natural language query.
-   - The function invokes the main RAG chain.
-   - Returns the synthesized answer from the RAG chain.
-   - Agent tool name: `query_knowledge_base`
+- **DynamicTool Definition**: Each tool is defined in `src/agentExecutorService.ts` and has:
+    - `name`: A unique string identifier (e.g., `web_search`, `sendEmail`).
+    - `description`: **This is the most critical part for the agent.** The description tells the LLM what the tool does, when it should be used, and what kind of input it expects. The agent's ability to correctly choose and use tools depends heavily on the clarity and accuracy of these descriptions.
+    - `func`: The actual TypeScript async function that gets executed when the agent decides to use the tool. It takes an input (often a string or a structured object) and returns a string result (the "observation") to the agent.
 
-4. **`recall_user_context({ query: string }) → string`** (User Contextual Memory - UCM)
-   - This tool allows the agent to recall previously learned user-specific facts or preferences.
-   - **`query`**: A phrase describing the specific user context needed.
-   - Function: `recallUserContextFunc` (from `src/tools/userContextTool.ts`)
-   - Purpose: To retrieve information from the User Context Memory (UCM).
-   - How it works: Queries a dedicated vector store (`vector_data/user_context_store/`).
-   - When to use: For questions about personal preferences, habits, or previously shared information.
-   - Input (for agent tool): An object with a `query` key. Example: `{"query": "my preferred programming language"}`
-   - Output: A string containing the retrieved fact(s) or a statement that no relevant information was found.
-   - Agent tool name: `recall_user_context`
-   - Configuration: Enabled by setting the `UCM_ENABLED=true` environment variable in `.env`. The UCM extractor prompt can be customized with `UCM_EXTRACTOR_LLM_PROMPT`. See `06 CONFIG.MD`.
-   - See `02 UCM.MD` for more details on the UCM system.
+- **Agent Decision Making**: The `AgentExecutor` presents the names and descriptions of all available tools to the LLM. Based on the user's query and the conversation history, the LLM decides:
+    1.  Whether a tool is needed to fulfill the request.
+    2.  Which specific tool is most appropriate.
+    3.  What input to provide to that tool.
 
-5. **`web_search({ query: string }) → string`** (Web Search)
-   - This tool allows the agent to perform a real-time web search.
-   - Underlying Service: [Tavily AI](https://tavily.com/)
-   - Function: `webSearchTool.invoke({ query: query })` (from `src/tools/webSearchTool.ts`)
-   - Purpose: To fetch up-to-date information from the internet.
-   - Agent tool name: `web_search`
-   - How it works: Uses the Tavily Search API.
-   - When to use: 
-        *   For current information (e.g., "What's the weather like?").
-        *   For specific dates of upcoming public events.
-        *   For facts likely to have changed or too specific for static knowledge.
-        *   Do NOT use for information in project documents (`query_knowledge_base`) or personal facts (`recall_user_context`).
-   - Input (for agent tool): An object with a `query` key. Example: `{"query": "current news headlines"}`
-   - Output: A string containing the search results.
-   - Configuration: 
-        *   Requires the `TAVILY_API_KEY` environment variable to be set in `.env`.
-        *   The tool is enabled by setting `TOOLS_WEB_SEARCH_ENABLED=true` in `.env` (this is often the default if the API key is present).
-        *   Depends on the `@langchain/tavily` package.
-        *   See `06 CONFIG.MD` for details on these environment variables.
+- **Iterative Process**: After a tool is executed, its output (observation) is fed back to the LLM. The LLM can then decide to use another tool, or generate a final response to the user. This iterative process allows for complex, multi-step tasks.
 
-6. **`listFiles()` (Conceptual - if made an agent tool)**
-   - If direct file listing by the agent is desired (beyond the REPL command `list files`):
-   - A wrapper tool could be created (e.g., in `src/tools/filesystem.ts`).
-   - This tool would call `projectIngestor.listProjectFiles(currentProjectName)`.
-   - Currently, `list files` is primarily a REPL command.
+## 2. The Importance of Tool Descriptions
 
-## Agent Integration (`src/agent.ts`)
+It cannot be overstated: **the quality of tool descriptions directly impacts the agent's intelligence and reliability.**
 
-Wooster routes user input not handled by REPL commands through an `agentRespond` function. This function orchestrates the agent's interaction with tools and the RAG system.
+- A good description is clear, concise, and action-oriented.
+- It should explicitly state the tool's purpose and the kind of input it expects (e.g., "Input should be a search query string," or "Input must be an object with keys: 'to', 'subject', 'body'").
+- It helps the LLM distinguish between tools with similar capabilities (e.g., when to use `queryKnowledgeBase` vs. `web_search`).
 
-1.  The agent (LLM) is made aware of the available tools defined in the `availableTools` array in `src/agent.ts`. LangChain's `llm.bindTools(availableTools)` method (or similar mechanisms) formats the tool descriptions for the LLM prompt, enabling it to decide when to use them.
-2.  The LLM processes the user's input and conversation history.
-3.  It decides if a tool should be used or if it can respond directly. Its decision includes which tool to call and with what arguments, based on the tool's defined `name`, `description`, and `parameters`.
-4.  If the agent decides to use a tool:
-    *   The `agentRespond` function (or the LangChain agent executor framework) executes the chosen tool's `execute` method with the LLM-provided arguments.
-    *   The output from the tool is returned to the agent, which then decides on the next step (another tool call, or generating a final response).
-5.  If the agent does not choose a specific tool, or after a tool interaction if a final answer is needed, it typically uses its RAG capabilities (e.g., via the `query_knowledge_base` tool or by invoking the `ragCallback` from `src/index.ts`) to generate a response.
+Refer to the individual tool documentation files for the exact descriptions provided to the agent.
 
-Each tool in the `availableTools` array in `src/agent.ts` conforms to the `AgentTool` interface:
+## 3. Core Wooster Tools
 
-```typescript
-// Defined in src/agent.ts
-export interface AgentTool {
-  name: string;                              
-  description: string;                       
-  parameters: {                              
-    type: "object";
-    properties: Record<string, { 
-      type: string;                         
-      description: string;                 
-    }>;
-    required?: string[];                     
-  };
-  execute: (args: any) => Promise<string>;  
-}
-```
+The following core tools are available to the Wooster agent. Each tool has its own detailed documentation file in the `docs/tools/` directory, which includes its exact name, purpose, the description provided to the agent, input/output schemas, and any relevant configuration notes.
 
-This structure allows the agent framework to correctly inform the LLM about each tool's capabilities and argument requirements, and to dispatch calls to the appropriate `execute` function.
+- **Web Search**
+    - Documentation: `docs/tools/TOOL_WebSearch.MD`
+    - Briefly: Performs real-time internet searches for up-to-date information.
+
+- **User Context Recall**
+    - Documentation: `docs/tools/TOOL_UserContextRecall.MD`
+    - Briefly: Retrieves previously learned user-specific facts, preferences, or context.
+
+- **Project Knowledge Base Query**
+    - Documentation: `docs/tools/TOOL_KnowledgeBaseQuery.MD`
+    - Briefly: Searches and answers questions based exclusively on documents within the currently active project.
+
+- **Send Email**
+    - Documentation: `docs/tools/TOOL_Email.MD`
+    - Briefly: Composes and sends emails on behalf of the user.
+
+- **Schedule Agent Task**
+    - Documentation: `docs/tools/TOOL_TaskScheduler.MD`
+    - Briefly: Schedules a task for the agent to perform at a specified future time.
+
+*This list may expand as more capabilities are added to Wooster.*
+
+## 4. Configuration
+
+- General tool enablement and tool-specific API keys or settings are managed via environment variables in the `.env` file.
+- See `06 CONFIG.MD` for a comprehensive list of these variables.
+- Individual tool documentation files also highlight their specific configuration requirements.

@@ -5,14 +5,14 @@
 
 # Wooster: Your Agentic CLI Assistant
 
-Wooster is a TypeScript-based, extensible command-line AI assistant designed for intelligent interaction. It leverages a Large Language Model (LLM) to understand your requests, maintain conversational context, and strategically access a variety of knowledge sources. Wooster can learn from your documents (organized into "Projects"), remember your preferences (User Contextual Memory), search the web for current information, send emails, schedule tasks, and more. Its capabilities are expanded through a system of agent-callable **Tools**. All configuration is managed through environment variables in an `.env` file.
+Wooster is a TypeScript-based, extensible command-line AI assistant designed for intelligent interaction. It leverages LangChain's `AgentExecutor` framework with a Large Language Model (LLM) to understand your requests, maintain conversational context, and strategically access a variety of knowledge sources. Wooster can learn from your documents (organized into "Projects"), remember your preferences (User Contextual Memory), search the web for current information, send emails, schedule tasks, and more. Its capabilities are expanded through a system of agent-callable **Tools**. All configuration is managed through environment variables in an `.env` file.
 
 ## Core Concepts
 
 Wooster's intelligence comes from its ability to orchestrate several components:
 
-*   **Agent (`src/agent.ts`)**: The LLM-powered brain of Wooster. It interprets your input, maintains rich conversational context (including chat history), and decides whether to call a specific Tool, query its various knowledge sources, or respond directly. It is configured using environment variables in your `.env` file.
-*   **Tools (`src/tools/` & `src/agent.ts`)**: These are specific, self-contained functions that the Agent can decide to call. Examples include `sendEmail`, `scheduleAgentTask`, `queryKnowledgeBase` (for project-specific RAG), `recall_user_context` (for personal memory), and `web_search` for accessing live internet data. Tool enablement and behavior are configured via `.env`.
+*   **Agent (`src/agentExecutorService.ts` & `src/agent.ts`)**: The LLM-powered brain of Wooster, built using LangChain's `AgentExecutor` and an OpenAI Tools agent. `src/agentExecutorService.ts` manages the agent, its tools, and the execution loop. `src/agent.ts` acts as the primary interface for receiving user input and history. The agent interprets your input, maintains rich conversational context, and decides whether to call a specific Tool or respond directly. It is configured using environment variables in your `.env` file.
+*   **Tools (`src/tools/` & `src/agentExecutorService.ts`)**: These are specific, self-contained functions (LangChain `DynamicTool` instances) that the Agent can decide to call. They are defined and managed within `src/agentExecutorService.ts`. Examples include `sendEmail`, `scheduleAgentTask`, `queryKnowledgeBase` (for project-specific RAG), `recall_user_context` (for personal memory), and `web_search` for accessing live internet data. Tool enablement and behavior are configured via `.env`.
 *   **Knowledge Sources**:
     *   **Project-Specific Knowledge (RAG) (`src/projectIngestor.ts`, `src/memoryVector.ts`)**: Wooster can ingest documents and code into a local FAISS vector store. This knowledge is organized into "Projects." The Agent uses Retrieval Augmented Generation (RAG), typically via the `queryKnowledgeBase` tool, to answer questions based on the currently active project's ingested knowledge.
         *   A default project named **"home"** (located in `projects/home/`) is automatically created and loaded on startup.
@@ -30,7 +30,7 @@ Wooster's intelligence comes from its ability to orchestrate several components:
 *   **Multi-Source Knowledge Access**: Wooster dynamically chooses between its base LLM knowledge, project-specific documents (RAG), User Contextual Memory (UCM), and live web search to answer queries.
 *   **Real-time Web Search**: Fetches up-to-date information from the internet using Tavily AI.
 *   **Personalized Interaction**: Learns and recalls your preferences through User Contextual Memory (UCM).
-*   **Agent-Driven Tool Use**: Intelligently selects and uses available tools to fulfill requests (email, scheduling, web search, etc.).
+*   **Agent-Driven Tool Use**: Intelligently selects and uses available tools (LangChain `DynamicTool` instances managed by `AgentExecutor`) to fulfill requests (email, scheduling, web search, etc.).
 *   **Project-Based Knowledge Management**: Load local documents and codebases for Wooster to learn from.
 *   **Task Scheduling**: Schedule reminders and future tasks using natural language.
 *   **Comprehensive Configuration**: Extensive settings via an `.env` file for API keys, LLM parameters, logging, UCM, and feature/tool enablement. See `06 CONFIG.MD`.
@@ -103,10 +103,11 @@ Wooster's behavior is controlled by environment variables set in your `.env` fil
 Wooster's primary method for adding new capabilities is through **Agent Tools**.
 
 *   **Creating Agent Tools**:
-    1.  Develop your tool's logic, often in `src/tools/`.
-    2.  Integrate it into `src/agent.ts` by adding it to `availableTools`.
-    3.  Ensure the tool can be enabled/disabled via an environment variable in `.env` if appropriate (e.g., `TOOLS_MYNEWTOOL_ENABLED=true`).
-    4.  Refer to `04 TOOLS.MD` for more details.
+    1.  Develop your tool's logic, often in a new file in `src/tools/`.
+    2.  Integrate it into `src/agentExecutorService.ts` as a new `DynamicTool` instance, providing a clear `name` and `description`. Add it to the `tools` array within the `initializeTools` function.
+    3.  Ensure the tool can be enabled/disabled via an environment variable in `.env` if appropriate (e.g., `TOOLS_MYNEWTOOL_ENABLED=true`), and handle this in `src/agentExecutorService.ts` and/or the tool's own logic.
+    4.  Document your new tool by creating a `docs/tools/TOOL_YourToolName.MD` file, following the existing examples.
+    5.  Refer to `04 TOOLS.MD` for a general overview of the tooling system.
 
 *   **Creating Plugins** (for lifecycle hooks):
     1.  Create plugin files in `src/plugins/`.
@@ -120,8 +121,9 @@ This README provides a high-level overview. For more details, refer to the other
 - `00 SYSTEM.MD`: Overall system architecture, boot sequence, and REPL loop.
 - `01 PROJECTS.MD`: Managing project-specific knowledge (RAG).
 - `02 UCM.MD`: User Contextual Memory for personalization.
+- `docs/03 AGENT.MD`: Details of the LangChain `AgentExecutor` based agent architecture.
 - `03 PLUGINS.MD`: Creating plugins.
-- `04 TOOLS.MD`: Defining and using agent tools (includes `web_search`).
+- `04 TOOLS.MD`: Overview of the agent's tooling system and an index to individual tool documentation (found in `docs/tools/`).
 - `05 SCHEDULER.MD`: Task scheduling.
 - `06 CONFIG.MD`: Configuration via `.env` environment variables.
 - `07 LOGGING.MD`: Logging system.
