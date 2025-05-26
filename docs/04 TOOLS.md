@@ -51,9 +51,9 @@ The following core tools are available to the Wooster agent. Each tool has its o
     - Briefly: Composes and sends emails on behalf of the user.
 
 - **Google Calendar Tools** (Provided by `GoogleCalendarPlugin`)
-    - Tools: `create_calendar_event`, `list_calendar_events`
+    - Tools: `create_calendar_event`, `list_calendar_events`, `create_calendar`
     - Documentation: `docs/tools/TOOL_GoogleCalendar.MD`
-    - Briefly: Creates new events and lists existing events from Google Calendar.
+    - Briefly: Creates new events, lists existing events, and creates new calendars in Google Calendar.
 
 - **Schedule Agent Task**
     - Documentation: `docs/tools/TOOL_TaskScheduler.MD`

@@ -1,10 +1,10 @@
-# Tools: Google Calendar (`create_calendar_event`, `list_calendar_events`)
+# Tools: Google Calendar (`create_calendar_event`, `list_calendar_events`, `create_calendar`)
 
 This document details the Google Calendar interaction tools available to Wooster's agent, provided by the `GoogleCalendarPlugin`.
 
 ## 1. Purpose
 
-The `GoogleCalendarPlugin` allows the agent to interact with the user's Google Calendar to create new events and list existing ones.
+The `GoogleCalendarPlugin` allows the agent to interact with the user's Google Calendar to create new events, list existing ones, and create new secondary calendars.
 
 ## 2. Plugin Provider
 
@@ -153,6 +153,48 @@ Lists events from Google Calendar. Input is an optional object. Fields: 'timeMin
   ]
   ```
 
+--- 
+
+## Tool 3: Create Calendar
+
+### a. Tool Name
+
+`create_calendar`
+
+### b. Agent-Facing Description
+
+```
+Creates a new secondary Google Calendar. Expects a single JSON string argument. The JSON string should parse into an object with a required key: 'summary' (string, the title of the new calendar). Optional key: 'timeZone' (string, e.g., 'America/Los_Angeles'). Example JSON string: '{"summary":"My New Calendar", "timeZone":"Europe/Berlin"}'
+```
+
+### c. Input Schema
+
+- **Type**: `object` (or a JSON string that parses to this object)
+- **Properties**:
+    - `summary`:
+        - Type: `string`
+        - Description: The title or summary for the new calendar.
+        - **Required**: Yes
+    - `timeZone`:
+        - Type: `string` (optional)
+        - Description: The IANA time zone name for the calendar (e.g., `America/Los_Angeles`, `Europe/London`). Defaults to the system's current time zone if not provided.
+- **Example Agent Input** (as a JSON string):
+  ```json
+  "{\"summary\":\"Vacation Plans\", \"timeZone\":\"America/New_York\"}"
+  ```
+- **Example Agent Input** (parsed as an object by the tool internally):
+  ```json
+  {
+    "summary": "Vacation Plans",
+    "timeZone": "America/New_York"
+  }
+  ```
+
+### d. Output Schema
+
+- **Type**: `string`
+- **Description**: On success, a confirmation message like `"Calendar created successfully: Vacation Plans (ID: calendar_id_string)"`. On failure, an error message string detailing the issue.
+
 ## 7. When to Use (Agent Guidance)
 
 The agent should consider using these tools when:
@@ -160,6 +202,7 @@ The agent should consider using these tools when:
 - The user explicitly asks to create a calendar event, schedule something, or add an item to their calendar (`create_calendar_event`).
 - The user asks about their schedule, what events they have, or asks to find specific events (`list_calendar_events`).
 - The user asks to check their availability at a certain time (`list_calendar_events` could be used to see existing commitments).
+- The user explicitly asks to create a new calendar, or to organize events under a new, separate calendar (`create_calendar`).
 
 ## 8. When NOT to Use
 

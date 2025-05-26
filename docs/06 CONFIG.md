@@ -12,6 +12,37 @@ Wooster's configuration is managed exclusively through environment variables set
 
 **Important:** The `.env` file should always be added to your `.gitignore` file to prevent accidental commitment of sensitive information like API keys.
 
+## Notes about getting OAth credentials for Google services:
+
+### getting a refresh token
+#### 1. In Google Cloud Platform:
+- Go to "APIs & Services" -> "Credentials."
+	- `https://console.cloud.google.com/apis/credentials`
+- Click "+ CREATE CREDENTIALS" -> "OAuth client ID."
+- For "Application type," select "Web application".
+- Give it a name (e.g., "Wooster Web App Client for Playground").
+- Under "Authorized redirect URIs," ADD A URI: `https://developers.google.com/oauthplayground`
+- This is crucial. The Playground explicitly told you it needs to be listed as a valid redirect URI for the "Web application" client ID you're providing it.
+- Click "Create." You will get a new Client ID and Client Secret.
+#### 2. In OAuth 2.0 Playground:
+- go to `https://developers.google.com/oauthplayground`
+- Go back to the settings cog.
+- Ensure "Use your own OAuth credentials" is checked.
+- Enter the new Client ID and Client Secret you just generated for the "Web application" type.
+- Ensure "OAuth flow" is set to "Server-side" (usually default and appropriate for web apps getting refresh tokens).
+- Ensure "Access type" is set to "offline" (to get a refresh token).
+#### 3. Re-authorize in OAuth 2.0 Playground:
+- Go through "Step 1: Select & authorize APIs" again (select Calendar API v3, and the `https://www.googleapis.com/auth/calendar.events` scope).
+- Click "Authorize APIs."
+- Go through the Google Sign-In and Consent screen again.
+- Exchange the new authorization code for tokens.
+- Copy the new Refresh token that is generated.
+
+### checking your OAuth client's client id and client secret 
+- got to `https://console.cloud.google.com/auth/clients` and click on your client's name
+- click the ℹ️ icon in the top right
+
+
 ## Environment Variables Reference
 
 Below are all the environment variables Wooster recognizes, their purpose, and default values if not set.

@@ -7,7 +7,7 @@ This document details the `GoogleCalendarPlugin`, which integrates Google Calend
 - **Plugin Name**: `GoogleCalendarPlugin`
 - **Version**: 0.1.0 (as defined in the plugin file)
 - **Provider**: `src/plugins/googleCalendarPlugin.ts`
-- **Purpose**: This plugin allows Wooster to interact with Google Calendar to create events and list existing events. It achieves this by providing the `create_calendar_event` and `list_calendar_events` tools to the agent.
+- **Purpose**: This plugin allows Wooster to interact with Google Calendar to create events, list existing events, and create new calendars. It achieves this by providing the `create_calendar_event`, `list_calendar_events`, and `create_calendar` tools to the agent.
 
 ## 2. Tools Provided
 
@@ -19,6 +19,9 @@ The `GoogleCalendarPlugin` provides the following tool(s) to the agent:
 -   **`list_calendar_events`**
     -   **Description**: Enables the agent to list existing events from Google Calendar.
     -   **Detailed Documentation**: See `docs/tools/TOOL_GoogleCalendar.MD` (Tool 2).
+-   **`create_calendar`**
+    -   **Description**: Enables the agent to create new secondary Google Calendars.
+    -   **Detailed Documentation**: See `docs/tools/TOOL_GoogleCalendar.MD` (Tool 3).
 
 For complete schemas, agent-facing descriptions, and specific configuration details for these tools, please refer to the main `docs/tools/TOOL_GoogleCalendar.MD` document.
 
@@ -45,7 +48,7 @@ For the `GoogleCalendarPlugin` to function correctly and provide its tools, it n
 
 - The `GoogleCalendarPlugin` is discovered and loaded by the `PluginManager` (`src/pluginManager.ts`) during Wooster's startup sequence if not explicitly disabled.
 - Its `initialize` method is called with the global `AppConfig`. During this phase, it checks the `TOOLS_GOOGLE_CALENDAR_ENABLED` configuration and attempts to initialize the `googleCalendarClient` using the provided credentials.
-- If `TOOLS_GOOGLE_CALENDAR_ENABLED` is `true`, the plugin itself is active, and the `googleCalendarClient` initializes successfully, its `getAgentTools` method will return the `create_calendar_event` and `list_calendar_events` `DynamicTool` instances to the `AgentExecutorService`.
+- If `TOOLS_GOOGLE_CALENDAR_ENABLED` is `true`, the plugin itself is active, and the `googleCalendarClient` initializes successfully, its `getAgentTools` method will return the `create_calendar_event`, `list_calendar_events`, and `create_calendar` `DynamicTool` instances to the `AgentExecutorService`.
 - If client initialization fails (e.g., due to missing or invalid credentials), the tools will not be provided even if the plugin is active and `TOOLS_GOOGLE_CALENDAR_ENABLED` is true.
 
 ## 5. Dependencies

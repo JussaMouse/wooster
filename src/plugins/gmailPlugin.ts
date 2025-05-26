@@ -1,10 +1,18 @@
 import { DynamicTool } from "@langchain/core/tools";
+import { z } from 'zod'; // Import Zod
 import { AppConfig } from "../configLoader";
 import { WoosterPlugin } from "../pluginTypes";
 import { log, LogLevel } from "../logger";
 import { sendEmail as sendEmailFunction, EmailArgs } from "../tools/email"; // The actual email sending logic
 
 let globalAppConfig: AppConfig;
+
+// Define Zod schema for email arguments
+const emailArgsSchema = z.object({
+  to: z.string().describe("Recipient email address or the exact string 'SELF_EMAIL_RECIPIENT' to use your configured personal email address."),
+  subject: z.string().describe("The subject line of the email."),
+  body: z.string().describe("The main content/body of the email."),
+});
 
 const GmailPlugin: WoosterPlugin = {
   name: "GmailPlugin",
@@ -28,45 +36,46 @@ const GmailPlugin: WoosterPlugin = {
     }
     if (!globalAppConfig.tools.email.senderEmailAddress || !globalAppConfig.tools.email.emailAppPassword) {
       log(LogLevel.WARN, "GmailPlugin: Email sender address or app password not configured. sendEmail tool will not be effective.");
+      // Still provide the tool, but it will error out if used without full config, which is fine.
     }
 
     const emailTool = new DynamicTool({
       name: "sendEmail",
-      description: "Sends an email. The input to this tool MUST be a single JSON object string with the following keys: 'to' (string: recipient email address or the exact string 'SELF_EMAIL_RECIPIENT' for your configured personal email), 'subject' (string: email subject line), and 'body' (string: email content). Example: {\"to\": \"example@example.com\", \"subject\": \"Hello\", \"body\": \"Hi there!\"}",
-      func: async (toolInput: string | Record<string, any>) => {
+      description: "Sends an email. Expects a single JSON string argument. The JSON string should parse into an object with required keys: 'to' (string - recipient email or 'SELF_EMAIL_RECIPIENT'), 'subject' (string), and 'body' (string). Example JSON string: '{\"to\":\"user@example.com\",\"subject\":\"Hello\",\"body\":\"Hi there!\"}'",
+      // schema: emailArgsSchema, // Schema is not used here; parsing is manual.
+      func: async (toolInput: string) => {
+        log(LogLevel.DEBUG, "sendEmail plugin func: Received toolInput (string expected):", typeof toolInput, toolInput);
+
         if (!globalAppConfig.tools.email.enabled) {
           return "Email tool is disabled in configuration.";
         }
-        if (!globalAppConfig.tools.email.senderEmailAddress) {
-          log(LogLevel.ERROR, "sendEmail tool (via GmailPlugin): Wooster sending email address not configured.");
-          return "Email tool cannot be used: Wooster sending email address not configured.";
+        if (!globalAppConfig.tools.email.senderEmailAddress || !globalAppConfig.tools.email.emailAppPassword) {
+            log(LogLevel.ERROR, "sendEmail tool (via GmailPlugin): Wooster sending email address or app password not configured.");
+            return "Email tool cannot be used: Wooster sending email address or app password not configured.";
         }
 
-        let parsedArgs: Record<string, any>;
-        if (typeof toolInput === 'string') {
-          try {
-            parsedArgs = JSON.parse(toolInput);
-          } catch (e) {
-            return "Invalid input for sendEmail tool: Input string is not valid JSON. Expected an object with 'to', 'subject', 'body'.";
+        let argsObject: any;
+        try {
+          if (typeof toolInput !== 'string') {
+            throw new Error(`Expected a string input, but received type ${typeof toolInput}. Value: ${JSON.stringify(toolInput)}`);
           }
-        } else if (typeof toolInput === 'object' && toolInput !== null) {
-          parsedArgs = toolInput; // If Langchain already parsed it (e.g. from OpenAI tools format)
-        } else {
-          return "Invalid input type for sendEmail tool. Expected a JSON string or an object with 'to', 'subject', 'body'.";
+          argsObject = JSON.parse(toolInput);
+        } catch (e: any) {
+          log(LogLevel.ERROR, "sendEmail: Failed to parse input string to JSON", { input: toolInput, error: e.message });
+          return `Error: Invalid input. Expected a single JSON string. ${e.message}`;
         }
 
-        // Check if the actual arguments are nested under an "input" key, which some agent setups might do.
-        // However, the OpenAI tools agent should provide the arguments directly.
-        const finalArgs: EmailArgs = (parsedArgs.input && typeof parsedArgs.input === 'object' && Object.keys(parsedArgs).length === 1)
-                                    ? parsedArgs.input as EmailArgs 
-                                    : parsedArgs as EmailArgs;
-
-        if (!finalArgs.to || !finalArgs.subject || !finalArgs.body) {
-          log(LogLevel.WARN, `sendEmail tool: Missing 'to', 'subject', or 'body'. Input was: ${JSON.stringify(toolInput)}, Parsed as: ${JSON.stringify(parsedArgs)}, Final Args: ${JSON.stringify(finalArgs)}`);
-          return `Invalid input for sendEmail tool: Missing 'to', 'subject', or 'body'. Ensure these are direct properties.`;
+        let parsedArgs: z.infer<typeof emailArgsSchema>;
+        try {
+          parsedArgs = emailArgsSchema.parse(argsObject);
+        } catch (e: any) {
+          log(LogLevel.ERROR, "sendEmail: Zod validation failed for parsed arguments", { args: argsObject, error: e.errors });
+          const errorMessages = e.errors.map((err: any) => `${err.path.join('.')} - ${err.message}`).join(', ');
+          return `Error: Invalid arguments in JSON. ${errorMessages}. Please ensure to, subject, and body are provided correctly.`;
         }
         
-        return sendEmailFunction(finalArgs, globalAppConfig.tools.email);
+        // Proceed with sending the email using the validated parsedArgs
+        return sendEmailFunction(parsedArgs, globalAppConfig.tools.email);
       },
     });
     return [emailTool];

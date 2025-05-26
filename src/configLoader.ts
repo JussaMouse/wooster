@@ -157,16 +157,16 @@ export function loadConfig(): AppConfig {
   };
 
   currentConfig.logging = {
-    consoleLogLevel: parseLogLevel(getEnvVar('LOGGING_CONSOLE_LOG_LEVEL'), DEFAULT_CONFIG.logging.consoleLogLevel),
-    fileLogLevel: parseLogLevel(getEnvVar('LOGGING_FILE_LOG_LEVEL'), DEFAULT_CONFIG.logging.fileLogLevel),
-    logFile: parseString(getEnvVar('LOGGING_LOG_FILE'), DEFAULT_CONFIG.logging.logFile),
-    logAgentLLMInteractions: parseBoolean(getEnvVar('LOGGING_LOG_AGENT_LLM_INTERACTIONS'), DEFAULT_CONFIG.logging.logAgentLLMInteractions),
-    consoleQuietMode: parseBoolean(getEnvVar('LOGGING_CONSOLE_QUIET_MODE'), DEFAULT_CONFIG.logging.consoleQuietMode),
+    consoleLogLevel: parseLogLevel(getEnvVar('TOOLS_LOGGING_CONSOLE_LOG_LEVEL'), DEFAULT_CONFIG.logging.consoleLogLevel),
+    fileLogLevel: parseLogLevel(getEnvVar('TOOLS_LOGGING_FILE_LOG_LEVEL'), DEFAULT_CONFIG.logging.fileLogLevel),
+    logFile: parseString(getEnvVar('TOOLS_LOGGING_LOG_FILE'), DEFAULT_CONFIG.logging.logFile),
+    logAgentLLMInteractions: parseBoolean(getEnvVar('TOOLS_LOGGING_LOG_AGENT_LLM_INTERACTIONS'), DEFAULT_CONFIG.logging.logAgentLLMInteractions),
+    consoleQuietMode: parseBoolean(getEnvVar('TOOLS_LOGGING_CONSOLE_QUIET_MODE'), DEFAULT_CONFIG.logging.consoleQuietMode),
   };
 
   currentConfig.ucm = {
-    enabled: parseBoolean(getEnvVar('UCM_ENABLED'), DEFAULT_CONFIG.ucm.enabled),
-    extractorLlmPrompt: parseNullableString(getEnvVar('UCM_EXTRACTOR_LLM_PROMPT'), DEFAULT_CONFIG.ucm.extractorLlmPrompt),
+    enabled: parseBoolean(getEnvVar('TOOLS_UCM_ENABLED'), DEFAULT_CONFIG.ucm.enabled),
+    extractorLlmPrompt: parseNullableString(getEnvVar('TOOLS_UCM_EXTRACTOR_LLM_PROMPT'), DEFAULT_CONFIG.ucm.extractorLlmPrompt),
   };
   
   currentConfig.tools = {

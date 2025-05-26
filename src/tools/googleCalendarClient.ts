@@ -1,5 +1,5 @@
 import { google, calendar_v3 } from 'googleapis';
-import { AppConfig, GoogleCalendarConfig } from '../configLoader';
+import { AppConfig, GoogleCalendarToolConfig } from '../configLoader';
 import { log, LogLevel } from '../logger';
 
 let oauth2Client: any; // Consider a more specific type from googleapis
@@ -10,7 +10,7 @@ let calendarApi: calendar_v3.Calendar;
  * This should be called once, typically during plugin initialization.
  * @param config The application configuration containing Google Calendar settings.
  */
-export function initializeGoogleCalendarClient(config: GoogleCalendarConfig): boolean {
+export function initializeGoogleCalendarClient(config: GoogleCalendarToolConfig): boolean {
   if (!config.clientId || !config.clientSecret || !config.refreshToken) {
     log(LogLevel.WARN, 'Google Calendar client: Missing clientId, clientSecret, or refreshToken. Calendar features will be disabled.');
     return false;
@@ -77,8 +77,16 @@ export async function createCalendarEvent(options: CreateEventOptions, calendarI
 
     log(LogLevel.DEBUG, 'Attempting to create Google Calendar event:', { summary: options.summary, start: options.startDateTime, calendarId });
     const response = await calendarApi.events.insert(event);
-    log(LogLevel.INFO, 'Google Calendar event created successfully:', { eventId: response.data.id, summary: response.data.summary });
-    return response.data;
+    log(LogLevel.INFO, 'Google Calendar event creation API call returned. Status: %s', response.status);
+    log(LogLevel.DEBUG, 'Full Google Calendar API response data for event creation:', response.data);
+
+    if (response.status >= 200 && response.status < 300 && response.data && response.data.id) {
+      log(LogLevel.INFO, 'Google Calendar event created successfully (according to API response):', { eventId: response.data.id, summary: response.data.summary, htmlLink: response.data.htmlLink });
+      return response.data;
+    } else {
+      log(LogLevel.ERROR, 'Google Calendar event creation API call did not return a successful state or event ID.', { status: response.status, responseData: response.data });
+      return `Failed to create event: API returned status ${response.status}. Check logs for response data.`;
+    }
   } catch (error: any) {
     log(LogLevel.ERROR, 'Failed to create Google Calendar event:', { error, summary: options.summary });
     return `Failed to create event: ${error.message || 'Unknown error'}`;
@@ -125,5 +133,46 @@ export async function listCalendarEvents(options: ListEventsOptions = {}, calend
   } catch (error: any) {
     log(LogLevel.ERROR, 'Failed to list Google Calendar events:', { error, calendarId });
     return `Failed to list events: ${error.message || 'Unknown error'}`;
+  }
+}
+
+export interface CreateCalendarOptions {
+  summary: string;
+  timeZone?: string; // e.g., "America/Los_Angeles"
+}
+
+/**
+ * Creates a new secondary calendar.
+ * @param options The calendar details.
+ * @returns The created calendar details or an error message.
+ */
+export async function createCalendar(options: CreateCalendarOptions): Promise<calendar_v3.Schema$Calendar | string> {
+  if (!calendarApi) {
+    return 'Google Calendar client is not initialized. Cannot create calendar.';
+  }
+
+  try {
+    const calendarRequestBody: calendar_v3.Schema$Calendar = {
+      summary: options.summary,
+      timeZone: options.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone, // Default to system timezone
+    };
+
+    log(LogLevel.DEBUG, 'Attempting to create Google Calendar:', { summary: options.summary, timeZone: calendarRequestBody.timeZone });
+    const response = await calendarApi.calendars.insert({
+      requestBody: calendarRequestBody,
+    });
+    log(LogLevel.INFO, 'Google Calendar creation API call returned. Status: %s', response.status);
+    log(LogLevel.DEBUG, 'Full Google Calendar API response data for calendar creation:', response.data);
+
+    if (response.status >= 200 && response.status < 300 && response.data && response.data.id) {
+      log(LogLevel.INFO, 'Google Calendar created successfully (according to API response):', { calendarId: response.data.id, summary: response.data.summary });
+      return response.data;
+    } else {
+      log(LogLevel.ERROR, 'Google Calendar creation API call did not return a successful state or calendar ID.', { status: response.status, responseData: response.data });
+      return `Failed to create calendar: API returned status ${response.status}. Check logs for response data.`;
+    }
+  } catch (error: any) {
+    log(LogLevel.ERROR, 'Failed to create Google Calendar:', { error, summary: options.summary });
+    return `Failed to create calendar: ${error.message || 'Unknown error'}`;
   }
 } 
