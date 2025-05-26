@@ -1,150 +1,139 @@
 # 06 CONFIG.MD: Wooster Configuration
 
-Wooster uses a single JSON file named `config.json`, located in the project root, for managing all its core operational settings and credentials. If this file does not exist when Wooster starts, a default one will be created. **You MUST edit this file after its creation, especially to provide your `openai.apiKey`.**
+Wooster now uses a single `.env` file, located in the project root, for managing all its core operational settings, credentials, and plugin activation. You must copy the provided `.env.example` to `.env` and fill in your actual values.
 
-## Configuration File: `config.json`
+**Wooster will not start if essential configurations, such as `OPENAI_API_KEY`, are missing or still set to placeholder values in your `.env` file.**
 
-This file allows you to customize:
+## Configuration File: `.env`
 
-1.  **OpenAI Settings** (`openai` section): API key, model name.
-2.  **Logging Settings** (`logging` section): Console and file log levels, log file path, and agent LLM interaction logging.
-3.  **Email Tool Settings** (`email` section): Enablement, sender address, and app password.
-4.  **User Contextual Memory (UCM)** (`ucm` section): Enablement and extractor prompt.
-5.  **Plugin Activation** (`plugins` section).
+This file allows you to customize various aspects of Wooster using environment variables. The application reads this file at startup and makes the settings available throughout the system.
 
-### Default `config.json` Structure
+### Setting Up Your `.env` File
 
-If `config.json` is not found, Wooster will create it with the following default content. You will need to edit this, particularly `openai.apiKey`.
+1.  **Copy the Example:** In the root of your Wooster project, find the file named `.env.example`.
+2.  **Rename:** Make a copy of this file and name it `.env`.
+    ```bash
+    cp .env.example .env
+    ```
+3.  **Edit:** Open the `.env` file in a text editor and modify the placeholder values with your actual settings and API keys.
+    *   **Crucially, provide your `OPENAI_API_KEY`.**
+    *   Review and adjust other settings as needed.
 
-```json
-{
-  "openai": {
-    "apiKey": "YOUR_OPENAI_API_KEY_HERE",
-    "modelName": "gpt-4o-mini"
-  },
-  "logging": {
-    "consoleLogLevel": "INFO",
-    "fileLogLevel": "INFO",
-    "logFile": "wooster_session.log",
-    "logAgentLLMInteractions": false
-  },
-  "email": {
-    "enabled": false,
-    "sendingEmailAddress": null,
-    "userPersonalEmailAddress": null,
-    "emailAppPassword": null
-  },
-  "ucm": {
-    "enabled": false,
-    "extractorLlmPrompt": null
-  },
-  "plugins": {}
-}
-```
+**Important:** The `.env` file should be added to your `.gitignore` file to prevent accidental commit of sensitive information.
 
 ### Configuration Sections Explained
 
-#### 1. `openai`
+#### 1. OpenAI Settings
 
-Controls settings related to the OpenAI API.
+Manages settings related to the OpenAI API. Variables are prefixed with `OPENAI_`.
 
--   `openai.apiKey` (string):
-    -   **Required.** Your OpenAI API key.
-    -   The default value `"YOUR_OPENAI_API_KEY_HERE"` is a placeholder and **must be replaced** with your actual key for Wooster to function.
--   `openai.modelName` (string):
-    -   The OpenAI model to be used by Wooster (e.g., `"gpt-4o-mini"`, `"gpt-4"`, `"gpt-3.5-turbo"`).
-    -   **Default**: `"gpt-4o-mini"`.
+-   `OPENAI_API_KEY`: Your OpenAI API key.
+    -   **Required.**
+-   `OPENAI_MODEL_NAME`: The OpenAI model to be used (e.g., `gpt-4o-mini`, `gpt-4`, `gpt-3.5-turbo`).
+    -   **Default**: `gpt-4o-mini`
 
-#### 2. `logging`
+#### 2. Logging Configuration
 
-Manages how Wooster logs information. See `08 LOGGING.MD` for more details.
+Manages how Wooster logs information. Variables are prefixed with `LOGGING_`. See `08 LOGGING.MD` (if it exists, or relevant logger documentation) for more details on log levels.
 
--   `logging.consoleLogLevel` (string: `"DEBUG" | "INFO" | "WARN" | "ERROR"`):
+-   `LOGGING_CONSOLE_LOG_LEVEL` (Valid values: `DEBUG`, `INFO`, `WARN`, `ERROR`):
     -   The minimum log level for messages displayed on the console.
-    -   **Default**: `"INFO"`.
--   `logging.fileLogLevel` (string: `"DEBUG" | "INFO" | "WARN" | "ERROR"`):
+    -   **Default**: `INFO`.
+-   `LOGGING_FILE_LOG_LEVEL` (Valid values: `DEBUG`, `INFO`, `WARN`, `ERROR`):
     -   The minimum log level for messages written to the log file.
-    -   **Default**: `"INFO"`.
--   `logging.logFile` (string | null):
-    -   The name of the log file (e.g., `"wooster_session.log"`) or an absolute path to it.
-    -   If only a filename is provided, it will be created in a `logs/` directory in the project root.
-    -   Set to `null` to disable file logging entirely.
-    -   **Default**: `"wooster_session.log"`.
--   `logging.logAgentLLMInteractions` (boolean):
-    -   If `true`, detailed logs of interactions with the LLM (prompts and responses) will be written (typically at DEBUG level).
+    -   **Default**: `INFO`.
+-   `LOGGING_LOG_FILE` (string | empty):
+    -   The name of the log file (e.g., `wooster_session.log`) or an absolute path.
+    -   If only a filename is provided, it will be created in the project root (or a designated logs directory if implemented).
+    -   Set to an empty string (e.g., `LOGGING_LOG_FILE=`) or omit the variable to disable file logging.
+    -   **Default**: `wooster_session.log`.
+-   `LOGGING_LOG_AGENT_LLM_INTERACTIONS` (boolean: `true` | `false`):
+    -   If `true`, detailed logs of interactions with the LLM (prompts and responses) will be written.
     -   Useful for debugging agent behavior.
     -   **Default**: `false`.
+-   `LOGGING_CONSOLE_QUIET_MODE` (boolean: `true` | `false`):
+    -   If set to `true`, only `WARN` and `ERROR` level messages will be displayed on the console. `INFO` and `DEBUG` messages will be suppressed from console output (they will still be written to the log file if file logging is enabled and the `LOGGING_FILE_LOG_LEVEL` is appropriate).
+    -   Useful for a less verbose console experience during normal operation.
+    -   **Default**: `false`.
 
-#### 3. `email`
+#### 3. Email Tool Configuration
 
-Configures the built-in email sending tool.
+Configures the built-in email sending tool. Variables are prefixed with `EMAIL_`.
 
--   `email.enabled` (boolean):
+-   `EMAIL_ENABLED` (boolean: `true` | `false`):
     -   Set to `true` to enable the email tool.
     -   If `false`, the email tool will not be available to the agent.
     -   **Default**: `false`.
--   `email.sendingEmailAddress` (string | null):
-    -   The email address from which Wooster will send emails and authenticate with the email server (e.g., your Gmail address used for sending).
-    -   Required if `email.enabled` is `true`.
-    -   **Default**: `null`.
--   `email.userPersonalEmailAddress` (string | null):
-    -   The user's personal email address. This is used as the recipient when the agent is instructed to send an email to the user (e.g., using the `SELF_EMAIL_RECIPIENT` placeholder).
-    -   Optional. If not set and an email is sent to `SELF_EMAIL_RECIPIENT`, it will fall back to using `sendingEmailAddress` as the recipient.
-    -   **Default**: `null`.
--   `email.emailAppPassword` (string | null):
-    -   If using Gmail, this is your 16-character App Password associated with the `sendingEmailAddress`.
-    -   Required if `email.enabled` is `true` and you are using Gmail with an App Password for the `sendingEmailAddress`.
-    -   (OAuth2 configuration is not currently supported directly via `config.json`).
-    -   **Default**: `null`.
+-   `EMAIL_SENDING_EMAIL_ADDRESS` (string | empty):
+    -   The email address from which Wooster will send emails.
+    -   Required if `EMAIL_ENABLED=true`.
+    -   **Default**: (empty, meaning null)
+-   `EMAIL_USER_PERSONAL_EMAIL_ADDRESS` (string | empty):
+    -   The user's personal email address, used as the recipient for `SELF_EMAIL_RECIPIENT`.
+    -   Optional.
+    -   **Default**: (empty, meaning null)
+-   `EMAIL_EMAIL_APP_PASSWORD` (string | empty):
+    -   Your email provider's app password (e.g., Gmail App Password) for the `EMAIL_SENDING_EMAIL_ADDRESS`.
+    -   Required if `EMAIL_ENABLED=true` and using app password authentication.
+    -   **Default**: (empty, meaning null)
 
-#### 4. `ucm` (User Contextual Memory)
+#### 4. User Contextual Memory (UCM) Configuration
 
-Controls the UCM feature. See `07 UCM.MD` for more details on UCM.
+Controls the UCM feature. Variables are prefixed with `UCM_`.
 
--   `ucm.enabled` (boolean):
+-   `UCM_ENABLED` (boolean: `true` | `false`):
     -   Set to `true` to enable UCM.
     -   **Default**: `false`.
--   `ucm.extractorLlmPrompt` (string | null):
+-   `UCM_EXTRACTOR_LLM_PROMPT` (string | empty):
     -   A custom prompt for the LLM that extracts user facts for UCM.
-    -   If `null`, a system-defined default prompt is used.
-    -   **Default**: `null`.
+    -   If empty or omitted, a system-defined default prompt is used.
+    -   **Default**: (empty, meaning null)
 
-#### 5. `plugins`
+#### 5. Google Calendar Integration
 
-Manages plugin activation. See `03 PLUGINS.MD` for plugin details.
+Configures integration with Google Calendar. Variables are prefixed with `GOOGLE_`. These are required if you intend to use Google Calendar functionalities.
 
--   The `plugins` object contains key-value pairs where:
-    -   The key is the plugin filename (without the `.ts` extension) from `src/plugins/`.
-    -   The value is a boolean (`true` to enable, `false` to disable).
--   If a plugin file exists in `src/plugins/` but is not listed here, it defaults to **enabled**.
--   **Default**: `{}` (empty object, meaning all found plugins are enabled by default).
+-   `GOOGLE_CLIENT_ID` (string | empty):
+    -   Your Google Cloud OAuth 2.0 Client ID.
+    -   **Default**: (empty, meaning null)
+-   `GOOGLE_CLIENT_SECRET` (string | empty):
+    -   Your Google Cloud OAuth 2.0 Client Secret.
+    -   **Default**: (empty, meaning null)
+-   `GOOGLE_REFRESH_TOKEN` (string | empty):
+    -   The OAuth 2.0 Refresh Token obtained for Wooster's access to Google Calendar.
+    -   **Default**: (empty, meaning null)
+-   `WOOSTER_CALENDAR_ID` (string):
+    -   The ID of the Google Calendar Wooster will primarily manage events on (e.g., `primary` for the authenticated user's main calendar, or a specific calendar ID).
+    -   **Default**: `primary`.
+-   `YOUR_PERSONAL_CALENDAR_EMAIL` (string | empty):
+    -   Your personal Google Calendar email address. Wooster can use this to share events from its calendar to yours by adding you as an attendee.
+    -   **Default**: (empty, meaning null)
 
-**Example `plugins` configuration:**
-```json
-  "plugins": {
-    "myAnalyticsPlugin": true,
-    "experimentalFeaturePlugin": false
-  }
-```
+#### 6. Plugin Activation
+
+Manages which plugins are active. Wooster discovers plugins from the `src/plugins/` directory.
+
+-   **General Rule:** Plugins are **ENABLED BY DEFAULT** if found in the `src/plugins/` directory.
+-   **To Disable a Plugin:** You can explicitly disable a plugin by adding an environment variable to your `.env` file.
+    -   The format is `PLUGIN_PLUGINNAME_ENABLED=false`.
+    -   `PLUGINNAME` should be the plugin's filename without the `.ts` extension, converted to uppercase.
+    -   Example: For a plugin file `src/plugins/myCoolPlugin.ts`, to disable it, add:
+        `PLUGIN_MYCOOLPLUGIN_ENABLED=false`
+-   **To Explicitly Enable a Plugin (Optional):**
+    -   You can also explicitly set `PLUGIN_PLUGINNAME_ENABLED=true`. However, since the default is enabled, this is usually not necessary unless you want to be very explicit in your configuration.
+
+#### 7. Bootstrap Log Level
+
+This setting controls console log messages that occur very early in the application startup, even before the main logging configuration (above) is fully processed.
+
+-   `LOG_LEVEL` (Valid values: `DEBUG`, `INFO`, `WARN`, `ERROR`):
+    -   Sets the initial console log level.
+    -   This is primarily for debugging startup issues.
+    -   If omitted, a sensible default (likely INFO) will be used by the bootstrap logger.
+    -   Example: `LOG_LEVEL=DEBUG`
 
 ## Loading Mechanism
 
-The configuration is loaded at startup by `src/configLoader.ts`. If `config.json` is missing, `configLoader.ts` creates it with the default settings described above. Wooster will exit if essential configurations like `openai.apiKey` are missing or still placeholders after loading.
+The configuration variables from your `.env` file are loaded into `process.env` at the very beginning of the application's startup sequence. The `src/configLoader.ts` module then reads these environment variables, applies defaults for any that are missing (unless a missing variable is critical, like `OPENAI_API_KEY`), performs necessary type conversions, and constructs an `AppConfig` object that the rest of the application uses.
 
-## `.env` File for Developer and Plugin-Specific Variables
-
-Wooster primarily uses `config.json` for all its core operational settings. However, to support plugin development and advanced use cases, Wooster will also automatically load any variables defined in a `.env` file located in the project root (if one exists) into `process.env` at startup. This is facilitated by the `dotenv` package.
-
-**Intended Use for `.env`:**
-
-*   **Plugin-Specific Configurations:** Plugin developers can instruct users to add their plugin-specific API keys or other settings to the `.env` file (e.g., `MY_PLUGIN_API_KEY=somevalue`). The plugin code can then access these via `process.env.MY_PLUGIN_API_KEY`.
-*   **Third-Party Service Credentials:** If you integrate other services not directly managed by Wooster's core configuration, you can store their credentials in `.env`.
-*   **Local Overrides (Not for Wooster Core Settings):** While `process.env` variables can technically override anything, Wooster's core systems are designed to read their primary configuration (like OpenAI keys, email setup, UCM enablement, etc.) exclusively from `config.json`.
-*   **Bootstrap `LOG_LEVEL`:** As before, an initial `LOG_LEVEL` can be set in `.env` to control console messages very early in the startup process, before `config.json` is fully parsed.
-
-**Important Distinction:**
-
-*   **Wooster Core Settings: `config.json` ONLY.** Do not attempt to configure Wooster's main features (OpenAI API key, logging levels defined in `config.json`, email tool settings, UCM settings) via `.env`. These settings are read directly and exclusively from `config.json`.
-*   **Plugin/Developer Settings: `.env` is an option.** This provides a convenient and standard way for developers to manage their own environment-specific variables without modifying Wooster's core `config.json`.
-
-Refer to the `.env.example` file for guidance on structuring your `.env` file. Wooster itself will not create a `.env` file; you must create it manually if you need it for these specific purposes. 
+If critical variables are missing or invalid, Wooster will log an error and may refuse to start to prevent operational issues. Always check the console output if Wooster fails to start after you've modified your `.env` file. 

@@ -1,6 +1,6 @@
 # Wooster Plugins Guide
 
-Plugins let you extend Wooster's core behavior by hooking into its REPL lifecycle events. To create a plugin, you add a `.ts` file in `src/plugins/`. Wooster will discover these files, but their activation (i.e., whether their hooks are actually run) is controlled by the `plugins` section in `config.json`. See `06 CONFIG.MD` for details on configuring plugins.
+Plugins let you extend Wooster's core behavior by hooking into its REPL lifecycle events. To create a plugin, you add a `.ts` file in `src/plugins/`. Wooster automatically discovers these files. Their activation (i.e., whether their hooks are actually run) is controlled by environment variables in your `.env` file. See `06 CONFIG.MD` for full details on configuring Wooster, including plugins.
 
 ## Plugin Interface
 
@@ -38,7 +38,7 @@ interface Plugin {
 
 ## Built-in Plugin Commands
 - Wooster also supports a REPL command:
-  - `list plugins`: outputs the names of all discovered plugin files and indicates whether they are active based on `config.json`.
+  - `list plugins`: outputs the names of all discovered plugin files and indicates whether they are active based on your `.env` configuration (enabled by default, or explicitly set via `PLUGIN_PLUGINNAME_ENABLED=true/false` variables).
 
 ## Creating a Plugin
 
@@ -60,50 +60,39 @@ const loggerPlugin: Plugin = {
 
 export default loggerPlugin
 ```
-3. Enable your plugin in `config.json` under the `plugins` key. For example:
-   ```json
-   {
-     // ... other config ...
-     "plugins": {
-       "loggerPlugin": true // Filename without .ts extension
-     }
-   }
-   ```
+3. Configure plugin activation in your `.env` file. Plugins are **enabled by default** if found in `src/plugins/`.
+   - To explicitly disable `loggerPlugin.ts` (whose name is `logger`), add this to your `.env`:
+     ```env
+     PLUGIN_LOGGER_ENABLED=false
+     ```
+   - To explicitly enable it (though it's enabled by default if the above line is missing), you could add:
+     ```env
+     PLUGIN_LOGGER_ENABLED=true
+     ```
+   (Note: The plugin name for the environment variable `PLUGIN_LOGGER_ENABLED` comes from the `name` field in the plugin object, e.g., `name: 'logger'` maps to `PLUGIN_LOGGER_ENABLED`. `configLoader.ts` actually derives the expected env key from the *filename* when checking defaults, e.g. `loggerPlugin.ts` -> `PLUGIN_LOGGERPLUGIN_ENABLED`. Ensure your plugin's `name` property matches the filename (without .ts) for consistent identification by `pluginManager.ts` if relying on default enablement or if `config.plugins[plugin.name]` is used directly after config load.)
+
 4. Restart Wooster: if enabled, you should see messages indicating your plugin's hooks are firing (or whatever behavior your plugin implements).
 
 ## Best Practices
 
-- Give each plugin a unique `name`.
+- Give each plugin a unique `name` that ideally matches its filename (without the `.ts` extension) for clarity with `.env` configuration conventions.
 - Keep hook implementations quick and robust; catch and log errors.
 - If a plugin needs to perform complex actions or interact with Wooster's core reasoning (e.g., accessing knowledge, making decisions), consider if implementing it as an Agent Tool (`04 TOOLS.MD`) would be more appropriate, allowing the agent to intelligently decide when and how to use that capability.
-- Use environment variables (`.env`) for sensitive config.
+- Use environment variables in your `.env` file for any sensitive plugin-specific configuration (e.g., API keys for services your plugin uses). Wooster automatically loads variables from this file into `process.env` at startup, making them accessible to your plugin code (e.g., `process.env.MY_PLUGIN_API_KEY`). All of Wooster's configuration, including core settings and plugin activation, is now managed via this `.env` file.
 - Document your plugin's purpose and usage in code comments.
 
 ---
 Wooster's plugin system offers a way to hook into lifecycle events for specific side-effects, complementing the agent tool system which provides dynamic, agent-driven capabilities.
 
-Plugin functionality is managed by `src/pluginManager.ts`. Plugins are enabled or disabled via the `plugins` section in `config.json`.
+Plugin functionality is managed by `src/pluginManager.ts`. Plugins found in `src/plugins/` are **enabled by default**.
 
-For example, to disable a hypothetical `examplePlugin`:
+To explicitly disable a plugin, you define an environment variable in your `.env` file. The variable name should follow the pattern `PLUGIN_PLUGINFILENAME_ENABLED=false`, where `PLUGINFILENAME` is the name of the plugin file (without the `.ts` extension), converted to uppercase.
 
-```json
-// config.json
-{
-  // ... other config
-  "plugins": {
-    "examplePlugin": false
-  }
-}
+For example, to disable a plugin defined in `examplePlugin.ts`:
+
+```env
+# In your .env file
+PLUGIN_EXAMPLEPLUGIN_ENABLED=false
 ```
 
-If a plugin is not listed in `config.json`, it defaults to being enabled. To explicitly enable it, you would add:
-
-```json
-// config.json
-{
-  // ... other config
-  "plugins": {
-    "examplePlugin": true
-  }
-}
-```
+If this line is absent, and `examplePlugin.ts` exists in `src/plugins/`, it will be considered enabled. You can also explicitly enable it with `PLUGIN_EXAMPLEPLUGIN_ENABLED=true`, though this is usually redundant.

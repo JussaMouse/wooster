@@ -36,17 +36,19 @@ export async function loadPlugins() {
     const plugin: Plugin = mod.default
       
     if (plugin?.name) {
-        const pluginConfigEnabled = config.plugins[plugin.name]
-        
-        if (pluginConfigEnabled === false) {
-          log(LogLevel.INFO, 'Plugin "%s" is disabled in config. Skipping load.', plugin.name);
-          continue // Skip this plugin
+        const isEnabled = config.plugins[plugin.name];
+
+        if (isEnabled === false) {
+          log(LogLevel.INFO, 'Plugin "%s" is disabled via configuration. Skipping load.', plugin.name);
+          continue;
         }
         
-        // If pluginConfigEnabled is true or undefined (not in config), load it.
-      plugins.push(plugin)
-        log(LogLevel.INFO, 'Loaded plugin: "%s" (Enabled: %s)', plugin.name, (pluginConfigEnabled === undefined ? 'default (true)' : pluginConfigEnabled.toString()));
-        // console.log(`Loaded plugin: ${plugin.name}`)
+        if (isEnabled === undefined) {
+          log(LogLevel.WARN, 'Plugin "%s" was not found in the centrally managed plugin configuration. Assuming enabled, but this might indicate an issue.', plugin.name);
+        }
+
+        plugins.push(plugin);
+        log(LogLevel.INFO, 'Loaded plugin: "%s" (Enabled: %s)', plugin.name, isEnabled === undefined ? "true (implicit)" : isEnabled.toString());
       } else {
         log(LogLevel.WARN, 'File "%s" in plugins directory does not export a valid plugin (missing default export or name property).', f);
       }
@@ -121,4 +123,18 @@ export async function handleAssistantResponse(resp: string): Promise<void> {
 type PluginName = string
 export function listPlugins(): PluginName[] {
   return plugins.map(p => p.name)
+}
+
+/**
+ * Returns a list of potential plugin filenames from the plugins directory.
+ * This is used by configLoader to determine default enablement states.
+ */
+export function getPluginFileNames(): string[] {
+  const dir = join(__dirname, 'plugins');
+  try {
+    return readdirSync(dir).filter(f => /\.(ts|js)$/.test(f));
+  } catch (err: any) {
+    log(LogLevel.WARN, "Error reading plugins directory for getPluginFileNames. Returning empty list. Error: %s", err.message, { directory: dir });
+    return [];
+  }
 }

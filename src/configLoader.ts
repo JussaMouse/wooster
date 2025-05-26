@@ -1,131 +1,188 @@
 import fs from 'fs';
 import path from 'path';
+import { LogLevel } from './logger'; // Assuming LogLevel is exported from logger.ts
+import { getPluginFileNames } from './pluginManager';
 
-// Keep LogLevel here as it's fundamental to logging config
-export enum LogLevel {
-  DEBUG = 'DEBUG',
-  INFO = 'INFO',
-  WARN = 'WARN',
-  ERROR = 'ERROR',
+// Define an interface for the overall application configuration
+export interface AppConfig {
+  openai: OpenAIConfig;
+  logging: LoggingConfig;
+  email: EmailConfig;
+  ucm: UcmConfig;
+  plugins: Record<string, boolean>; // Maps plugin filename (w/o .ts) to enabled status
+  googleCalendar: GoogleCalendarConfig;
+  // Add other configuration sections as needed
 }
 
+// Define interfaces for each configuration section
 export interface OpenAIConfig {
-  apiKey: string;
+  apiKey: string | null;
   modelName: string;
 }
 
 export interface LoggingConfig {
   consoleLogLevel: LogLevel;
   fileLogLevel: LogLevel;
-  logFile: string | null; // Null means file logging is disabled
+  logFile: string;
   logAgentLLMInteractions: boolean;
+  consoleQuietMode: boolean;
 }
 
 export interface EmailConfig {
   enabled: boolean;
-  sendingEmailAddress: string | null;
-  userPersonalEmailAddress: string | null;
-  emailAppPassword: string | null; // For Gmail App Passwords
-  // Add other email provider settings as needed (e.g., SMTP host, port, user, pass for generic SMTP)
-  // For Gmail OAuth (more complex setup, usually involves token management)
-  // gmailClientId: string | null;
-  // gmailClientSecret: string | null;
-  // gmailRefreshToken: string | null;
+  senderEmailAddress: string | null; // e.g., your Gmail address
+  userPersonalEmailAddress: string | null; // User's personal email, for CC'ing or as default "to"
+  emailAppPassword: string | null; // App Password for Gmail
 }
 
-export interface UCMConfig {
+export interface UcmConfig {
   enabled: boolean;
   extractorLlmPrompt: string | null;
 }
 
-export interface PluginsConfig {
-  [pluginName: string]: boolean;
+export interface GoogleCalendarConfig {
+  enabled: boolean;
+  googleCloudClientId: string | null;
+  googleCloudClientSecret: string | null;
+  googleCloudRefreshToken: string | null;
 }
 
-export interface AppConfig {
-  openai: OpenAIConfig;
-  logging: LoggingConfig;
-  email: EmailConfig;
-  ucm: UCMConfig;
-  plugins: PluginsConfig;
-}
-
-const CONFIG_FILE_NAME = 'config.json';
-const CONFIG_FILE_PATH = path.join(process.cwd(), CONFIG_FILE_NAME);
-
-const DEFAULT_CONFIG: AppConfig = {
+// Define the default configuration
+// This will be used if the .env file is missing or a variable is not set.
+export const DEFAULT_CONFIG: AppConfig = {
   openai: {
-    apiKey: 'YOUR_OPENAI_API_KEY_HERE', // User MUST change this
-    modelName: 'gpt-4o-mini',
+    apiKey: null, // Must be provided by the user
+    modelName: 'gpt-4o', // Default model
   },
   logging: {
     consoleLogLevel: LogLevel.INFO,
     fileLogLevel: LogLevel.INFO,
     logFile: 'wooster_session.log', // Default log file name
     logAgentLLMInteractions: false,
+    consoleQuietMode: false,
   },
   email: {
     enabled: false,
-    sendingEmailAddress: null,
+    senderEmailAddress: null,
     userPersonalEmailAddress: null,
     emailAppPassword: null,
-    // gmailClientId: null,
-    // gmailClientSecret: null,
-    // gmailRefreshToken: null,
   },
   ucm: {
-    enabled: false,
-    extractorLlmPrompt: null,
+    enabled: false, // UCM is disabled by default
+    extractorLlmPrompt: null, // Default prompt will be used if null
   },
-  plugins: {},
+  googleCalendar: {
+    enabled: false,
+    googleCloudClientId: null,
+    googleCloudClientSecret: null,
+    googleCloudRefreshToken: null,
+  },
+  plugins: {}, // No plugins enabled by default, will be populated dynamically
 };
 
-let currentConfig: AppConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+// Holder for the current configuration
+let currentConfig: AppConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG)); // Deep copy
 
-export function loadConfig(): void {
-  console.log(`Attempting to load configuration from: ${CONFIG_FILE_PATH}`);
-  try {
-    if (fs.existsSync(CONFIG_FILE_PATH)) {
-      const fileContent = fs.readFileSync(CONFIG_FILE_PATH, 'utf-8');
-      const loadedConfig = JSON.parse(fileContent) as Partial<AppConfig>;
-      
-      currentConfig = {
-        openai: {
-          ...DEFAULT_CONFIG.openai,
-          ...(loadedConfig.openai || {}),
-        },
-        logging: {
-          ...DEFAULT_CONFIG.logging,
-          ...(loadedConfig.logging || {}),
-        },
-        email: {
-          ...DEFAULT_CONFIG.email,
-          ...(loadedConfig.email || {}),
-        },
-        ucm: {
-          ...DEFAULT_CONFIG.ucm,
-          ...(loadedConfig.ucm || {}),
-        },
-        plugins: {
-          ...DEFAULT_CONFIG.plugins,
-          ...(loadedConfig.plugins || {}),
-        },
-      };
-
-      console.log('Configuration loaded successfully.');
-    } else {
-      console.warn(`${CONFIG_FILE_NAME} not found. Using default configuration.`);
-      fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(DEFAULT_CONFIG, null, 2));
-      console.log(`Created default ${CONFIG_FILE_NAME}. Please review and customize, especially 'openai.apiKey'.`);
-      currentConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
-    }
-  } catch (error) {
-    console.error(`Error loading or parsing ${CONFIG_FILE_NAME}:`, error);
-    console.warn('Using default configuration due to error.');
-    currentConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+/**
+ * Helper function to get an environment variable with a default value and type conversion.
+ * @param varName The name of the environment variable.
+ * @param defaultValue The default value if the variable is not set or empty.
+ * @param type The target type ('string', 'boolean', 'number', 'loglevel').
+ * @returns The value of the environment variable or the default value, converted to the specified type.
+ */
+function getEnv<T extends string | boolean | number | LogLevel | null>(
+  varName: string,
+  defaultValue: T,
+  type: 'string' | 'boolean' | 'number' | 'loglevel' = 'string'
+): T {
+  const value = process.env[varName];
+  if (value === undefined || value === '') {
+    return defaultValue;
+  }
+  switch (type) {
+    case 'boolean':
+      return (value.toLowerCase() === 'true') as T;
+    case 'number':
+      const num = parseFloat(value);
+      return isNaN(num) ? defaultValue : (num as T);
+    case 'loglevel':
+      const upperValue = value.toUpperCase();
+      if (Object.values(LogLevel).includes(upperValue as LogLevel)) {
+        return upperValue as T;
+      }
+      // console.warn(\`Invalid LogLevel "\\\${value}" for \\\${varName}. Using default: "\\\${defaultValue}".\`);
+      return defaultValue;
+    default: // string
+      return value as T;
   }
 }
 
+// Function to load configuration from environment variables
+export function loadConfig(): AppConfig {
+  currentConfig.openai = {
+    apiKey: getEnv('OPENAI_API_KEY', DEFAULT_CONFIG.openai.apiKey),
+    modelName: getEnv('OPENAI_MODEL_NAME', DEFAULT_CONFIG.openai.modelName),
+  };
+
+  currentConfig.logging = {
+    consoleLogLevel: getEnv('LOGGING_CONSOLE_LOG_LEVEL', DEFAULT_CONFIG.logging.consoleLogLevel, 'loglevel'),
+    fileLogLevel: getEnv('LOGGING_FILE_LOG_LEVEL', DEFAULT_CONFIG.logging.fileLogLevel, 'loglevel'),
+    logFile: getEnv('LOGGING_LOG_FILE', DEFAULT_CONFIG.logging.logFile),
+    logAgentLLMInteractions: getEnv('LOGGING_LOG_AGENT_LLM_INTERACTIONS', DEFAULT_CONFIG.logging.logAgentLLMInteractions, 'boolean'),
+    consoleQuietMode: getEnv('LOGGING_CONSOLE_QUIET_MODE', DEFAULT_CONFIG.logging.consoleQuietMode, 'boolean'),
+  };
+
+  currentConfig.email = {
+    enabled: getEnv('EMAIL_ENABLED', DEFAULT_CONFIG.email.enabled, 'boolean'),
+    senderEmailAddress: getEnv('EMAIL_SENDER_EMAIL_ADDRESS', DEFAULT_CONFIG.email.senderEmailAddress),
+    userPersonalEmailAddress: getEnv('EMAIL_USER_PERSONAL_EMAIL_ADDRESS', DEFAULT_CONFIG.email.userPersonalEmailAddress),
+    emailAppPassword: getEnv('EMAIL_EMAIL_APP_PASSWORD', DEFAULT_CONFIG.email.emailAppPassword),
+  };
+
+  currentConfig.ucm = {
+    enabled: getEnv('UCM_ENABLED', DEFAULT_CONFIG.ucm.enabled, 'boolean'),
+    extractorLlmPrompt: getEnv('UCM_EXTRACTOR_LLM_PROMPT', DEFAULT_CONFIG.ucm.extractorLlmPrompt),
+  };
+
+  currentConfig.googleCalendar = {
+    enabled: getEnv('GOOGLE_CALENDAR_ENABLED', DEFAULT_CONFIG.googleCalendar.enabled, 'boolean'),
+    googleCloudClientId: getEnv('GOOGLE_CALENDAR_CLIENT_ID', DEFAULT_CONFIG.googleCalendar.googleCloudClientId),
+    googleCloudClientSecret: getEnv('GOOGLE_CALENDAR_CLIENT_SECRET', DEFAULT_CONFIG.googleCalendar.googleCloudClientSecret),
+    googleCloudRefreshToken: getEnv('GOOGLE_CALENDAR_REFRESH_TOKEN', DEFAULT_CONFIG.googleCalendar.googleCloudRefreshToken),
+  };
+
+  // Dynamically populate plugin enablement from environment variables
+  currentConfig.plugins = {};
+  try {
+    const pluginFiles = getPluginFileNames(); // Assumes this function exists and returns string[]
+    pluginFiles.forEach(fileName => {
+      const pluginName = path.basename(fileName, '.ts'); // e.g., "myPlugin" from "myPlugin.ts"
+      const envVarName = \`PLUGIN_\${pluginName.toUpperCase()}_ENABLED\`; // e.g., PLUGIN_MYPLUGIN_ENABLED
+      // Default to true if the variable is not explicitly set to 'false'
+      const isEnabled = getEnv(envVarName, true, 'boolean'); // Default to true
+      currentConfig.plugins[pluginName] = isEnabled;
+    });
+  } catch (error) {
+    console.error('Error loading plugin configurations:', error);
+    // Use a bootstrap logger or a simple console.error if logger isn't fully initialized
+    // Or handle this more gracefully depending on application stage
+  }
+  return currentConfig;
+}
+
+// Function to get the current configuration
 export function getConfig(): AppConfig {
   return currentConfig;
-} 
+}
+
+// Function to set the OpenAI API key programmatically (e.g., from a command)
+// Potentially useful, but consider security implications.
+// export function setOpenAIApiKey(apiKey: string): void {
+//   currentConfig.openai.apiKey = apiKey;
+//   // TODO: Consider if this should also attempt to save back to a .env or config file,
+//   // or if it's purely an in-session change. For now, it's in-session.
+// }
+
+// Initial load of the configuration when this module is imported.
+// This ensures that \`getConfig()\` returns a populated config object.
+loadConfig(); 

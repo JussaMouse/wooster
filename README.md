@@ -9,7 +9,7 @@ Wooster is a TypeScript-based, extensible command-line AI assistant. It leverage
 
 ## Core Concepts
 
-*   **Agent (`src/agent.ts`)**: The LLM-powered core of Wooster. It interprets your input, maintains conversational context, and decides whether to call a specific Tool, query its knowledge base, or respond directly. It is currently configured to use OpenAI models.
+*   **Agent (`src/agent.ts`)**: The LLM-powered core of Wooster. It interprets your input, maintains conversational context, and decides whether to call a specific Tool, query its knowledge base, or respond directly. It is currently configured to use OpenAI models based on your `.env` settings.
 *   **Tools (`src/tools/` & `src/agent.ts`)**: These are specific, self-contained functions that the Agent can decide to call to perform actions or retrieve information. Examples include `sendEmail`, `scheduleAgentTask`, and `search_knowledge_base`. New tools are added by defining them and making them available to the agent in `src/agent.ts`.
 *   **Knowledge Base & RAG (`src/projectIngestor.ts`, `src/memoryVector.ts`)**: Wooster can ingest documents and code into a local FAISS vector store using HuggingFace embeddings. This knowledge is organized into "Projects."
     *   A default project named **"home"** (located in `projects/home/`) is automatically created and loaded on startup. This serves as the base context if no other project is specified.
@@ -17,9 +17,9 @@ Wooster is a TypeScript-based, extensible command-line AI assistant. It leverage
     *   The Agent uses Retrieval Augmented Generation (RAG), typically via the `search_knowledge_base` tool or as a fallback, to answer questions based on the currently active project's ingested knowledge.
 *   **Scheduler (`src/scheduler/`, `src/tools/scheduler.ts`)**: A core system that allows users (or the agent itself via the `scheduleAgentTask` tool) to schedule tasks or set reminders using natural language (e.g., "remind me to check emails in 1 hour"). It uses `node-schedule` and `chrono-node`, persisting tasks in an SQLite database (`database/memory.db`).
 *   **Heartbeat (`src/heartbeat.ts`)**: A mechanism where Wooster periodically writes a timestamp to its database, allowing external systems to monitor its operational status.
-*   **Plugins (`src/plugins/`, `src/pluginManager.ts`)**: Modules that can hook into Wooster's lifecycle events (e.g., `onInit`, `onUserInput`, `onAssistantResponse`) for specific side-effects like logging or analytics. They are distinct from Agent Tools, which provide capabilities for the agent to use in its decision-making process. This system is configurable via `config.json`.
-*   **User Contextual Memory (UCM) (`src/userKnowledgeExtractor.ts`, `src/tools/userContextTool.ts`)**: Wooster can learn and recall user-specific facts and preferences, storing them in a dedicated vector store. This feature can be enabled/disabled and configured via `config.json`.
-*   **Logging (`src/logger.ts`, `08 LOGGING.MD`)**: Wooster uses a simple logging system that outputs to both the console and a log file. Configuration for log levels, file path, and other logging settings is managed in `config.json`.
+*   **Plugins (`src/plugins/`, `src/pluginManager.ts`)**: Modules that can hook into Wooster's lifecycle events (e.g., `onInit`, `onUserInput`, `onAssistantResponse`) for specific side-effects like logging or analytics. They are distinct from Agent Tools, which provide capabilities for the agent to use in its decision-making process. Plugin activation is configured via environment variables in your `.env` file.
+*   **User Contextual Memory (UCM) (`src/userKnowledgeExtractor.ts`, `src/tools/userContextTool.ts`)**: Wooster can learn and recall user-specific facts and preferences, storing them in a dedicated vector store. This feature can be enabled/disabled and configured via environment variables in your `.env` file.
+*   **Logging (`src/logger.ts`, `07 LOGGING.MD`)**: Wooster uses a simple logging system that outputs to both the console and a log file. Configuration for log levels, file path, and other logging settings is managed via environment variables in your `.env` file.
 
 ## Features
 
@@ -33,7 +33,7 @@ Wooster is a TypeScript-based, extensible command-line AI assistant. It leverage
 *   **Conversation History**: Maintains context from recent interactions (in-memory) to inform responses.
 *   **Persistent Task Storage**: Scheduled tasks are saved in an SQLite database.
 *   **Personalized Interaction**: Learns user-specific facts and preferences with User Contextual Memory (UCM).
-*   **Configurable Logging**: Control log verbosity and output via `config.json`.
+*   **Configurable Logging**: Control log verbosity and output via your `.env` file.
 
 ## Installation
 
@@ -53,15 +53,13 @@ Wooster is a TypeScript-based, extensible command-line AI assistant. It leverage
     pnpm install
     ```
 
-4.  **Set up Configuration (`config.json`)**:
-    *   Wooster's primary configuration is managed through a `config.json` file in the project root.
-    *   If `config.json` does not exist when Wooster starts, a default one will be created based on `config.json.example`.
-    *   **You MUST edit `config.json` after its creation (or edit `config.json.example` and rename it) to provide, at a minimum, your `openai.apiKey`.**
-    *   Other settings like email credentials (for the email tool), logging preferences, UCM enablement, and plugin activation are also configured in `config.json`. Refer to `06 CONFIG.MD` for full details.
-    *   A `.env` file can still be used for:
-        *   Plugin-specific environment variables if a plugin is designed to read them.
-        *   Credentials for other third-party services not managed directly by Wooster's core configuration.
-        *   To set a `LOG_LEVEL` environment variable if you need to control the very initial console log level before `config.json` is loaded by the system (e.g., for debugging early startup issues). By default, the logger bootstraps to `INFO` level for console output.
+4.  **Set up Configuration (`.env` file)**:
+    *   Wooster's primary configuration is managed through an `.env` file in the project root.
+    *   Copy the example file: `cp .env.example .env`.
+    *   **You MUST edit your `.env` file to provide, at a minimum, your `OPENAI_API_KEY`.**
+    *   All other core settings like email credentials (for the email tool), logging preferences, UCM enablement, Google Calendar credentials, and plugin activation are also configured in your `.env` file. 
+    *   Refer to `06 CONFIG.MD` for full details on all available environment variables.
+    *   The `.env` file can also be used for plugin-specific environment variables if a plugin is designed to read them, and to set a bootstrap `LOG_LEVEL` for very early startup messages.
 
 ## Usage
 
@@ -99,20 +97,18 @@ Wooster is a TypeScript-based, extensible command-line AI assistant. It leverage
 
 ## Configuration
 
-Wooster's configuration is primarily managed through `config.json` and optionally `projects.json`.
+Wooster's configuration is managed through your `.env` file in the project root, and optionally `projects.json` for advanced project path definitions.
 
-*   **`config.json`**: This is the main configuration file for Wooster, located in the project root. It controls:
+*   **`.env`**: This is the main configuration file for Wooster. It controls all core operational settings, including:
     *   OpenAI settings (API key, model name).
     *   Logging behavior (console/file levels, log file path, agent LLM interaction logging).
     *   Email tool (enablement, sender address, app password).
     *   User Contextual Memory (UCM) enablement and extractor prompt.
+    *   Google Calendar integration credentials.
     *   Plugin activation.
-    *   Wooster creates a default `config.json` if one isn't found, based on `config.json.example`. **You must edit `config.json` to add your OpenAI API key.** See `06 CONFIG.MD` for comprehensive details.
+    *   Bootstrap `LOG_LEVEL` for initial console messages.
+    *   You must copy `.env.example` to `.env` and customize it, especially your `OPENAI_API_KEY`. See `06 CONFIG.MD` for comprehensive details on all environment variables.
 *   **`projects.json` (Optional)**: Can be used to define named collections of files/directories for Wooster's projects, especially for items outside the default `projects/` directory or needing complex glob patterns. See `01 PROJECTS.MD` for details.
-*   **`.env` (Secondary Role)**: While core Wooster settings are in `config.json`, the `.env` file's role is now secondary:
-    *   It can be used for environment variables for specific plugins that are designed to read them directly.
-    *   It can hold credentials for other third-party services that your custom tools or plugins might interact with, if those services are not configured via `config.json`.
-    *   You can set a `LOG_LEVEL` environment variable in a `.env` file (which you would manually create) if you need to control the very initial console log level before `config.json` is loaded by the system (e.g., for debugging early startup issues).
 
 ## Extending Wooster
 
@@ -127,7 +123,7 @@ Wooster's primary method for adding new capabilities is through **Agent Tools**.
 *   **Creating Plugins** (for lifecycle hooks and side-effects):
     1.  Create a plugin file in `src/plugins/`.
     2.  Export a default object conforming to the `Plugin` interface (see `src/pluginManager.ts`).
-    3.  Plugins can hook into events like `onInit`, `onUserInput`, and `onAssistantResponse`. This feature is configurable in `config.json`.
+    3.  Plugins can hook into events like `onInit`, `onUserInput`, and `onAssistantResponse`. Plugin activation is configured via your `.env` file.
     4.  Refer to `03 PLUGINS.MD` for detailed guidance.
 
 ---
@@ -136,9 +132,9 @@ This README provides a high-level overview of Wooster. For more detailed informa
 
 - `00 SYSTEM.MD`: Overall system architecture, boot sequence, and REPL loop.
 - `01 PROJECTS.MD`: Managing and using project-specific knowledge.
+- `02 UCM.MD`: Detailed design for User Contextual Memory.
 - `03 PLUGINS.MD`: Creating plugins for lifecycle hooks.
 - `04 TOOLS.MD`: Defining and using agent tools.
 - `05 SCHEDULER.MD`: In-depth look at the task scheduling subsystem.
-- `06 CONFIG.MD`: Details on configuring Wooster via `config.json`.
-- `07 UCM.MD`: Detailed design for User Contextual Memory.
-- `08 LOGGING.MD`: Details on the logging system and its configuration.
+- `06 CONFIG.MD`: Details on configuring Wooster via the `.env` file.
+- `07 LOGGING.MD`: Details on the logging system and its configuration.

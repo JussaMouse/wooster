@@ -2,24 +2,20 @@ import fs from 'fs';
 import path from 'path';
 import util from 'util'; // For formatting arguments like console.log does
 import type { LoggingConfig } from './configLoader'; // Import LoggingConfig
-import { LogLevel as ConfigLogLevel } from './configLoader'; // Import LogLevel from configLoader
 
-// Use LogLevel from configLoader to ensure consistency
-export const LogLevel = ConfigLogLevel;
-export type LogLevel = ConfigLogLevel;
-
-// Mapping LogLevel to string names for output (already string-based with ConfigLogLevel)
-// const LOG_LEVEL_NAMES: Record<LogLevel, string> = {
-//   [LogLevel.DEBUG]: 'DEBUG',
-//   [LogLevel.INFO]: 'INFO',
-//   [LogLevel.WARN]: 'WARN',
-//   [LogLevel.ERROR]: 'ERROR',
-// };
+// Define LogLevel enum here as the source of truth
+export enum LogLevel {
+  DEBUG = 'DEBUG',
+  INFO = 'INFO',
+  WARN = 'WARN',
+  ERROR = 'ERROR',
+}
 
 let configuredConsoleLogLevel: LogLevel = LogLevel.INFO; // Default console log level
 let configuredFileLogLevel: LogLevel = LogLevel.INFO;    // Default file log level
 let currentLogFile: string | null = null;
 let logAgentLLMInteractionsEnabled = false;
+let configuredConsoleQuietMode = false; // Default console quiet mode
 
 /**
  * Initial, minimal logger setup from environment variables.
@@ -28,8 +24,8 @@ let logAgentLLMInteractionsEnabled = false;
  */
 export function bootstrapLogger() {
   const envConsoleLogLevel = process.env.LOG_LEVEL?.toUpperCase();
-  if (envConsoleLogLevel && ConfigLogLevel[envConsoleLogLevel as keyof typeof ConfigLogLevel]) {
-    configuredConsoleLogLevel = ConfigLogLevel[envConsoleLogLevel as keyof typeof ConfigLogLevel];
+  if (envConsoleLogLevel && LogLevel[envConsoleLogLevel as keyof typeof LogLevel]) {
+    configuredConsoleLogLevel = LogLevel[envConsoleLogLevel as keyof typeof LogLevel];
   }
   console.log(`[${new Date().toISOString()}] [INFO] Logger bootstrapped. Initial console Loglevel: ${configuredConsoleLogLevel}. Full config pending.`);
 }
@@ -43,6 +39,7 @@ export function applyLoggerConfig(config: LoggingConfig): void {
   configuredConsoleLogLevel = config.consoleLogLevel || LogLevel.INFO;
   configuredFileLogLevel = config.fileLogLevel || LogLevel.INFO;
   logAgentLLMInteractionsEnabled = config.logAgentLLMInteractions || false;
+  configuredConsoleQuietMode = config.consoleQuietMode || false;
 
   if (config.logFile) {
     if (!path.isAbsolute(config.logFile) && !config.logFile.includes(path.sep)) {
@@ -84,21 +81,26 @@ export function log(level: LogLevel, message: string, ...args: any[]) {
   const levelOrder = { [LogLevel.DEBUG]: 0, [LogLevel.INFO]: 1, [LogLevel.WARN]: 2, [LogLevel.ERROR]: 3 };
   
   if (levelOrder[level] >= levelOrder[configuredConsoleLogLevel]) {
-    switch (level) {
-      case LogLevel.DEBUG:
-        console.debug(fullLogMessage);
-        break;
-      case LogLevel.INFO:
-        console.info(fullLogMessage);
-        break;
-      case LogLevel.WARN:
-        console.warn(fullLogMessage);
-        break;
-      case LogLevel.ERROR:
-        console.error(fullLogMessage);
-        break;
-      default:
-        console.log(fullLogMessage); 
+    // If quiet mode is on, only log WARN and ERROR to console
+    if (configuredConsoleQuietMode && (level === LogLevel.INFO || level === LogLevel.DEBUG)) {
+      // Skip console logging for INFO and DEBUG in quiet mode
+    } else {
+      switch (level) {
+        case LogLevel.DEBUG:
+          console.debug(fullLogMessage);
+          break;
+        case LogLevel.INFO:
+          console.info(fullLogMessage);
+          break;
+        case LogLevel.WARN:
+          console.warn(fullLogMessage);
+          break;
+        case LogLevel.ERROR:
+          console.error(fullLogMessage);
+          break;
+        default:
+          console.log(fullLogMessage); 
+      }
     }
   }
 

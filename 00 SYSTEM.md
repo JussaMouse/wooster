@@ -2,33 +2,31 @@
 
 Wooster is a modular, extensible CLI assistant. This document explains its boot sequence, REPL loop, environment config, project management, and other core systems.
 
-## 1. Primary Configuration: `config.json`
-- Wooster's core operational settings are managed in `config.json` located in the project root. This includes:
-  - OpenAI API Key and Model Name (section `openai`)
-  - Logging settings: console/file levels, log file path, agent LLM interaction logging (section `logging`)
-  - Email tool settings: enablement, sender address, app password (section `email`)
-  - User Contextual Memory (UCM) enablement and extractor prompt (section `ucm`)
-  - Plugin activation (section `plugins`)
-- If `config.json` is missing at startup, Wooster creates a default one. **The user MUST edit this file to provide at least the `openai.apiKey`.**
-- See `06 CONFIG.MD` for full details on `config.json` structure and all options.
-- `.gitignore` excludes `config.json` from version control as it contains user-specific settings and secrets.
+## 1. Primary Configuration: `.env` File
+- Wooster's core operational settings, credentials, and plugin activations are managed in an `.env` file located in the project root. This file is loaded at the very start of the application.
+- Key configurations include:
+  - OpenAI API Key and Model Name (e.g., `OPENAI_API_KEY`, `OPENAI_MODEL_NAME`)
+  - Logging settings (e.g., `LOGGING_CONSOLE_LOG_LEVEL`, `LOGGING_LOG_FILE`, `LOGGING_LOG_AGENT_LLM_INTERACTIONS`)
+  - Email tool settings (e.g., `EMAIL_ENABLED`, `EMAIL_SENDING_EMAIL_ADDRESS`, `EMAIL_EMAIL_APP_PASSWORD`)
+  - User Contextual Memory (UCM) enablement and extractor prompt (e.g., `UCM_ENABLED`, `UCM_EXTRACTOR_LLM_PROMPT`)
+  - Google Calendar integration settings (e.g., `GOOGLE_CLIENT_ID`, `GOOGLE_REFRESH_TOKEN`)
+  - Plugin activation (e.g., `PLUGIN_MYPLUGIN_ENABLED=false`)
+- You **must copy `.env.example` to `.env` and edit this file**, providing at least your `OPENAI_API_KEY` for Wooster to function.
+- See `06 CONFIG.MD` for full details on all available environment variables and their purpose.
+- The `.env` file should be included in `.gitignore` to prevent committing user-specific settings and secrets to version control.
 
-## 2. Secondary Configuration: `.env` file (Optional)
-- While core settings are in `config.json`, a `.env` file (loaded by `dotenv/config` at the very start of the application) can still be used for:
-  - Environment variables required by specific plugins that are designed to read them.
-  - Credentials for other third-party services that custom tools or plugins might interact with directly (not managed by Wooster's core config).
-  - Bootstrap logging: The `LOG_LEVEL` env var can set the *initial* console log level before `config.json` is parsed.
-- See `.env.example` for guidance on using the `.env` file.
+## 2. Bootstrap Logging (via `.env`)
+- The `LOG_LEVEL` environment variable in the `.env` file can set the *initial* console log level for messages that occur before the full configuration is parsed by `configLoader.ts`. This is useful for debugging very early startup issues.
 
 ## 3. Boot Sequence (from `src/index.ts` `main()`)
-1.  Bootstrap Logger (`bootstrapLogger()` from `src/logger.ts`) - uses `LOG_LEVEL` from `.env` for initial console output.
-2.  Load environment variables from `.env` (if present) using `dotenv/config`.
-3.  Load `config.json` using `configLoader.ts`. If not present, a default is created (user must edit it for API key).
-4.  Apply full logging configuration (`applyLoggerConfig()`) using settings from `config.json`.
-5.  Validate `openai.apiKey` from `config.json`. Exit if missing or placeholder.
-6.  Initialize LLM (`new ChatOpenAI(...)`) using `openai.apiKey` and `openai.modelName` from `config.json`.
+1.  Load environment variables from `.env` using `dotenv/config`.
+2.  Bootstrap Logger (`bootstrapLogger()` from `src/logger.ts`) - uses `LOG_LEVEL` from `.env` (if set) for initial console output.
+3.  Load and parse all configurations from environment variables using `configLoader.ts` into an `AppConfig` object. This includes applying defaults for any omitted non-critical variables.
+4.  Apply full logging configuration (`applyLoggerConfig()`) using settings from the loaded `AppConfig` (derived from `.env`).
+5.  Validate `openai.apiKey` from `AppConfig`. Exit if missing or placeholder.
+6.  Initialize LLM (`new ChatOpenAI(...)`) using `openai.apiKey` and `openai.modelName` from `AppConfig`.
 7.  Pass the loaded `AppConfig` to the agent module (`setAgentConfig()`).
-8.  Initialize User Knowledge Extractor (for UCM).
+8.  Initialize User Knowledge Extractor (for UCM, uses settings from `AppConfig.ucm`).
 9.  Initialize Scheduler Database (`database/memory.db`).
 10. Initialize Scheduler Service (`initSchedulerService(schedulerAgentCallback)`).
 11. Initialize Heartbeat Service.
@@ -36,10 +34,10 @@ Wooster is a modular, extensible CLI assistant. This document explains its boot 
     *   Ensure `projects/home/` directory exists; create it if not.
     *   Set `currentProjectName = 'home'`. 
     *   Initialize `vectorStore` for the "home" project using `createProjectStore('home')`.
-13. Initialize User Context Memory (UCM) Vector Store if `config.ucm.enabled` is true.
+13. Initialize User Context Memory (UCM) Vector Store if `AppConfig.ucm.enabled` is true.
 14. Initialize RAG chain (`initializeRagChain()`).
-15. Load plugins (`loadPlugins()`), respecting `config.plugins`.
-16. Initialize enabled plugins (`initPlugins()`), passing `config.openai.apiKey` if needed.
+15. Load plugins (`loadPlugins()`), respecting `AppConfig.plugins` for enablement status.
+16. Initialize enabled plugins (`initPlugins()`), passing `AppConfig.openai.apiKey` if needed.
 17. Initialize Project Metadata Service (ensures `[projectName].md` exists for the current project).
 18. Start interactive REPL (`startREPL()`).
 
@@ -56,7 +54,7 @@ Wooster is a modular, extensible CLI assistant. This document explains its boot 
      - **Retrieval:** The rephrased query is used to search the `vectorStore` of the **currently active project**.
      - **Document Combination:** The retrieved document chunks, conversation history, and original input are passed to another LLM to synthesize a final answer.
   5. The agent's final response is printed and added to `conversationHistory`.
-  6. If `config.ucm.enabled` is true, `extractUserKnowledge` analyzes the turn.
+  6. If `AppConfig.ucm.enabled` is true, `extractUserKnowledge` analyzes the turn.
   7. Significant interactions and Wooster actions may be logged to the project-specific `[projectName].md` file (see Section 10).
 - On `exit`, `quit`, or Ctrl+C, the application shuts down gracefully.
 
@@ -78,7 +76,7 @@ Wooster is a modular, extensible CLI assistant. This document explains its boot 
 - `list files`:
     - Lists files found for the `currentProjectName`. It uses `projects.json` patterns if defined, otherwise scans the `projects/<currentProjectName>/` directory.
 - `list plugins`:
-    - Shows all currently loaded plugin modules (if any are enabled via `config.json`).
+    - Shows all currently loaded plugin modules (if any are enabled via `.env` configuration).
 - `list tools`:
     - Shows available agent tools that the LLM can decide to use.
 - `list reminders`:
@@ -101,24 +99,26 @@ The Scheduler uses `chrono-node` to parse natural language time expressions and 
 To ensure Wooster is running and operational, it features a Heartbeat system. This system periodically writes a timestamp to a dedicated table in its SQLite database (`database/memory.db`). External monitoring tools can check this timestamp to verify Wooster's liveness.
 
 ## 8. Plugin Architecture
-Plugins are designed to allow for user-driven extensions and side-effects that may not fit the "tool" paradigm used by the agent. Configuration of which plugins are active is done via `config.json`.
+Plugins are designed to allow for user-driven extensions and side-effects that may not fit the "tool" paradigm used by the agent. Configuration of which plugins are active is done via environment variables in the `.env` file (e.g., `PLUGIN_MYPLUGIN_ENABLED=false`).
 (Further details on the plugin interface, available hooks, and best practices are in `03 PLUGINS.MD`.)
 
 ## 9. User Contextual Memory (UCM)
 Wooster has a capability to learn user preferences and facts from conversations, enhancing personalized interactions. This system is called User Contextual Memory (UCM).
-- **Enablement**: UCM can be enabled or disabled via the `ucm.enabled` flag in `config.json`. (Note: Default is now `false`).
+- **Enablement**: UCM can be enabled or disabled via the `UCM_ENABLED` environment variable in the `.env` file.
 - **Knowledge Extraction**: When enabled, after each agent response, an LLM-based `userKnowledgeExtractor` analyzes the conversation to identify potential user facts. These facts are then stored in a dedicated UCM vector store (`vector_data/user_context_store/`).
-- **Custom Prompt**: The prompt used by the `userKnowledgeExtractor` can be customized via `ucm.extractorLlmPrompt` in `config.json`.
+- **Custom Prompt**: The prompt used by the `userKnowledgeExtractor` can be customized via the `UCM_EXTRACTOR_LLM_PROMPT` environment variable in `.env`.
 - **Recall**: The agent can access learned user context via the `recall_user_context` tool.
-- **Details**: See `07 UCM.MD` and `06 CONFIG.MD` for configuration options.
+- **Details**: See `02 UCM.MD` (Updated reference) and `06 CONFIG.MD` for configuration options.
 
 ## 10. Project Metadata & Notes
 Wooster maintains a project-specific metadata file, typically named `[projectName].md`, in the root of the active project directory. This file serves as a "living document" that records:
-- Ingested documents and data sources for the project.
-- Summaries of key conversations and decisions.
-- Significant actions performed by Wooster.
-- Identified tasks or TODOs.
+- Ingested documents and data sources for the project (currently a manual section).
+- Summaries of key conversations and decisions (conversation log is automatically appended).
+- Significant actions performed by Wooster (tool executions are automatically appended).
+- Identified tasks or TODOs (currently a manual section).
 
-Wooster automatically creates this file if it doesn't exist and appends new information as relevant events occur. Periodically, or upon user request, Wooster can summarize and rewrite this file to keep it concise and organized. Proposed changes to this file are shown to the user via a colored diff in the terminal.
+Wooster automatically creates this file if it doesn't exist and appends new information to the relevant sections as events occur (e.g., `logConversationTurn`, `logWoosterAction`).
 
-For full details on the structure, maintenance, and diff display of this system, see `01 PROJECTS.MD` (specifically, the section on "Project-Specific Notes").
+(The previously mentioned LLM-based summarization and diff-review of this file is a future planned enhancement, not a current feature.)
+
+For full details on the structure and maintenance of this system, see `01 PROJECTS.MD` (specifically, the section on "Project-Specific Notes").

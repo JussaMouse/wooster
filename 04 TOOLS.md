@@ -28,23 +28,13 @@ This document covers the **tool** layer—functions that Wooster's LLM agent can
    - **`topic`**: A phrase describing the specific user context needed.
    - Queries the UCM vector store (`vector_data/user_context_store/`).
    - Returns relevant user-specific information or a message if none is found.
-   - See `07 UCM.MD` for more details on the UCM system.
+   - See `02 UCM.MD` for more details on the UCM system.
 
 5. **`listFiles()` (Conceptual - if made an agent tool)**
    - If direct file listing by the agent is desired (beyond the REPL command `list files`):
    - A wrapper tool could be created (e.g., in `src/tools/filesystem.ts`).
    - This tool would call `projectIngestor.listProjectFiles(currentProjectName)`.
    - Currently, `list files` is primarily a REPL command.
-
-6. **`manageProjectNotes({ action: string }) → string`**
-   - Interacts with the `ProjectMetadataService` to manage the `[projectName].md` file.
-   - This file serves as a living document logging ingested documents, conversation summaries, Wooster actions, and tasks for the current project.
-   - **`action`**: Specifies the operation to perform. Valid actions include:
-     - `"update"`: Triggers a summarization and rewrite pass of the `[projectName].md` file by an LLM. Proposed changes will be displayed to the user in a colored diff format in the terminal for review before applying.
-     - `"view"`: Displays the current content of the `[projectName].md` file in the terminal.
-     - `"log"`: (Primarily for internal use by the agent) Appends a specific piece of information (e.g., a Wooster action or conversation summary) to the appropriate section. The agent would typically formulate the content to be logged.
-   - Returns a confirmation message or the content of the notes for the `view` action.
-   - See `01 PROJECTS.MD` (section "Project-Specific Notes") for full details on the `[projectName].md` file and its maintenance.
 
 ## Agent Integration (`src/agent.ts`)
 

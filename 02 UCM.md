@@ -213,37 +213,29 @@ This approach allows for iterative development: first, get the learning and the 
 
 ## Enabling/Disabling UCM
 
-UCM can be enabled or disabled globally via the `ucm.enabled` setting in the `config.json` file (located in the project root). By default, UCM is **disabled** in the default configuration file created by Wooster.
+UCM can be enabled or disabled globally via settings in your `.env` file, located in the project root. By default, UCM is **disabled** based on the `DEFAULT_CONFIG` in `src/configLoader.ts` if the specific environment variable is not set.
 
-```json
-// config.json
-{
-  "ucm": {
-    "enabled": false, // Set to true to enable UCM
-    "extractorLlmPrompt": null // Optional: customize the extractor prompt
-  },
-  // ... other configurations (e.g., plugins)
-}
+To control UCM, set the following environment variable in your `.env` file:
+
+```env
+# .env example for UCM
+UCM_ENABLED=false # Set to true to enable UCM
 ```
 
-If `ucm.enabled` is `false`:
-- No user knowledge will be extracted or saved.
-- The `recall_user_context` tool will inform the agent that UCM is disabled.
+If `UCM_ENABLED` is set to `false` (or if the variable is omitted and the default is `false`):
+- No user knowledge will be extracted or saved by the UCM system.
+- If the `recall_user_context` tool is invoked, it should ideally inform the agent that UCM is disabled or simply return no information.
 
 ## Customizing the Extractor Prompt
 
-The prompt used by the `UserKnowledgeExtractor` to instruct the LLM on what kind of information to extract can be customized. This is done by setting the `ucm.extractorLlmPrompt` string in `config.json`.
+The prompt used by the `UserKnowledgeExtractor` to instruct the LLM on what kind of information to extract can be customized via an environment variable in your `.env` file.
 
-- If `ucm.extractorLlmPrompt` is `null` (the default) or an empty string, a system default prompt is used.
-- If you provide a custom prompt string, it will be used instead. Ensure your custom prompt clearly instructs the LLM on its task. You can use placeholders like `{userInput}`, `{assistantResponse}`, and `{currentProjectName}` in your custom prompt string; these will be replaced with the actual values from the conversation.
+Set the following variable:
 
-**Example `config.json` with a custom prompt:**
-```json
-{
-  "ucm": {
-    "enabled": true,
-    "extractorLlmPrompt": "From the user's last message ({userInput}) and my response ({assistantResponse}) in the context of project '{currentProjectName}', identify any explicit statements of preference or personal facts the user has shared. List them clearly."
-  },
-  "plugins": {}
-}
-``` 
+```env
+# .env example for custom UCM prompt
+UCM_EXTRACTOR_LLM_PROMPT="From the user's last message ({userInput}) and my response ({assistantResponse}) in the context of project '{currentProjectName}', identify any explicit statements of preference or personal facts the user has shared. List them clearly."
+```
+
+- If `UCM_EXTRACTOR_LLM_PROMPT` is not set in your `.env` file, is an empty string, or is omitted, a system default prompt (defined within `src/userKnowledgeExtractor.ts`) will be used.
+- If you provide a custom prompt string, it will be used instead. Ensure your custom prompt clearly instructs the LLM on its task. You can use placeholders like `{userInput}`, `{assistantResponse}`, and `{currentProjectName}` in your custom prompt string; these will be replaced with the actual values from the conversation by the `UserKnowledgeExtractor` module.
