@@ -7,6 +7,7 @@ import type { LoggingConfig } from './configLoader'; // Import LoggingConfig
 export enum LogLevel {
   DEBUG = 'DEBUG',
   INFO = 'INFO',
+  RESPONSE = 'RESPONSE', // Added for Wooster's direct responses
   WARN = 'WARN',
   ERROR = 'ERROR',
 }
@@ -78,18 +79,26 @@ export function log(level: LogLevel, message: string, ...args: any[]) {
   // Console logging
   // Convert string LogLevel from config to numeric for comparison if needed, or compare strings directly
   // For simplicity, we'll rely on the direct string values from the enum
-  const levelOrder = { [LogLevel.DEBUG]: 0, [LogLevel.INFO]: 1, [LogLevel.WARN]: 2, [LogLevel.ERROR]: 3 };
+  const levelOrder = { [LogLevel.DEBUG]: 0, [LogLevel.INFO]: 1, [LogLevel.RESPONSE]: 1, [LogLevel.WARN]: 2, [LogLevel.ERROR]: 3 };
   
   if (levelOrder[level] >= levelOrder[configuredConsoleLogLevel]) {
-    // If quiet mode is on, only log WARN and ERROR to console
-    if (configuredConsoleQuietMode && (level === LogLevel.INFO || level === LogLevel.DEBUG)) {
-      // Skip console logging for INFO and DEBUG in quiet mode
-    } else {
+    let logToConsole = true; // Default to logging if level is sufficient
+
+    if (configuredConsoleQuietMode) {
+      // In quiet mode, only RESPONSE, WARN, and ERROR should be logged to console.
+      // Suppress DEBUG and general INFO.
+      if (level === LogLevel.DEBUG || level === LogLevel.INFO) {
+        logToConsole = false;
+      }
+    }
+
+    if (logToConsole) {
       switch (level) {
         case LogLevel.DEBUG:
           console.debug(fullLogMessage);
           break;
-        case LogLevel.INFO:
+        case LogLevel.INFO: // General INFO messages
+        case LogLevel.RESPONSE: // Wooster's direct responses, logged via console.info
           console.info(fullLogMessage);
           break;
         case LogLevel.WARN:

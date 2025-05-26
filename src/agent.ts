@@ -14,6 +14,7 @@ import { HumanMessage, AIMessage, SystemMessage, BaseMessage } from "@langchain/
 import { sendEmail, EmailArgs } from './tools/email';
 import { scheduleAgentTask } from './tools/scheduler';
 import { recallUserContextFunc } from "./tools/userContextTool";
+import { performWebSearch } from "./tools/webSearchTool"; // Corrected path
 // import { queryKnowledgeBaseTool, QueryKnowledgeBaseParams } from './tools/knowledgeBaseTool'; // REMOVE - File missing, handled in agentRespond
 
 import { log, LogLevel, logLLMInteraction } from './logger';
@@ -35,6 +36,10 @@ let appConfigInstance: AppConfig | null = null;
 
 interface StandardToolInput {
     query: string; // Standardizing input for UCM tool for simplicity with current agent prompt
+}
+
+interface WebSearchToolInput {
+    query: string;
 }
 
 export function setAgentConfig(config: AppConfig): void {
@@ -89,6 +94,22 @@ function initializeTools(config: AppConfig): void {
     log(LogLevel.INFO, "Agent: queryUserContext tool not added as UCM is disabled in config.");
   }
 
+  // Add Tavily Web Search tool if API key is configured
+  if (config.tavilyApiKey && performWebSearch) {
+    availableTools.push({
+      name: "webSearch",
+      description: "Performs a web search to find current information, real-time event dates, or facts not in the agent's immediate knowledge base. Use for questions about current events, future dates for public events, or specific up-to-date information. Input should be an object with a 'query' key detailing the search term (e.g., {'query': 'when is the next solar eclipse?'}).",
+      call: async (params: WebSearchToolInput) => performWebSearch(params.query),
+    });
+    log(LogLevel.INFO, "Agent: webSearch (Tavily) tool added.");
+  } else {
+    if (!config.tavilyApiKey) {
+      log(LogLevel.INFO, "Agent: webSearch tool not added as Tavily API key is missing in config.");
+    } else {
+      log(LogLevel.WARN, "Agent: webSearch tool not added because performWebSearch function is not available.");
+    }
+  }
+
   // queryKnowledgeBase is not added here as a separate tool import,
   // its functionality is directly invoked via ragQueryFunction in agentRespond.
   log(LogLevel.INFO, `Agent: Total tools initialized: ${availableTools.length}`);
@@ -103,10 +124,11 @@ export async function agentRespond(
   input: string,
   llm: ChatOpenAI,
   ragQueryFunction: (query: string) => Promise<string>, // For queryKnowledgeBase
+  chatHistory: Array<{ role: string; content: string }>, // Added chatHistory
   projectName?: string, // Added projectName for logging
   isScheduledTask: boolean = false // To differentiate calls from scheduler
 ): Promise<string> {
-  log(LogLevel.INFO, `Agent responding to input (isScheduledTask: ${isScheduledTask}): "${input}"`, { projectName });
+  log(LogLevel.INFO, `Agent responding to input (isScheduledTask: ${isScheduledTask}): "${input}"`, { projectName, chatHistoryLength: chatHistory.length });
 
   const systemMessageContent = `You are Wooster, a helpful AI assistant.
   You have access to the following tools:
@@ -117,27 +139,47 @@ export async function agentRespond(
   The 'taskPayload' for 'scheduleAgentTask' should be the original user query that needs to be executed later, including any specific details.
   For example, if the user says "email me the weather report tomorrow at 6am", the 'taskPayload' for scheduleAgentTask should be "email me the weather report tomorrow at 6am".
   
-  If you need to find out information that might be in project documents or general knowledge, use 'queryKnowledgeBase'.
-  If you need to recall specific facts about the user, use 'queryUserContext'.
+  If you need to find out information that might be in project documents or general knowledge, use 'queryKnowledgeBase'. This is good for information specific to the user's active project.
+  If you need to recall specific facts about the user's general preferences or information they've previously told you outside of a specific project, use 'queryUserContext'.
+  If you need to find current information, specific dates for public events (like holidays or festivals), or facts not in your existing knowledge base and not specific to the user's project documents, use 'webSearch'.
   If you need to send an email, use 'sendEmail'.
 
   Respond with a JSON object matching the tool to use, and the parameters for that tool.
   The JSON object should have a "tool" key (the name of the tool) and a "toolInput" key (an object with the parameters for the tool).
-  Example: {"tool": "sendEmail", "toolInput": {"to": "user@example.com", "subject": "Hello", "body": "Hi there!"}}
+  Example for webSearch: {"tool": "webSearch", "toolInput": {"query": "current weather in London"}}
+  Example for sendEmail: {"tool": "sendEmail", "toolInput": {"to": "user@example.com", "subject": "Hello", "body": "Hi there!"}}
   If no tool is appropriate, or if you can answer directly, respond with a JSON object with a "tool" key set to "finalAnswer" and a "toolInput" key containing your answer as a string.
   Example: {"tool": "finalAnswer", "toolInput": "The capital of France is Paris."}
   
   If the user's query involves a time component for a future action (e.g. "in 5 minutes", "tomorrow morning"), you MUST use the scheduleAgentTask. Do not attempt to perform the action directly if it's meant for later.
   
-  If multiple tools seem appropriate for a single user query (e.g. scheduling an email), prioritize the tool that defers the core action if a time delay is specified. For example, for "email me the weather report in 1 hour", the primary tool should be 'scheduleAgentTask' with the taskPayload "email me the weather report". The actual fetching of the weather report and sending the email will happen when the scheduled task executes. Do not call sendEmail directly in this case.
+  If multiple tools seem appropriate for a single user query (e.g. scheduling an email), prioritize the tool that defers the core action if a time delay is specified. For example, for "email me the weather report in 1 hour", the primary tool should be 'scheduleAgentTask' with the taskPayload "email me the weather report". The actual fetching of the weather report and sending the email will happen when the scheduled task executes. Do not call sendEmail or webSearch directly in this case.
   
   However, if the user asks to "send an email now and also schedule a reminder", then it is appropriate to identify both tools. For now, the system will execute the first tool call identified.
   
   Current date and time is: ${new Date().toISOString()}`;
 
-
+  // Prepare messages for the LLM, including system prompt, history, and current input
   const messages: BaseMessage[] = [
     new SystemMessage(systemMessageContent),
+    // Map chatHistory to BaseMessage instances
+    ...chatHistory.map(msg => {
+      if (msg.role === 'user') {
+        return new HumanMessage(msg.content);
+      } else if (msg.role === 'assistant') {
+        return new AIMessage(msg.content);
+      } else if (msg.role === 'system') {
+        // System messages in history might need special handling or filtering
+        // For now, let's include them as generic AIMessages or filter them
+        // depending on how your LLM expects history.
+        // Langchain's AIMessage is typically for assistant's previous responses.
+        // Let's assume system messages from history aren't typically passed this way
+        // or should be consolidated into the main system prompt.
+        // For simplicity, we'll filter them out here, but this could be revisited.
+        return null; 
+      }
+      return null; // Should not happen with well-formed history
+    }).filter(Boolean) as BaseMessage[], // Filter out any nulls
     new HumanMessage(input),
   ];
 

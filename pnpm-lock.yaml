@@ -17,6 +17,9 @@ importers:
       '@langchain/openai':
         specifier: ^0.5.8
         version: 0.5.8(@langchain/core@0.3.50(openai@4.96.2(ws@8.18.2)(zod@3.24.3)))(ws@8.18.2)
+      '@langchain/tavily':
+        specifier: '*'
+        version: 0.1.2(@langchain/core@0.3.50(openai@4.96.2(ws@8.18.2)(zod@3.24.3)))
       better-sqlite3:
         specifier: ^11.9.1
         version: 11.9.1
@@ -1154,6 +1157,12 @@ packages:
     engines: {node: '>=18'}
     peerDependencies:
       '@langchain/core': '>=0.3.48 <0.4.0'
+
+  '@langchain/tavily@0.1.2':
+    resolution: {integrity: sha512-vnZCBB+Tu8Pu8fE1Pc8ea5OvGVTq2tXpZDfkpFQea5hvIL/cSxvK+e/lBYaVnG0bby0SxoFX7hgMNO4D+tUbcQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@langchain/core': '>=0.3.39 <0.4.0'
 
   '@langchain/textsplitters@0.1.0':
     resolution: {integrity: sha512-djI4uw9rlkAb5iMhtLED+xJebDdAG935AdP4eRTB02R7OB/act55Bj9wsskhZsvuyQRpO4O1wQOp85s6T6GWmw==}
@@ -4814,6 +4823,11 @@ snapshots:
     transitivePeerDependencies:
       - encoding
       - ws
+
+  '@langchain/tavily@0.1.2(@langchain/core@0.3.50(openai@4.96.2(ws@8.18.2)(zod@3.24.3)))':
+    dependencies:
+      '@langchain/core': 0.3.50(openai@4.96.2(ws@8.18.2)(zod@3.24.3))
+      zod: 3.24.3
 
   '@langchain/textsplitters@0.1.0(@langchain/core@0.3.50(openai@4.96.2(ws@8.18.2)(zod@3.24.3)))':
     dependencies:

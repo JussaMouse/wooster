@@ -2,6 +2,7 @@ import 'dotenv/config'; // Load .env file into process.env
 import readline from 'readline'
 import fs from 'fs'
 import path from 'path'
+import chalk from 'chalk'
 
 import type { FaissStore } from '@langchain/community/vectorstores/faiss'
 import { ChatOpenAI } from '@langchain/openai'
@@ -28,6 +29,7 @@ import { initHeartbeatService, stopHeartbeatService } from './heartbeat'
 import { loadConfig, getConfig, AppConfig } from './configLoader'
 import { bootstrapLogger, applyLoggerConfig, log, LogLevel, logLLMInteraction } from './logger'
 import { initProjectMetadataService, logConversationTurn } from './projectMetadataService'
+import { initializeWebSearchTool } from "./tools/webSearchTool"; // Added for Tavily
 // Removed placeholder imports: яйцо, 간단한툴, وزارة_الداخلية, списокИнструментов
 
 import { createRetrievalChain } from 'langchain/chains/retrieval'
@@ -58,6 +60,18 @@ const answerPrompt = ChatPromptTemplate.fromMessages([
     ["user", "{input}"],
 ])
 
+// RAG Query function
+async function performRagQuery(query: string): Promise<string> {
+  if (!ragChain) {
+    log(LogLevel.WARN, "RAG chain not ready for query.");
+    return "Knowledge base is not ready.";
+  }
+  // Correctly use conversationHistory for the RAG chain context
+  const relevantHistory = conversationHistory.map(m => ({ role: m_roleToString(m), content: m.content as string }));
+  const result = await ragChain.invoke({ input: query, chat_history: relevantHistory });
+  return result.answer;
+}
+
 async function main() {
   bootstrapLogger(); // Bootstrap logger for very early messages
   // dotenv/config is already loaded at the top for any early .env access
@@ -85,6 +99,9 @@ async function main() {
 
   initializeUserKnowledgeExtractor(llm)
   log(LogLevel.INFO, 'UserKnowledgeExtractor initialized.');
+
+  initializeWebSearchTool(appConfig); // Initialize Tavily Search Tool
+  log(LogLevel.INFO, 'WebSearchTool potentially initialized (check logs for Tavily status).');
 
   initSchedulerDB()
   log(LogLevel.INFO, 'Scheduler database initialized.');
@@ -305,52 +322,38 @@ function startREPL() {
         });
       }
     } else {
-      if (!ragChain) {
-        // console.warn("RAG chain not ready for agent response.");
-        log(LogLevel.WARN, "RAG chain not ready for agent response.");
-        // console.log("Assistant is not ready yet, RAG chain is initializing...")
-        log(LogLevel.INFO, "Assistant is not ready yet, RAG chain is initializing...");
-        rl.prompt()
-        return
+      // Default to treating input as a query for the agent
+      const mappedHistory = conversationHistory.map(m => ({ role: m_roleToString(m), content: m.content as string }));
+      const agentLLMResponse = await agentRespond(
+        input,
+        llm,
+        performRagQuery,
+        mappedHistory, // Pass the mapped history
+        currentProjectName || undefined,
+        false // isScheduledTask
+      );
+      log(LogLevel.INFO, "Agent's response: %s", agentLLMResponse);
+      console.log(chalk.cyan("Wooster:"), agentLLMResponse);
+      conversationHistory.push(new AIMessage(agentLLMResponse));
+      // Cap history
+      if (conversationHistory.length > 10) {
+        conversationHistory = conversationHistory.slice(-10);
       }
-      // log(LogLevel.DEBUG, `Calling agentRespond with input: "${input}"`); // Already logged user input
-      const response = await agentRespond(input, llm, async (query) => {
-        // log(LogLevel.DEBUG, `RAG callback received query: "${query}"`);
-        const result = await ragChain.invoke({ input: query, chat_history: conversationHistory })
-        // log(LogLevel.DEBUG, `RAG callback result:`, result);
-        return result.answer
-      }, currentProjectName || undefined)
-      
-      // console.log(`Assistant response: ${response}`);
-      log(LogLevel.INFO, 'Assistant response: %s', response);
-      // console.log("Assistant:", response)
-      // log(LogLevel.INFO, "Assistant:", response); // Redundant if above is good.
-      if (response) {
-        conversationHistory.push(new AIMessage(response))
 
-        // Log conversation turn to project notes
-        if (currentProjectName) {
-          logConversationTurn(currentProjectName, input, response).catch(err => {
-            log(LogLevel.ERROR, 'Failed to log conversation turn to project notes: %s', err.message ? err.message : err);
-          });
-        }
+      if (currentProjectName) {
+        await logConversationTurn(currentProjectName, input, agentLLMResponse);
+      }
 
-        // UCM Learning Step (only if UCM is enabled)
-        if (appConfig.ucm.enabled && userContextStore) { 
-          try {
-            const userFact = await extractUserKnowledge(input, response, currentProjectName);
-            if (userFact) {
-              await addUserFactToContextStore(userFact, userContextStore);
-              // console.debug(`[UCM Learned]: ${userFact}`);
-              log(LogLevel.DEBUG, '[UCM Learned]: %s', userFact);
-            }
-          } catch (ucmError: any) {
-            // console.error("Error during UCM processing:", ucmError);
-            log(LogLevel.ERROR, 'Error during UCM processing: %s', ucmError.message ? ucmError.message : ucmError);
-          }
-        } else if (appConfig.ucm.enabled && !userContextStore) {
-            // console.warn("UCM is enabled in config, but userContextStore is not initialized. Skipping UCM learning step.");
-            log(LogLevel.WARN, "UCM is enabled in config, but userContextStore is not initialized. Skipping UCM learning step.");
+      // Post-response UCM learning cycle
+      if (appConfig.ucm.enabled && userContextStore) {
+        log(LogLevel.INFO, "UCM: Extracting knowledge from conversation turn for UCM.");
+        // Pass conversation history to extractUserKnowledge as well
+        const extractedFact: string | null = await extractUserKnowledge(input, agentLLMResponse, currentProjectName);
+        if (extractedFact) {
+          log(LogLevel.INFO, `UCM: Adding new fact to UCM: "${extractedFact}"`);
+          await addUserFactToContextStore(extractedFact, userContextStore);
+        } else {
+          log(LogLevel.DEBUG, "UCM: No new fact extracted from this turn.");
         }
       }
     }
@@ -398,25 +401,34 @@ async function initializeRagChain() {
   // console.log("RAG chain initialized successfully."); // Redundant
 }
 
+// Helper to convert Langchain message role type to string for history
+function m_roleToString(message: HumanMessage | AIMessage): 'user' | 'assistant' | 'system' {
+  if (message._getType() === 'human') return 'user';
+  if (message._getType() === 'ai') return 'assistant';
+  // System messages aren't directly stored in conversationHistory in this structure, but good to have a case
+  if (message._getType() === 'system') return 'system'; 
+  return 'user'; // Fallback, though should ideally not be reached with current history structure
+}
+
 // Define the agent execution callback for the scheduler
 async function schedulerAgentCallback(taskPayload: string): Promise<void> {
-  // console.log(`Scheduler executing agent task. Payload: "${taskPayload}"`);
-  log(LogLevel.INFO, 'Scheduler executing agent task. Payload: "%s"', taskPayload);
+  log(LogLevel.INFO, `Scheduler: Executing scheduled task: "${taskPayload}"`);
   try {
-    if (!ragChain || !llm) {
-      // console.error("RAG chain or LLM not initialized for scheduled task.");
-      log(LogLevel.ERROR, "RAG chain or LLM not initialized for scheduled task.");
-      return
-    }
-    const response = await agentRespond(taskPayload, llm, async (query) => {
-      const result = await ragChain.invoke({ input: query, chat_history: [] })
-      return result.answer
-    }, undefined, true);
-    // console.log(`Scheduled agent task response: "${response}" (Note: This is the agent's textual response, actual tool actions like email would have occurred silently)`);
-    log(LogLevel.INFO, 'Scheduled agent task response: "%s" (Note: This is the agent\'s textual response, actual tool actions like email would have occurred silently)', response);
-  } catch (error: any) {    
-    // console.error("Error during scheduled agent task execution:", error);
-    log(LogLevel.ERROR, 'Error during scheduled agent task execution: %s', error.message ? error.message : error);
+    // For scheduled tasks, we pass an empty chat history for now.
+    // We could potentially retrieve relevant past context if tasks were more complex or linked.
+    const response = await agentRespond(
+      taskPayload, 
+      llm, 
+      performRagQuery, 
+      [], // Empty chat history for scheduled tasks
+      currentProjectName || undefined, 
+      true // isScheduledTask = true
+    );
+    log(LogLevel.INFO, `Scheduler: Task "${taskPayload}" executed. Response: "${response}"`);
+    // Here, you might want to notify the user of the result, e.g., via a (future) notification system or logging.
+    // For now, just logging it.
+  } catch (error) {
+    log(LogLevel.ERROR, `Scheduler: Error executing task "${taskPayload}":`, error);
   }
 }
 

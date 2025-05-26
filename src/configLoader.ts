@@ -7,18 +7,25 @@ import { getPluginFileNames } from './pluginManager';
 export interface AppConfig {
   openai: OpenAIConfig;
   logging: LoggingConfig;
-  email: EmailConfig;
   ucm: UcmConfig;
   plugins: Record<string, boolean>; // Maps plugin filename (w/o .ts) to enabled status
-  google: GoogleConfig;
-  googleCalendar: GoogleCalendarConfig;
-  // Add other configuration sections as needed
+  tavilyApiKey?: string; 
+  tools: ToolsConfig; // Group tool-specific configs
+}
+
+export interface ToolsConfig {
+  email: EmailToolConfig;
+  googleCalendar: GoogleCalendarToolConfig;
+  webSearch: WebSearchToolConfig;
 }
 
 // Define interfaces for each configuration section
 export interface OpenAIConfig {
-  apiKey: string | null;
+  apiKey: string;
   modelName: string;
+  embeddingModelName: string;
+  temperature: number;
+  maxTokens: number;
 }
 
 export interface LoggingConfig {
@@ -29,11 +36,11 @@ export interface LoggingConfig {
   consoleQuietMode: boolean;
 }
 
-export interface EmailConfig {
+export interface EmailToolConfig { // Renamed from EmailConfig for clarity
   enabled: boolean;
-  senderEmailAddress: string | null; // e.g., your Gmail address
-  userPersonalEmailAddress: string | null; // User's personal email, for CC'ing or as default "to"
-  emailAppPassword: string | null; // App Password for Gmail
+  senderEmailAddress: string | null; 
+  userPersonalEmailAddress: string | null;
+  emailAppPassword: string | null; 
 }
 
 export interface UcmConfig {
@@ -41,143 +48,166 @@ export interface UcmConfig {
   extractorLlmPrompt: string | null;
 }
 
-export interface GoogleConfig {
-  clientId: string | null;
-  clientSecret: string | null;
+export interface GoogleCalendarToolConfig { // Renamed from GoogleCalendarConfig
+  enabled: boolean;
+  clientId: string | null; // Moved from separate GoogleConfig
+  clientSecret: string | null; // Moved from separate GoogleConfig
+  refreshToken: string | null;
+  calendarId: string;
 }
 
-export interface GoogleCalendarConfig {
+export interface WebSearchToolConfig {
   enabled: boolean;
-  refreshToken: string | null;
-  calendarId: string | null;
 }
 
 // Define the default configuration
-// This will be used if the .env file is missing or a variable is not set.
 export const DEFAULT_CONFIG: AppConfig = {
   openai: {
-    apiKey: null, // Must be provided by the user
-    modelName: 'gpt-4o', // Default model
+    apiKey: "YOUR_OPENAI_API_KEY_HERE", // Placeholder, must be from env
+    modelName: "gpt-4o-mini",
+    embeddingModelName: "text-embedding-3-small",
+    temperature: 0.7,
+    maxTokens: 2048,
   },
+  tavilyApiKey: undefined,
   logging: {
     consoleLogLevel: LogLevel.INFO,
     fileLogLevel: LogLevel.INFO,
-    logFile: 'wooster_session.log', // Default log file name
+    logFile: 'logs/wooster_session.log',
     logAgentLLMInteractions: false,
     consoleQuietMode: false,
   },
-  email: {
-    enabled: false,
-    senderEmailAddress: null,
-    userPersonalEmailAddress: null,
-    emailAppPassword: null,
-  },
   ucm: {
-    enabled: false, // UCM is disabled by default
-    extractorLlmPrompt: null, // Default prompt will be used if null
-  },
-  google: {
-    clientId: null,
-    clientSecret: null,
-  },
-  googleCalendar: {
     enabled: false,
-    refreshToken: null,
-    calendarId: 'primary', // Default calendar ID
+    extractorLlmPrompt: null,
   },
-  plugins: {}, // No plugins enabled by default, will be populated dynamically
+  tools: {
+    email: {
+      enabled: false,
+      senderEmailAddress: null,
+      userPersonalEmailAddress: null,
+      emailAppPassword: null,
+    },
+    googleCalendar: {
+      enabled: false,
+      clientId: null,
+      clientSecret: null,
+      refreshToken: null,
+      calendarId: 'primary',
+    },
+    webSearch: {
+      enabled: true, // Will be overridden if TAVILY_API_KEY is missing
+    }
+  },
+  plugins: {}, 
 };
 
 // Holder for the current configuration
 let currentConfig: AppConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG)); // Deep copy
 
-/**
- * Helper function to get an environment variable with a default value and type conversion.
- * @param varName The name of the environment variable.
- * @param defaultValue The default value if the variable is not set or empty.
- * @param type The target type ('string', 'boolean', 'number', 'loglevel').
- * @returns The value of the environment variable or the default value, converted to the specified type.
- */
-function getEnv<T extends string | boolean | number | LogLevel | null>(
-  varName: string,
-  defaultValue: T,
-  type: 'string' | 'boolean' | 'number' | 'loglevel' = 'string'
-): T {
-  const value = process.env[varName];
-  if (value === undefined || value === '') {
+function getEnvVar(varName: string): string | undefined {
+  return process.env[varName];
+}
+
+function parseBoolean(envValue: string | undefined, defaultValue: boolean): boolean {
+  if (envValue === undefined || envValue === '') return defaultValue;
+  return envValue.toLowerCase() === 'true';
+}
+
+function parseNumber(envValue: string | undefined, defaultValue: number): number {
+  if (envValue === undefined || envValue === '') return defaultValue;
+  const num = parseFloat(envValue);
+  return isNaN(num) ? defaultValue : num;
+}
+
+function parseLogLevel(envValue: string | undefined, defaultValue: LogLevel): LogLevel {
+  if (envValue === undefined || envValue === '') return defaultValue;
+  const upperValue = envValue.toUpperCase();
+  if (Object.values(LogLevel).includes(upperValue as LogLevel)) {
+    return upperValue as LogLevel;
+  }
+  return defaultValue;
+}
+
+function parseString(envValue: string | undefined, defaultValue: string): string {
+  if (envValue === undefined || envValue === '') {
     return defaultValue;
   }
-  switch (type) {
-    case 'boolean':
-      return (value.toLowerCase() === 'true') as T;
-    case 'number':
-      const num = parseFloat(value);
-      return isNaN(num) ? defaultValue : (num as T);
-    case 'loglevel':
-      const upperValue = value.toUpperCase();
-      if (Object.values(LogLevel).includes(upperValue as LogLevel)) {
-        return upperValue as T;
-      }
-      // console.warn(\`Invalid LogLevel "\\\${value}" for \\\${varName}. Using default: "\\\${defaultValue}".\`);
-      return defaultValue;
-    default: // string
-      return value as T;
+  return envValue;
+}
+
+function parseNullableString(envValue: string | undefined, defaultValue: string | null): string | null {
+  if (envValue === undefined) {
+    return defaultValue;
   }
+  if (envValue === '') {
+    return null;
+  }
+  return envValue;
 }
 
 // Function to load configuration from environment variables
 export function loadConfig(): AppConfig {
   currentConfig.openai = {
-    apiKey: getEnv('OPENAI_API_KEY', DEFAULT_CONFIG.openai.apiKey),
-    modelName: getEnv('OPENAI_MODEL_NAME', DEFAULT_CONFIG.openai.modelName),
+    apiKey: getEnvVar('OPENAI_API_KEY') || DEFAULT_CONFIG.openai.apiKey,
+    modelName: parseString(getEnvVar('OPENAI_MODEL_NAME'), DEFAULT_CONFIG.openai.modelName),
+    embeddingModelName: parseString(getEnvVar('OPENAI_EMBEDDING_MODEL_NAME'), DEFAULT_CONFIG.openai.embeddingModelName),
+    temperature: parseNumber(getEnvVar('OPENAI_TEMPERATURE'), DEFAULT_CONFIG.openai.temperature),
+    maxTokens: parseNumber(getEnvVar('OPENAI_MAX_TOKENS'), DEFAULT_CONFIG.openai.maxTokens),
   };
 
   currentConfig.logging = {
-    consoleLogLevel: getEnv('LOGGING_CONSOLE_LOG_LEVEL', DEFAULT_CONFIG.logging.consoleLogLevel, 'loglevel'),
-    fileLogLevel: getEnv('LOGGING_FILE_LOG_LEVEL', DEFAULT_CONFIG.logging.fileLogLevel, 'loglevel'),
-    logFile: getEnv('LOGGING_LOG_FILE', DEFAULT_CONFIG.logging.logFile),
-    logAgentLLMInteractions: getEnv('LOGGING_LOG_AGENT_LLM_INTERACTIONS', DEFAULT_CONFIG.logging.logAgentLLMInteractions, 'boolean'),
-    consoleQuietMode: getEnv('LOGGING_CONSOLE_QUIET_MODE', DEFAULT_CONFIG.logging.consoleQuietMode, 'boolean'),
-  };
-
-  currentConfig.email = {
-    enabled: getEnv('EMAIL_ENABLED', DEFAULT_CONFIG.email.enabled, 'boolean'),
-    senderEmailAddress: getEnv('EMAIL_SENDER_EMAIL_ADDRESS', DEFAULT_CONFIG.email.senderEmailAddress),
-    userPersonalEmailAddress: getEnv('EMAIL_USER_PERSONAL_EMAIL_ADDRESS', DEFAULT_CONFIG.email.userPersonalEmailAddress),
-    emailAppPassword: getEnv('EMAIL_EMAIL_APP_PASSWORD', DEFAULT_CONFIG.email.emailAppPassword),
+    consoleLogLevel: parseLogLevel(getEnvVar('LOGGING_CONSOLE_LOG_LEVEL'), DEFAULT_CONFIG.logging.consoleLogLevel),
+    fileLogLevel: parseLogLevel(getEnvVar('LOGGING_FILE_LOG_LEVEL'), DEFAULT_CONFIG.logging.fileLogLevel),
+    logFile: parseString(getEnvVar('LOGGING_LOG_FILE'), DEFAULT_CONFIG.logging.logFile),
+    logAgentLLMInteractions: parseBoolean(getEnvVar('LOGGING_LOG_AGENT_LLM_INTERACTIONS'), DEFAULT_CONFIG.logging.logAgentLLMInteractions),
+    consoleQuietMode: parseBoolean(getEnvVar('LOGGING_CONSOLE_QUIET_MODE'), DEFAULT_CONFIG.logging.consoleQuietMode),
   };
 
   currentConfig.ucm = {
-    enabled: getEnv('UCM_ENABLED', DEFAULT_CONFIG.ucm.enabled, 'boolean'),
-    extractorLlmPrompt: getEnv('UCM_EXTRACTOR_LLM_PROMPT', DEFAULT_CONFIG.ucm.extractorLlmPrompt),
+    enabled: parseBoolean(getEnvVar('UCM_ENABLED'), DEFAULT_CONFIG.ucm.enabled),
+    extractorLlmPrompt: parseNullableString(getEnvVar('UCM_EXTRACTOR_LLM_PROMPT'), DEFAULT_CONFIG.ucm.extractorLlmPrompt),
+  };
+  
+  currentConfig.tools = {
+    email: {
+      enabled: parseBoolean(getEnvVar('TOOLS_EMAIL_ENABLED'), DEFAULT_CONFIG.tools.email.enabled),
+      senderEmailAddress: parseNullableString(getEnvVar('EMAIL_SENDING_EMAIL_ADDRESS'), DEFAULT_CONFIG.tools.email.senderEmailAddress),
+      userPersonalEmailAddress: parseNullableString(getEnvVar('EMAIL_USER_PERSONAL_EMAIL_ADDRESS'), DEFAULT_CONFIG.tools.email.userPersonalEmailAddress),
+      emailAppPassword: parseNullableString(getEnvVar('EMAIL_EMAIL_APP_PASSWORD'), DEFAULT_CONFIG.tools.email.emailAppPassword),
+    },
+    googleCalendar: {
+      enabled: parseBoolean(getEnvVar('TOOLS_GOOGLE_CALENDAR_ENABLED'), DEFAULT_CONFIG.tools.googleCalendar.enabled),
+      clientId: parseNullableString(getEnvVar('GOOGLE_CLIENT_ID'), DEFAULT_CONFIG.tools.googleCalendar.clientId),
+      clientSecret: parseNullableString(getEnvVar('GOOGLE_CLIENT_SECRET'), DEFAULT_CONFIG.tools.googleCalendar.clientSecret),
+      refreshToken: parseNullableString(getEnvVar('GOOGLE_CALENDAR_REFRESH_TOKEN'), DEFAULT_CONFIG.tools.googleCalendar.refreshToken),
+      calendarId: parseString(getEnvVar('GOOGLE_CALENDAR_ID'), DEFAULT_CONFIG.tools.googleCalendar.calendarId),
+    },
+    webSearch: {
+      enabled: parseBoolean(getEnvVar('TOOLS_WEB_SEARCH_ENABLED'), 
+        !!(getEnvVar('TAVILY_API_KEY') && getEnvVar('TAVILY_API_KEY') !== '') 
+          ? DEFAULT_CONFIG.tools.webSearch.enabled 
+          : false
+      ),
+    }
   };
 
-  currentConfig.google = {
-    clientId: getEnv('GOOGLE_CLIENT_ID', DEFAULT_CONFIG.google.clientId),
-    clientSecret: getEnv('GOOGLE_CLIENT_SECRET', DEFAULT_CONFIG.google.clientSecret),
-  };
+  currentConfig.tavilyApiKey = getEnvVar('TAVILY_API_KEY') || undefined;
+  if (currentConfig.tools.webSearch.enabled && !currentConfig.tavilyApiKey) {
+    // console.warn("Web search is enabled but TAVILY_API_KEY is not set. Disabling web search tool.");
+    currentConfig.tools.webSearch.enabled = false;
+  }
 
-  currentConfig.googleCalendar = {
-    enabled: getEnv('GOOGLE_CALENDAR_ENABLED', DEFAULT_CONFIG.googleCalendar.enabled, 'boolean'),
-    refreshToken: getEnv('GOOGLE_CALENDAR_REFRESH_TOKEN', DEFAULT_CONFIG.googleCalendar.refreshToken),
-    calendarId: getEnv('GOOGLE_CALENDAR_ID', DEFAULT_CONFIG.googleCalendar.calendarId),
-  };
-
-  // Dynamically populate plugin enablement from environment variables
   currentConfig.plugins = {};
   try {
-    const pluginFiles = getPluginFileNames(); // Assumes this function exists and returns string[]
+    const pluginFiles = getPluginFileNames(); 
     pluginFiles.forEach(fileName => {
-      const pluginName = path.basename(fileName, '.ts'); // e.g., "myPlugin" from "myPlugin.ts"
-      const envVarName = 'PLUGIN_' + pluginName.toUpperCase() + '_ENABLED'; // e.g., PLUGIN_MYPLUGIN_ENABLED
-      // Default to true if the variable is not explicitly set to 'false'
-      const isEnabled = getEnv(envVarName, true, 'boolean'); // Default to true
-      currentConfig.plugins[pluginName] = isEnabled;
+      const pluginName = path.basename(fileName, '.ts'); 
+      const envVarName = 'PLUGIN_' + pluginName.toUpperCase() + '_ENABLED'; 
+      currentConfig.plugins[pluginName] = parseBoolean(getEnvVar(envVarName), true); // Default to true if env var is not set
     });
   } catch (error) {
-    console.error('Error loading plugin configurations:', error);
-    // Use a bootstrap logger or a simple console.error if logger isn't fully initialized
-    // Or handle this more gracefully depending on application stage
+    // console.error('Error loading plugin configurations:', error);
   }
   return currentConfig;
 }
@@ -187,14 +217,5 @@ export function getConfig(): AppConfig {
   return currentConfig;
 }
 
-// Function to set the OpenAI API key programmatically (e.g., from a command)
-// Potentially useful, but consider security implications.
-// export function setOpenAIApiKey(apiKey: string): void {
-//   currentConfig.openai.apiKey = apiKey;
-//   // TODO: Consider if this should also attempt to save back to a .env or config file,
-//   // or if it's purely an in-session change. For now, it's in-session.
-// }
-
 // Initial load of the configuration when this module is imported.
-// This ensures that \`getConfig()\` returns a populated config object.
 loadConfig(); 
