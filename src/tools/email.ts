@@ -25,9 +25,9 @@ export async function sendEmail(args: EmailArgs, config: EmailConfig): Promise<s
     return 'Email functionality is disabled in the configuration.';
   }
 
-  const woosterSendingAddress = config.sendingEmailAddress;
+  const woosterSendingAddress = config.senderEmailAddress;
   if (!woosterSendingAddress) {
-    log(LogLevel.ERROR, 'Wooster sending email address not configured in config.json (email.sendingEmailAddress)');
+    log(LogLevel.ERROR, 'Wooster sending email address not configured in config.json (email.senderEmailAddress)');
     return 'Wooster sending email address not configured. Cannot send email.';
   }
 

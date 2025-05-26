@@ -10,6 +10,7 @@ export interface AppConfig {
   email: EmailConfig;
   ucm: UcmConfig;
   plugins: Record<string, boolean>; // Maps plugin filename (w/o .ts) to enabled status
+  google: GoogleConfig;
   googleCalendar: GoogleCalendarConfig;
   // Add other configuration sections as needed
 }
@@ -40,11 +41,15 @@ export interface UcmConfig {
   extractorLlmPrompt: string | null;
 }
 
+export interface GoogleConfig {
+  clientId: string | null;
+  clientSecret: string | null;
+}
+
 export interface GoogleCalendarConfig {
   enabled: boolean;
-  googleCloudClientId: string | null;
-  googleCloudClientSecret: string | null;
-  googleCloudRefreshToken: string | null;
+  refreshToken: string | null;
+  calendarId: string | null;
 }
 
 // Define the default configuration
@@ -71,11 +76,14 @@ export const DEFAULT_CONFIG: AppConfig = {
     enabled: false, // UCM is disabled by default
     extractorLlmPrompt: null, // Default prompt will be used if null
   },
+  google: {
+    clientId: null,
+    clientSecret: null,
+  },
   googleCalendar: {
     enabled: false,
-    googleCloudClientId: null,
-    googleCloudClientSecret: null,
-    googleCloudRefreshToken: null,
+    refreshToken: null,
+    calendarId: 'primary', // Default calendar ID
   },
   plugins: {}, // No plugins enabled by default, will be populated dynamically
 };
@@ -144,11 +152,15 @@ export function loadConfig(): AppConfig {
     extractorLlmPrompt: getEnv('UCM_EXTRACTOR_LLM_PROMPT', DEFAULT_CONFIG.ucm.extractorLlmPrompt),
   };
 
+  currentConfig.google = {
+    clientId: getEnv('GOOGLE_CLIENT_ID', DEFAULT_CONFIG.google.clientId),
+    clientSecret: getEnv('GOOGLE_CLIENT_SECRET', DEFAULT_CONFIG.google.clientSecret),
+  };
+
   currentConfig.googleCalendar = {
     enabled: getEnv('GOOGLE_CALENDAR_ENABLED', DEFAULT_CONFIG.googleCalendar.enabled, 'boolean'),
-    googleCloudClientId: getEnv('GOOGLE_CALENDAR_CLIENT_ID', DEFAULT_CONFIG.googleCalendar.googleCloudClientId),
-    googleCloudClientSecret: getEnv('GOOGLE_CALENDAR_CLIENT_SECRET', DEFAULT_CONFIG.googleCalendar.googleCloudClientSecret),
-    googleCloudRefreshToken: getEnv('GOOGLE_CALENDAR_REFRESH_TOKEN', DEFAULT_CONFIG.googleCalendar.googleCloudRefreshToken),
+    refreshToken: getEnv('GOOGLE_CALENDAR_REFRESH_TOKEN', DEFAULT_CONFIG.googleCalendar.refreshToken),
+    calendarId: getEnv('GOOGLE_CALENDAR_ID', DEFAULT_CONFIG.googleCalendar.calendarId),
   };
 
   // Dynamically populate plugin enablement from environment variables
@@ -157,7 +169,7 @@ export function loadConfig(): AppConfig {
     const pluginFiles = getPluginFileNames(); // Assumes this function exists and returns string[]
     pluginFiles.forEach(fileName => {
       const pluginName = path.basename(fileName, '.ts'); // e.g., "myPlugin" from "myPlugin.ts"
-      const envVarName = \`PLUGIN_\${pluginName.toUpperCase()}_ENABLED\`; // e.g., PLUGIN_MYPLUGIN_ENABLED
+      const envVarName = 'PLUGIN_' + pluginName.toUpperCase() + '_ENABLED'; // e.g., PLUGIN_MYPLUGIN_ENABLED
       // Default to true if the variable is not explicitly set to 'false'
       const isEnabled = getEnv(envVarName, true, 'boolean'); // Default to true
       currentConfig.plugins[pluginName] = isEnabled;

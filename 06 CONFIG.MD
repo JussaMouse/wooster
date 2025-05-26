@@ -89,25 +89,36 @@ Controls the UCM feature. Variables are prefixed with `UCM_`.
     -   If empty or omitted, a system-defined default prompt is used.
     -   **Default**: (empty, meaning null)
 
-#### 5. Google Calendar Integration
+#### 5. Google Integration Configuration
 
-Configures integration with Google Calendar. Variables are prefixed with `GOOGLE_`. These are required if you intend to use Google Calendar functionalities.
+General configuration for Google services. These credentials may be used by multiple Google-related tools or plugins (e.g., Calendar, Email if Gmail API is used in the future).
 
 -   `GOOGLE_CLIENT_ID` (string | empty):
     -   Your Google Cloud OAuth 2.0 Client ID.
+    -   Required if any Google integration (like Calendar) is enabled and needs OAuth.
     -   **Default**: (empty, meaning null)
 -   `GOOGLE_CLIENT_SECRET` (string | empty):
     -   Your Google Cloud OAuth 2.0 Client Secret.
+    -   Required if any Google integration is enabled and needs OAuth.
     -   **Default**: (empty, meaning null)
--   `GOOGLE_REFRESH_TOKEN` (string | empty):
-    -   The OAuth 2.0 Refresh Token obtained for Wooster's access to Google Calendar.
+
+#### 5a. Google Calendar Specific Configuration
+
+Configures the Google Calendar tool/integration. These are prefixed with `GOOGLE_CALENDAR_`.
+
+-   `GOOGLE_CALENDAR_ENABLED` (boolean: `true` | `false`):
+    -   Set to `true` to enable Google Calendar features.
+    -   If `false`, Google Calendar related tools or functionalities will not be available.
+    -   Requires `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to be set if enabled.
+    -   **Default**: `false`.
+-   `GOOGLE_CALENDAR_REFRESH_TOKEN` (string | empty):
+    -   The OAuth 2.0 Refresh Token obtained specifically for Wooster's access to Google Calendar.
+    -   Required if `GOOGLE_CALENDAR_ENABLED=true`.
     -   **Default**: (empty, meaning null)
--   `WOOSTER_CALENDAR_ID` (string):
+-   `GOOGLE_CALENDAR_ID` (string):
     -   The ID of the Google Calendar Wooster will primarily manage events on (e.g., `primary` for the authenticated user's main calendar, or a specific calendar ID).
+    -   Used if `GOOGLE_CALENDAR_ENABLED=true`.
     -   **Default**: `primary`.
--   `YOUR_PERSONAL_CALENDAR_EMAIL` (string | empty):
-    -   Your personal Google Calendar email address. Wooster can use this to share events from its calendar to yours by adding you as an attendee.
-    -   **Default**: (empty, meaning null)
 
 #### 6. Plugin Activation
 
