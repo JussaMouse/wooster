@@ -36,7 +36,13 @@ export async function performWebSearch(query: string): Promise<string> {
     // TavilySearch from @langchain/tavily expects an object with a query property for invoke
     const results = await tavilySearchToolInstance.invoke({ query: query }); 
     log(LogLevel.DEBUG, "Tavily search raw results:", { results });
-    return results || "No results found from web search.";
+    // Ensure a string is returned, as expected by DynamicTool's func and subsequently by AIMessage content.
+    if (typeof results === 'string') {
+      return results || "No results found from web search.";
+    } else if (typeof results === 'object' && results !== null) {
+      return JSON.stringify(results);
+    }
+    return "No results found or unexpected result type from web search.";
   } catch (error) {
     log(LogLevel.ERROR, `Error performing Tavily web search for query "${query}":`, error);
     return `Sorry, I encountered an error while trying to search the web for: ${query}`;

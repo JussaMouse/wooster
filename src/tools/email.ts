@@ -1,6 +1,8 @@
 import nodemailer from 'nodemailer';
+import { getConfig } from '../configLoader';
+import type { EmailToolConfig } from '../configLoader'; // Changed EmailConfig to EmailToolConfig
 import { log, LogLevel } from '../logger';
-import type { EmailConfig } from '../configLoader'; // Import EmailConfig
+import { z } from 'zod';
 
 export interface EmailArgs {
   to: string;
@@ -17,7 +19,7 @@ const SELF_EMAIL_PLACEHOLDER = 'SELF_EMAIL_RECIPIENT';
  * @param args The email arguments (to, subject, body).
  * @param config The email configuration from AppConfig.
  */
-export async function sendEmail(args: EmailArgs, config: EmailConfig): Promise<string> {
+export async function sendEmail(args: EmailArgs, config: EmailToolConfig): Promise<string> {
   const { to, subject, body } = args;
   log(LogLevel.INFO, 'Attempting to send email with tool: sendEmail', { to, subject, bodyLength: body.length });
 

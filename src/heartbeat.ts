@@ -61,9 +61,12 @@ process.on('exit', stopHeartbeatService);
 
 export async function getHeartbeatStatus(): Promise<Date | null> {
   try {
-    const lastHeartbeat = await getLastHeartbeat();
-    log(LogLevel.DEBUG, 'Fetched last heartbeat time for status.', { lastHeartbeat });
-    return lastHeartbeat;
+    const lastHeartbeatString = await getLastHeartbeat();
+    log(LogLevel.DEBUG, 'Fetched last heartbeat time for status.', { lastHeartbeat: lastHeartbeatString });
+    if (lastHeartbeatString) {
+      return new Date(lastHeartbeatString);
+    }
+    return null;
   } catch (error) {
     log(LogLevel.ERROR, 'Error fetching last heartbeat for status:', { error });
     // console.error('[Heartbeat] Error fetching last heartbeat for status:', error);

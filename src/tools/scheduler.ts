@@ -1,4 +1,4 @@
-import { AgentTool } from "../agent";
+import { DynamicTool } from "@langchain/core/tools";
 import { log, LogLevel } from '../logger';
 import { createAgentTaskSchedule } from "../scheduler/schedulerService"; // Should be the ONLY import from schedulerService
 import { parseDateString } from "../scheduler/scheduleParser";   // Should be the ONLY import from scheduleParser for date parsing
@@ -9,41 +9,41 @@ interface ScheduleAgentTaskArgs {
   humanReadableDescription: string;
 }
 
-export const scheduleAgentTask: AgentTool = {
+export const scheduleAgentTaskTool = new DynamicTool({
   name: 'scheduleAgentTask',
-  description: "Schedules a task for the agent to perform at a specified future time. The agent should provide the core task, a natural language time expression, and a human-readable description.",
-  parameters: {
-    type: "object",
-    properties: {
-      taskPayload: { 
-        type: "string", 
-        description: "The core task or query for the agent to execute at the scheduled time (e.g., 'What is the weather in London?', or 'Send an email to mom saying happy birthday.'). This should be the underlying request, stripped of the scheduling instruction itself." 
-      },
-      timeExpression: { 
-        type: "string", 
-        description: "A natural language expression for when the task should run (e.g., 'tomorrow at 10am', 'in 2 hours', 'next Monday at noon')." 
-      },
-      humanReadableDescription: { 
-        type: "string", 
-        description: "A brief, human-readable description of the task being scheduled (e.g., 'Check London weather', 'Email mom for birthday')." 
+  description: "Schedules a task for the agent to perform at a specified future time. Input MUST be an object with three keys: 'taskPayload' (string: the core task for the agent to execute later, e.g., 'What is the weather in London?'), 'timeExpression' (string: a natural language expression for when the task should run, e.g., 'tomorrow at 10am', 'in 2 hours'), and 'humanReadableDescription' (string: a brief description of the task, e.g., 'Check London weather').",
+  // DynamicTool func receives a string or an object based on how the LLM calls it.
+  // We will parse it if it's a string, otherwise use as is if an object.
+  func: async (toolInput: string | Record<string, any>): Promise<string> => {
+    let args: ScheduleAgentTaskArgs;
+    if (typeof toolInput === 'string') {
+      try {
+        args = JSON.parse(toolInput) as ScheduleAgentTaskArgs;
+      } catch (e) {
+        log(LogLevel.ERROR, '[Tool:scheduleAgentTask] Failed to parse JSON input string', { input: toolInput, error: (e as Error).message });
+        return "Invalid input for scheduleAgentTask: Input string is not valid JSON. Expected object with 'taskPayload', 'timeExpression', 'humanReadableDescription'.";
       }
-    },
-    required: ["taskPayload", "timeExpression", "humanReadableDescription"]
-  },
-  execute: async (args: ScheduleAgentTaskArgs): Promise<string> => {
+    } else if (typeof toolInput === 'object' && toolInput !== null) {
+      // Type assertion, as we expect the LLM to provide the correct structure if it passes an object.
+      args = toolInput as ScheduleAgentTaskArgs;
+    } else {
+      log(LogLevel.ERROR, '[Tool:scheduleAgentTask] Invalid input type.', { input: toolInput });
+      return "Invalid input type for scheduleAgentTask. Expected JSON string or object.";
+    }
+
     const { taskPayload, timeExpression, humanReadableDescription } = args;
     log(LogLevel.INFO, '[Tool:scheduleAgentTask] Called', { taskPayload, timeExpression, humanReadableDescription });
 
     if (!taskPayload || !timeExpression || !humanReadableDescription) {
       log(LogLevel.WARN, '[Tool:scheduleAgentTask] Missing required arguments.', args);
-      return "Missing required arguments for scheduling. I need a task, a time, and a description.";
+      return "Missing required arguments. I need 'taskPayload', 'timeExpression', and 'humanReadableDescription'.";
     }
 
     const scheduleDate = parseDateString(timeExpression);
 
     if (!scheduleDate) {
       log(LogLevel.WARN, '[Tool:scheduleAgentTask] Could not parse timeExpression.', { timeExpression });
-      return `Could not understand the time expression: "${timeExpression}". Please try a different phrasing.`;
+      return `Could not understand the time expression: \"${timeExpression}\". Please try a different phrasing.`;
     }
 
     if (scheduleDate.getTime() <= Date.now()) {
@@ -60,7 +60,7 @@ export const scheduleAgentTask: AgentTool = {
       );
 
       if (reminder && reminder.id) {
-        const confirmationMessage = `Okay, I've scheduled "${humanReadableDescription}" for ${scheduleDate.toLocaleString()}. (ID: ${reminder.id})`;
+        const confirmationMessage = `Okay, I've scheduled \"${humanReadableDescription}\" for ${scheduleDate.toLocaleString()}. (ID: ${reminder.id})`;
         log(LogLevel.INFO, '[Tool:scheduleAgentTask] Task scheduled successfully.', { reminderId: reminder.id, confirmationMessage });
         return confirmationMessage;
       } else {
@@ -72,4 +72,4 @@ export const scheduleAgentTask: AgentTool = {
       return `Failed to schedule task due to an internal error: ${error.message}`;
     }
   }
-}; 
+}); 

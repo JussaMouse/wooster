@@ -42,7 +42,7 @@ For the `GoogleCalendarPlugin` to function correctly and provide its tools, it n
     -   `GOOGLE_CLIENT_SECRET`: Your Google Cloud OAuth 2.0 Client Secret.
     -   `GOOGLE_CALENDAR_REFRESH_TOKEN`: OAuth 2.0 Refresh Token for Google Calendar access.
     -   `GOOGLE_CALENDAR_ID` (Optional): The ID of the Google Calendar to manage (e.g., `primary`). Defaults to `primary`.
-    -   Refer to `docs/tools/TOOL_GoogleCalendar.MD` (section 3) and `06 CONFIG.MD` (section 4b) for comprehensive details on these Google Calendar-specific settings and credentials.
+    -   Refer to `docs/tools/TOOL_GoogleCalendar.MD` (section 3) and `06 CONFIG.MD` (section "4b. Google Calendar Tool (Provided by GoogleCalendarPlugin)") for comprehensive details on these Google Calendar-specific settings and credentials. For general guidance on obtaining Google OAuth credentials, see the "Notes about getting OAth credentials for Google services:" section at the top of `06 CONFIG.MD`.
 
 ## 4. Initialization
 

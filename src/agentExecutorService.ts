@@ -15,6 +15,8 @@ import { recallUserContextFunc, setUserContextStore as setGlobalUCMStore } from 
 import { createAgentTaskSchedule } from "./scheduler/schedulerService";
 import { parseDateString } from "./scheduler/scheduleParser";
 import { getPluginAgentTools } from "./pluginManager";
+import { ChatDebugFileCallbackHandler } from "./chatDebugFileCallbackHandler";
+import { scheduleAgentTaskTool } from "./tools/scheduler";
 
 let userContextStoreInstance: FaissStore | null = null;
 let projectVectorStoreInstance: FaissStore | null = null;
@@ -124,57 +126,7 @@ async function initializeTools() {
   });
   coreTools.push(queryKnowledgeBase);
 
-  const scheduleTaskTool = new DynamicTool({
-    name: "scheduleAgentTask",
-    description: "Schedules a task for the agent to perform at a specified future time. Input MUST be an object with three keys: 'taskPayload' (string: the core task for the agent to execute later, e.g., 'What is the weather in London?'), 'timeExpression' (string: a natural language expression for when the task should run, e.g., 'tomorrow at 10am', 'in 2 hours'), and 'humanReadableDescription' (string: a brief description of the task, e.g., 'Check London weather').",
-    func: async (toolInput: string | Record<string, any>) => {
-      let args: ScheduleAgentTaskArgs;
-      if (typeof toolInput === 'string') {
-        try {
-          args = JSON.parse(toolInput) as ScheduleAgentTaskArgs;
-        } catch (e) {
-          return "Invalid input for scheduleAgentTask: Input string is not valid JSON. Expected object with 'taskPayload', 'timeExpression', 'humanReadableDescription'.";
-        }
-      } else if (typeof toolInput === 'object' && toolInput !== null) {
-        args = toolInput as ScheduleAgentTaskArgs;
-      } else {
-        return "Invalid input type for scheduleAgentTask. Expected JSON string or object.";
-      }
-
-      const { taskPayload, timeExpression, humanReadableDescription } = args;
-      log(LogLevel.INFO, '[AgentExecutorTool:scheduleAgentTask] Called', { taskPayload, timeExpression, humanReadableDescription });
-
-      if (!taskPayload || !timeExpression || !humanReadableDescription) {
-        log(LogLevel.WARN, '[AgentExecutorTool:scheduleAgentTask] Missing required arguments.', args);
-        return "Missing required arguments. I need 'taskPayload', 'timeExpression', and 'humanReadableDescription'.";
-      }
-
-      const scheduleDate = parseDateString(timeExpression);
-      if (!scheduleDate) {
-        log(LogLevel.WARN, '[AgentExecutorTool:scheduleAgentTask] Could not parse timeExpression.', { timeExpression });
-        return `Could not understand the time expression: "${timeExpression}". Please try a different phrasing.`;
-      }
-      if (scheduleDate.getTime() <= Date.now()) {
-        log(LogLevel.WARN, '[AgentExecutorTool:scheduleAgentTask] Attempted to schedule in the past.', { scheduleDate: scheduleDate.toLocaleString(), timeExpression });
-        return `The specified time (${scheduleDate.toLocaleString()}) is in the past. Please provide a future time.`;
-      }
-      try {
-        const reminder = await createAgentTaskSchedule(humanReadableDescription, scheduleDate, taskPayload);
-        if (reminder && reminder.id) {
-          const confirmationMessage = `Okay, I've scheduled "${humanReadableDescription}" for ${scheduleDate.toLocaleString()}. (ID: ${reminder.id})`;
-          log(LogLevel.INFO, '[AgentExecutorTool:scheduleAgentTask] Task scheduled successfully.', { reminderId: reminder.id });
-          return confirmationMessage;
-        } else {
-          log(LogLevel.ERROR, '[AgentExecutorTool:scheduleAgentTask] createAgentTaskSchedule returned null or no ID.');
-          return "There was an unexpected error scheduling your task.";
-        }
-      } catch (error: any) {
-        log(LogLevel.ERROR, '[AgentExecutorTool:scheduleAgentTask] Error during execution:', { error });
-        return `Failed to schedule task: ${error.message}`;
-      }
-    },
-  });
-  coreTools.push(scheduleTaskTool);
+  coreTools.push(scheduleAgentTaskTool);
 
   const pluginTools = getPluginAgentTools();
   log(LogLevel.INFO, "Retrieved %d tools from plugins.", pluginTools.length);
@@ -222,15 +174,23 @@ async function getAgentExecutor(): Promise<AgentExecutor> {
     prompt,
   });
 
-  agentExecutorInstance = new AgentExecutor({
+  let agentExecutorOptions: any = {
     agent,
     tools,
-    verbose: appConfig.logging.logAgentLLMInteractions,
     handleParsingErrors: (err: unknown) => {
       log(LogLevel.ERROR, "Agent parsing error:", { error: err });
       return "There was an issue parsing the response. Please try rephrasing your request.";
     },
-  });
+  };
+
+  if (appConfig.logging.logAgentLLMInteractions) {
+    agentExecutorOptions.callbacks = [new ChatDebugFileCallbackHandler()];
+    agentExecutorOptions.verbose = false;
+  } else {
+    agentExecutorOptions.verbose = false;
+  }
+
+  agentExecutorInstance = new AgentExecutor(agentExecutorOptions);
   log(LogLevel.INFO, "AgentExecutor instance created.");
   return agentExecutorInstance;
 }
@@ -262,9 +222,36 @@ export async function executeAgent(
   const currentDateTime = new Date().toLocaleString();
 
   try {
+    // Process chat history: Ensure HumanMessage and AIMessage content is in the new format
+    const processedChatHistory = chatHistory.map(msg => {
+      if (msg._getType() === 'human' && typeof msg.content === 'string') {
+        return new HumanMessage({ content: [{ type: "text", text: msg.content }], name: msg.name });
+      }
+      // For AIMessage, if content is a string, transform it, preserving other properties like tool_calls.
+      // If content is already in the structured format or not a string (e.g. null for some AIMessages with only tool calls), leave it as is.
+      if (msg._getType() === 'ai' && typeof msg.content === 'string') {
+        const aiMsg = msg as AIMessage;
+        return new AIMessage({ 
+          content: [{ type: "text", text: aiMsg.content }], 
+          name: aiMsg.name, 
+          tool_calls: aiMsg.tool_calls, 
+          invalid_tool_calls: aiMsg.invalid_tool_calls,
+          // Copy any other relevant properties from the original AIMessage
+          additional_kwargs: aiMsg.additional_kwargs,
+          response_metadata: aiMsg.response_metadata,
+          id: aiMsg.id,
+        });
+      }
+      // ToolMessage content should be a string, so no transformation needed.
+      // Other message types or AIMessages with already structured content are returned as is.
+      return msg;
+    });
+
+    log(LogLevel.DEBUG, "executeAgent: Processed chat history", { processedChatHistory });
+
     const result = await executor.invoke({
       input: userInput,
-      chat_history: chatHistory,
+      chat_history: processedChatHistory,
       current_date_time: currentDateTime,
     });
 

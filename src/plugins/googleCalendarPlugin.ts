@@ -145,74 +145,66 @@ const GoogleCalendarPlugin: WoosterPlugin = {
 
     const listEventsTool = new DynamicTool({
       name: "list_calendar_events",
-      description: "Lists events from Google Calendar. Optional filter arguments: 'timeMin' (natural language or ISO 8601, e.g., 'today'), 'timeMax' (natural language or ISO 8601, e.g., 'end of next week'), 'maxResults' (number), 'orderBy' ('startTime' or 'updated'), 'singleEvents' (boolean), 'q' (string search query).",
-      schema: listEventsSchema,
+      description: "Lists events from Google Calendar. Expects a single JSON string argument. The JSON string should parse into an object with optional filter arguments: 'timeMin' (natural language or ISO 8601, e.g., 'today'), 'timeMax' (natural language or ISO 8601, e.g., 'end of next week'), 'maxResults' (number), 'orderBy' ('startTime' or 'updated'), 'singleEvents' (boolean), 'q' (string search query). Example JSON string: '{\"timeMin\":\"today\", \"maxResults\":5}'",
       func: async (toolInput: string) => {
         log(LogLevel.DEBUG, "list_calendar_events plugin func: Received toolInput (string expected):", typeof toolInput, toolInput);
 
-        let rawArgs: Record<string, any> | z.infer<typeof listEventsSchema> | undefined;
+        let argsObject: any;
         try {
-          if (toolInput.trim() === "") {
-            rawArgs = {};
-          } else {
-            rawArgs = JSON.parse(toolInput);
+          if (typeof toolInput !== 'string') {
+            throw new Error(`Expected a string input, but received type ${typeof toolInput}. Value: ${JSON.stringify(toolInput)}`);
           }
+          argsObject = JSON.parse(toolInput);
         } catch (e: any) {
           log(LogLevel.ERROR, "list_calendar_events: Failed to parse input string to JSON", { input: toolInput, error: e.message });
-          return `Error: Invalid input. Expected a JSON string or empty for defaults. ${e.message}`;
+          return `Error: Invalid input. Expected a single JSON string. ${e.message}`;
         }
 
-        if (rawArgs === undefined || rawArgs === null) {
-          log(LogLevel.ERROR, "list_calendar_events plugin func: Received undefined or null arguments.");
-          return "Error: Tool received no arguments. Please provide event listing criteria.";
+        let parsedArgs: z.infer<typeof listEventsSchema>;
+        try {
+          parsedArgs = listEventsSchema.parse(argsObject);
+        } catch (e: any) {
+          log(LogLevel.ERROR, "list_calendar_events: Zod validation failed for parsed arguments", { args: argsObject, error: e.errors });
+          const errorMessages = e.errors.map((err: any) => `${err.path.join('.')} - ${err.message}`).join(', ');
+          return `Error: Invalid arguments in JSON. ${errorMessages}.`;
         }
-
-        const args = ('input' in rawArgs && typeof rawArgs.input === 'object' && rawArgs.input !== null)
-          ? rawArgs.input as z.infer<typeof listEventsSchema>
-          : rawArgs as z.infer<typeof listEventsSchema>;
-
+        
         try {
           const finalOptions: ListEventsOptions = { 
-            timeMin: args.timeMin,
-            timeMax: args.timeMax,
-            maxResults: args.maxResults,
-            orderBy: args.orderBy,
-            singleEvents: args.singleEvents,
-            q: args.q,
+            timeMin: parsedArgs.timeMin,
+            timeMax: parsedArgs.timeMax,
+            maxResults: parsedArgs.maxResults,
+            orderBy: parsedArgs.orderBy,
+            singleEvents: parsedArgs.singleEvents,
+            q: parsedArgs.q,
           };
 
-          if (args.timeMin) {
-            const parsedTimeMin = parseDateString(args.timeMin);
-            if (!parsedTimeMin) return `Invalid timeMin: Could not parse "${args.timeMin}".`;
+          if (parsedArgs.timeMin) {
+            const parsedTimeMin = parseDateString(parsedArgs.timeMin);
+            if (!parsedTimeMin) return `Invalid timeMin in JSON: Could not parse "${parsedArgs.timeMin}".`;
             finalOptions.timeMin = parsedTimeMin.toISOString();
           }
-          if (args.timeMax) {
-            const parsedTimeMax = parseDateString(args.timeMax);
-            if (!parsedTimeMax) return `Invalid timeMax: Could not parse "${args.timeMax}".`;
+          if (parsedArgs.timeMax) {
+            const parsedTimeMax = parseDateString(parsedArgs.timeMax);
+            if (!parsedTimeMax) return `Invalid timeMax in JSON: Could not parse "${parsedArgs.timeMax}".`;
             finalOptions.timeMax = parsedTimeMax.toISOString();
           }
-
-          (Object.keys(listEventsSchema.shape) as Array<keyof z.infer<typeof listEventsSchema>>).forEach(key => {
-            if (args[key] !== undefined && key !== 'timeMin' && key !== 'timeMax') {
-              (finalOptions as any)[key] = args[key];
-            }
-          });
 
           if (finalOptions.timeMin && finalOptions.timeMax) {
             const dMin = new Date(finalOptions.timeMin);
             const dMax = new Date(finalOptions.timeMax);
             if (dMax <= dMin) {
-              return `Error: timeMax (${args.timeMax} / ${finalOptions.timeMax}) must be after timeMin (${args.timeMin} / ${finalOptions.timeMin}).`;
+              return `Error: timeMax (${parsedArgs.timeMax} / ${finalOptions.timeMax}) must be after timeMin (${parsedArgs.timeMin} / ${finalOptions.timeMin}).`;
             }
           }
 
           const calendarIdToUse = globalAppConfig.tools.googleCalendar.calendarId || 'primary';
           const result = await listCalendarEventsClient(finalOptions, calendarIdToUse);
 
-          if (typeof result === 'string') return result;
+          if (typeof result === 'string') return result; // Error string from client
           if (result.length === 0) return "No events found matching your criteria.";
           
-          return result.map((event: calendar_v3.Schema$Event) => ({
+          return JSON.stringify(result.map((event: calendar_v3.Schema$Event) => ({ // Stringify the array of events
             id: event.id,
             summary: event.summary,
             start: event.start?.dateTime || event.start?.date,
@@ -220,9 +212,9 @@ const GoogleCalendarPlugin: WoosterPlugin = {
             location: event.location,
             description: event.description,
             url: event.htmlLink
-          }));
+          })));
         } catch (e: any) {
-          log(LogLevel.ERROR, "Error in list_calendar_events tool func:", { error: e, input: args });
+          log(LogLevel.ERROR, "Error in list_calendar_events tool func (post-parsing):", { error: e, input: parsedArgs });
           return `Error processing list_calendar_events: ${e.message}.`;
         }
       },

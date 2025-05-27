@@ -23,6 +23,8 @@ For these tools to be available and functional, the following conditions must be
     - `GOOGLE_CALENDAR_REFRESH_TOKEN`
 - **Target Calendar**: `GOOGLE_CALENDAR_ID` (defaults to `primary` if not set) specifies which calendar to operate on.
 
+For detailed instructions on setting these environment variables, including how to obtain the necessary Google OAuth credentials (Client ID, Client Secret, Refresh Token), please refer to `06 CONFIG.MD`, specifically section "4b. Google Calendar Tool (Provided by GoogleCalendarPlugin)" and the general notes on "getting OAth credentials for Google services" near the top of that file.
+
 If the plugin is not active, or the tool is not enabled, or the client fails to initialize (e.g., due to missing credentials), these tools will not be available to the agent.
 
 --- 

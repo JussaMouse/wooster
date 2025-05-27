@@ -75,7 +75,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     fileLogLevel: LogLevel.INFO,
     logFile: 'logs/wooster_session.log',
     logAgentLLMInteractions: false,
-    consoleQuietMode: false,
+    consoleQuietMode: true,
   },
   ucm: {
     enabled: false,
