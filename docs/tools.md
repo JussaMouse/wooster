@@ -38,8 +38,8 @@ The following core tools are available to the Wooster agent. Each tool has its o
     - Documentation: `docs/tools/TOOL_WebSearch.MD`
     - Briefly: Performs real-time internet searches for up-to-date information.
 
-- **User Context Recall**
-    - Documentation: `docs/tools/TOOL_UserContextRecall.MD`
+- **User Profile Recall**
+    - Documentation: `docs/tools/TOOL_UserProfileRecall.MD`
     - Briefly: Retrieves previously learned user-specific facts, preferences, or context.
 
 - **Project Knowledge Base Query**

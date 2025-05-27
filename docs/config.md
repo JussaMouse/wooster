@@ -59,7 +59,7 @@ These variables configure the primary Language Model used by Wooster.
     -   **Description**: The OpenAI model to be used for chat completions (e.g., `gpt-4o-mini`, `gpt-4`, `gpt-3.5-turbo`).
     -   **Default**: `gpt-4o-mini`
 -   `OPENAI_EMBEDDING_MODEL_NAME`
-    -   **Description**: The OpenAI model for creating embeddings (used for RAG, UCM).
+    -   **Description**: The OpenAI model for creating embeddings (used for RAG, User Profile).
     -   **Default**: `text-embedding-3-small`
 -   `OPENAI_TEMPERATURE`
     -   **Description**: Controls the randomness of the LLM's output. Higher values (e.g., 0.9) make output more random, lower values (e.g., 0.2) make it more deterministic.
@@ -107,16 +107,16 @@ These variables control Wooster's logging behavior. See `07 LOGGING.MD` for more
     -   **Valid Values**: `DEBUG`, `INFO`, `WARN`, `ERROR`
     -   **Default**: `INFO` (or as determined by internal bootstrap logger)
 
-### 3. User Contextual Memory (UCM)
+### 3. User Profile
 
-Controls the User Contextual Memory feature.
+Controls the User Profile feature, which allows Wooster to remember user-specific facts and preferences.
 
--   `UCM_ENABLED`
-    -   **Description**: Set to `true` to enable UCM.
+-   `USER_PROFILE_ENABLED`
+    -   **Description**: Set to `true` to enable the User Profile feature.
     -   **Valid Values**: `true`, `false`
     -   **Default**: `false`
--   `UCM_EXTRACTOR_LLM_PROMPT`
-    -   **Description**: Custom prompt for the UCM fact extractor. If empty, a system default is used. Supports placeholders like `{conversationHistory}`.
+-   `USER_PROFILE_EXTRACTOR_LLM_PROMPT`
+    -   **Description**: Custom prompt for the User Profile fact extractor. If empty, a system default is used. Supports placeholders like `{conversationHistory}`.
     -   **Default**: (empty string, uses system default)
 
 ### 4. Tools Configuration

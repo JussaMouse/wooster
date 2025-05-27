@@ -49,7 +49,7 @@ Example `projects.json`:
       *   If `<name>` is defined in `projects.json`, it uses those file paths/glob patterns.
       *   Otherwise, it assumes `<name>` corresponds to a directory at `projects/<name>/`.
       *   It reads all relevant files, processes them (loads, splits, embeds), and constructs a new, in-memory `FaissStore` for this project.
-      *   **Note**: Project-specific vector stores are built in-memory on each load and are *not* saved to or loaded from `vector_data/` for individual projects (unlike the UCM store).
+      *   **Note**: Project-specific vector stores are built in-memory on each load and are *not* saved to or loaded from `vector_data/` for individual projects (unlike the User Profile store).
   3.  The RAG chain is re-initialized (`initializeRagChain()`) to use the new project-specific `vectorStore`.
   4.  **Effect**: Wooster's knowledge is now focused on the documents within the loaded project.
 
