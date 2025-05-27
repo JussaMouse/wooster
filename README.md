@@ -1,137 +1,78 @@
-**⚠️ Experimental Software Warning ⚠️**
+# Wooster: Personal Digital Assistant
 
-1.  **This is experimental software.** There is no guarantee that it will work correctly or be maintained. Use at your own risk.
-2.  **OpenAI API Usage & Data Privacy (Alpha Stage):** In its current alpha form, Wooster uses the OpenAI API by default for its core agent and other features. If you enable User Contextual Memory (UCM), this means that data Wooster collects about your interactions and preferences will be sent to OpenAI servers as part of the LLM requests. Wooster is planning an update in the future to accommodate local LLMs for users who prefer to keep their UCM data entirely on their own systems.
+Wooster is an AI assistant designed to be extended and customized. It leverages large language models and a suite of tools to help with various tasks, from answering questions to managing your information and schedule.
 
-# Wooster: Your Agentic CLI Assistant
+## Installation and Configuration
 
-Wooster is a TypeScript-based, extensible command-line AI assistant designed for intelligent interaction. It leverages LangChain's `AgentExecutor` framework with a Large Language Model (LLM) to understand your requests, maintain conversational context, and strategically access a variety of knowledge sources. Wooster can learn from your documents (organized into "Projects"), remember your preferences (User Contextual Memory), search the web for current information, send emails, schedule tasks, and more. Its capabilities are expanded through a system of agent-callable **Tools**. All configuration is managed through environment variables in an `.env` file.
-
-## Core Concepts
-
-Wooster's intelligence comes from its ability to orchestrate several components:
-
-*   **Agent (`src/agentExecutorService.ts` & `src/agent.ts`)**: The LLM-powered brain of Wooster, built using LangChain's `AgentExecutor` and an OpenAI Tools agent. `src/agentExecutorService.ts` manages the agent, its tools, and the execution loop. `src/agent.ts` acts as the primary interface for receiving user input and history. The agent interprets your input, maintains rich conversational context, and decides whether to call a specific Tool or respond directly. It is configured using environment variables in your `.env` file.
-*   **Tools (`src/tools/` & `src/agentExecutorService.ts`)**: These are specific, self-contained functions (LangChain `DynamicTool` instances) that the Agent can decide to call. They are defined and managed within `src/agentExecutorService.ts`. Examples include `sendEmail`, `scheduleAgentTask`, `queryKnowledgeBase` (for project-specific RAG), `recall_user_context` (for personal memory), and `web_search` for accessing live internet data. Tool enablement and behavior are configured via `.env`.
-*   **Knowledge Sources**:
-    *   **Project-Specific Knowledge (RAG) (`src/projectIngestor.ts`, `src/memoryVector.ts`)**: Wooster can ingest documents and code into a local FAISS vector store. This knowledge is organized into "Projects." The Agent uses Retrieval Augmented Generation (RAG), typically via the `queryKnowledgeBase` tool, to answer questions based on the currently active project's ingested knowledge.
-        *   A default project named **"home"** (located in `projects/home/`) is automatically created and loaded on startup.
-    *   **User Contextual Memory (UCM) (`src/userKnowledgeExtractor.ts`, `src/tools/userContextTool.ts`)**: Wooster learns and recalls user-specific facts and preferences from your direct interactions, storing them in a dedicated vector store for personalization. This feature is enabled/disabled and configured via environment variables in your `.env` file (e.g., `UCM_ENABLED`).
-    *   **Web Search (`src/tools/webSearchTool.ts`)**: Wooster can perform real-time web searches using the Tavily AI API to fetch current information. Requires a `TAVILY_API_KEY` and is enabled/disabled via environment variables in your `.env` file (e.g., `TOOLS_WEB_SEARCH_ENABLED`).
-*   **Scheduler (`src/scheduler/`, `src/tools/scheduler.ts`)**: Allows scheduling tasks or reminders using natural language.
-*   **Heartbeat (`src/heartbeat.ts`)**: A mechanism for monitoring Wooster's operational status.
-*   **Plugins (`src/plugins/`, `src/pluginManager.ts`, `src/pluginTypes.ts`)**: Extensible modules that can provide new **Agent Tools** to Wooster (e.g., for Gmail, Google Calendar) and potentially hook into its lifecycle. Plugin enablement and tool provision are managed via environment variables and the plugin's own logic. See `03 PLUGINS.MD` and `06 CONFIG.MD`.
-*   **Logging (`src/logger.ts`)**: Wooster uses a configurable logging system (console and file output) managed via environment variables in your `.env` file (e.g., `LOGGING_CONSOLE_LOG_LEVEL`).
-*   **Configuration (`src/configLoader.ts`, `.env` file)**: Wooster's behavior, including logging, UCM, tool enablement, and plugin activation, is controlled by environment variables set in an `.env` file in the project root. See `06 CONFIG.MD` for a full list.
-
-## Features
-
-*   **Intelligent Conversational Interface**: Interact with Wooster using natural language, with the agent maintaining contextual understanding.
-*   **Multi-Source Knowledge Access**: Wooster dynamically chooses between its base LLM knowledge, project-specific documents (RAG), User Contextual Memory (UCM), and live web search to answer queries.
-*   **Real-time Web Search**: Fetches up-to-date information from the internet using Tavily AI.
-*   **Personalized Interaction**: Learns and recalls your preferences through User Contextual Memory (UCM).
-*   **Agent-Driven Tool Use**: Intelligently selects and uses available tools (LangChain `DynamicTool` instances managed by `AgentExecutor`) to fulfill requests (email, scheduling, web search, etc.).
-*   **Project-Based Knowledge Management**: Load local documents and codebases for Wooster to learn from.
-*   **Task Scheduling**: Schedule reminders and future tasks using natural language.
-*   **Comprehensive Configuration**: Extensive settings via an `.env` file for API keys, LLM parameters, logging, UCM, and feature/tool enablement. See `06 CONFIG.MD`.
-
-## Installation
-
-1.  **Prerequisites**:
-    *   Node.js (>= 18, LTS recommended)
-    *   pnpm (or npm/yarn, but `pnpm-lock.yaml` is provided)
-    *   Git
-
-2.  **Clone the Repository**:
+1.  **Clone the repository:**
     ```bash
-    git clone <repository-url>
+    git clone https://github.com/JussaMouse/wooster.git
     cd wooster
     ```
 
-3.  **Install Dependencies**:
+2.  **Install dependencies:**
+    Wooster uses `pnpm` for package management.
     ```bash
     pnpm install
-    # This will install all necessary packages, including Langchain, OpenAI, Tavily, etc.
     ```
 
-4.  **Set up Configuration (`.env` file)**:
-    *   Copy the example file: `cp .env.example .env`.
-    *   **You MUST edit your `.env` file to provide, at a minimum, your `OPENAI_API_KEY`.**
-    *   If you want to use the web search tool, you **MUST also provide your `TAVILY_API_KEY`** and ensure `TOOLS_WEB_SEARCH_ENABLED=true` (default).
-    *   All other settings for features like email, UCM, logging, and plugin activation are also configured in this `.env` file.
-    *   Refer to `06 CONFIG.MD` for a comprehensive list of all available environment variables and their purposes.
+3.  **Set up environment variables:**
+    Copy the example environment file and fill in the necessary values:
+    ```bash
+    cp .env.example .env
+    ```
+    Open `.env` and configure the following **essential** variables:
+    *   `OPENAI_API_KEY`: Your OpenAI API key for accessing LLMs.
+    *   `GMAIL_SENDER_EMAIL_ADDRESS` (for Email Tool): The Gmail address Wooster will send emails from.
+    *   `GMAIL_APP_PASSWORD` (for Email Tool): An App Password for the Gmail account above. [How to generate App Passwords](https://support.google.com/accounts/answer/185833).
 
-## Usage
+    Other services like Tavily for web search or Google Calendar might require additional API keys or configuration in `.env` if you enable their respective tools. Refer to `.env.example` for a full list of configurable variables.
 
-1.  **Start Wooster**:
+4.  **Run Wooster:**
     ```bash
     pnpm dev
     ```
+    This will start Wooster, and interactions will be logged to `wooster_session.log`.
 
-2.  **Interacting with Wooster**:
-    Type commands or ask questions at the `>` prompt.
+## System Design and Capabilities
 
-    **Built-in REPL Commands**:
-    *   `create project <name_or_path>`
-    *   `load project <name>`
-    *   `quit project` (or `exit project`)
-    *   `list files`
-    *   `list plugins`
-    *   `list tools`
-    *   `list reminders`
-    *   `cancel <id>`
-    *   `status`
-    *   `exit` or `quit`
+Wooster is built with Node.js and TypeScript, utilizing the Langchain.js framework for its core AI agent logic.
 
-    **Example Interactions**:
-    *   `> What can you do?`
-    *   `> When is the next G7 summit?` (Tests web search)
-    *   `> My favorite programming language is Python.` (To teach UCM)
-    *   `> What is my favorite programming language?` (Tests UCM recall)
-    *   `> please send an email to test@example.com with subject Hello and body This is a test.`
-    *   `> remind me to take out the trash in 1 hour`
+**Core Components:**
 
-## Configuration
+*   **Agent**: An OpenAI Functions agent orchestrates tasks, decides when to use tools, and formulates responses.
+*   **LLM**: Powered by OpenAI models (configurable, e.g., GPT-4o, GPT-3.5-turbo).
+*   **Chat History**: Maintains conversation context for more coherent interactions.
 
-Wooster's behavior is controlled by environment variables set in your `.env` file in the project root. 
+**Key Capabilities (Tools):**
 
-*   **`.env`**: The main configuration file. See `06 CONFIG.MD` for a comprehensive list of all variables.
-*   **`projects.json` (Optional)**: For advanced project path definitions. See `01 PROJECTS.MD`.
+Wooster comes with a set of built-in tools. Some may require specific environment variable settings (see `.env.example` for details on enabling/disabling and configuring tools).
 
-## Extending Wooster
+*   **Web Search**: Utilizes Tavily Search API (`TAVILY_API_KEY` in `.env`) for up-to-date information from the internet.
+*   **Task Scheduling**: Allows you to schedule tasks for Wooster to perform at a later time (e.g., "remind me tomorrow at 10 am to..."). Uses `node-schedule`.
+*   **Email Sending**: Can send emails on your behalf via Gmail. Requires `GMAIL_SENDER_EMAIL_ADDRESS` and `GMAIL_APP_PASSWORD` in `.env`.
+*   **Google Calendar Integration**: (If configured in `.env`)
+    *   Can create and list calendar events.
+    *   Requires Google Cloud credentials (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` in `.env`) and an OAuth2 token (`token.json` generated after initial authorization). The `GOOGLE_CALENDAR_CREDENTIALS_PATH` and `GOOGLE_CALENDAR_TOKEN_PATH` in `.env` point to these files.
+*   **Project Knowledge Base**:
+    *   Wooster can ingest documents from specific project directories defined in `projects.json` (located in the workspace root, e.g., `[{"name": "MyProject", "path": "./projects/my_project_docs"}]`).
+    *   It creates a FAISS vector store for each project, allowing you to query information specific to that project's documents. Vector stores are saved in `vector_data/`.
+*   **User Context Memory**:
+    *   Remembers user-specific facts, preferences, and context across conversations.
+    *   Stored in a FAISS vector store (`vector_data/user_context_store`).
 
-Wooster's primary method for adding new capabilities is by creating **Plugins** that provide **Agent Tools**.
+**Plugin System:**
 
-*   **Creating Plugins that Provide Agent Tools**:
-    1.  **Define Plugin Logic**: Create your plugin file in `src/plugins/` (e.g., `mySuperPlugin.ts`). Implement the `WoosterPlugin` interface from `src/pluginTypes.ts`.
-    2.  **Implement `initialize(config)` (Optional)**: If your plugin needs setup or to access configuration, implement the `initialize` method. This is where you might set up API clients (like for Google Calendar).
-    3.  **Implement `getAgentTools()`**: This method should return an array of `DynamicTool` instances. Each tool will need a unique `name`, a clear `description` for the agent, and a `func` to execute its logic.
-        *   The `func` will typically call specific functions you've implemented (e.g., in a separate `src/tools/mySuperApiClient.ts` file).
-    4.  **Configuration**: 
-        *   Allow your plugin to be enabled/disabled via `PLUGIN_[YOURPLUGINNAME]_ENABLED` in `.env` (handled by `pluginManager.ts`).
-        *   Control specific features or tool availability within your plugin using `TOOLS_[YOURSERVICE]_[FEATURE]_ENABLED` variables (e.g., `TOOLS_GOOGLE_CALENDAR_ENABLED`), checking these in your plugin's `initialize` or `getAgentTools` methods.
-    5.  **Documentation**: 
-        *   Create a `docs/tools/TOOL_YourToolName.MD` file for each tool or group of tools your plugin provides, following existing examples.
-        *   Update `04 TOOLS.MD` to list your new plugin-provided tools and link to their documentation.
-        *   Update `06 CONFIG.MD` to document any new environment variables your plugin introduces.
-    6.  **Examples**: See `src/plugins/gmailPlugin.ts` and `src/plugins/googleCalendarPlugin.ts` for examples of plugins providing tools.
+*   Wooster supports a plugin system allowing developers to easily add new tools and capabilities. Plugins are located in `src/plugins/`.
 
-*   **Legacy Tool Integration (Directly in AgentExecutorService)**: While the preferred method is now plugin-based, some core tools are still initialized directly within `src/agentExecutorService.ts`. This approach might be suitable for very tightly coupled core functionalities, but plugins offer better modularity.
+**Configuration:**
 
-*   **Old-Style Plugins (Lifecycle Hooks Only)**: The plugin system previously focused only on lifecycle hooks. While `WoosterPlugin` can still support other methods, the primary extension point for agent capabilities is now tool provision.
+*   **Environment Variables (`.env`)**: For API keys, tool settings, logging, and other options.
 
-Refer to `03 PLUGINS.MD` for more on the plugin structure and `04 TOOLS.MD` for an overview of the tooling system.
+**Logging:**
 
----
-
-This README provides a high-level overview. For more details, refer to the other markdown documents:
-
-- `00 SYSTEM.MD`: Overall system architecture, boot sequence, and REPL loop.
-- `01 PROJECTS.MD`: Managing project-specific knowledge (RAG).
-- `02 UCM.MD`: User Contextual Memory for personalization.
-- `docs/03 AGENT.MD`: Details of the LangChain `AgentExecutor` based agent architecture.
-- `03 PLUGINS.MD`: Creating plugins that provide tools and/or lifecycle hooks.
-- `04 TOOLS.MD`: Overview of the agent's tooling system and an index to individual tool documentation (found in `docs/tools/`).
-- `05 SCHEDULER.MD`: Task scheduling.
-- `06 CONFIG.MD`: Configuration via `.env` environment variables.
-- `07 LOGGING.MD`: Logging system.
+*   Set log level in `.env`
+*   Available services:
+    *   Console logging
+    *   Log to `logs/wooster_session.log`
+    *   Log to `chat.history` in any project folder
