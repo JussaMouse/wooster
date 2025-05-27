@@ -40,7 +40,7 @@ Wooster is an AI assistant designed to be extended and customized. He leverages 
     ```bash
     pnpm start
     ```
-    This will primarily show the LLM's responses. Interactions are logged to files as configured in `.env` (e.g., `logs/wooster_session.log`).
+    This will primarily show the LLM's responses. See [Logging](#logging) for more.
 
 
 ## Core Design
