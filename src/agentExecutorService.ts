@@ -14,6 +14,7 @@ import { AppConfig, getConfig } from "./configLoader";
 import { log, LogLevel } from "./logger";
 import { performWebSearch, initializeWebSearchTool as initTavilyTool } from "./tools/webSearchTool";
 import { recallUserContextFunc, setUserContextStore as setGlobalUCMStore } from "./tools/userContextTool";
+import { initializeWeatherTool, getWeatherForecastFunc } from "./tools/weatherTool";
 import { createAgentTaskSchedule } from "./scheduler/schedulerService";
 import { parseDateString } from "./scheduler/scheduleParser";
 import { getPluginAgentTools } from "./pluginManager";
@@ -54,6 +55,7 @@ async function initializeTools() {
   });
 
   initTavilyTool(appConfig);
+  initializeWeatherTool(appConfig);
 
   const coreTools: DynamicTool[] = [];
 
@@ -129,6 +131,13 @@ async function initializeTools() {
   coreTools.push(queryKnowledgeBase);
 
   coreTools.push(scheduleAgentTaskTool);
+
+  const getWeatherForecast = new DynamicTool({
+    name: "get_weather_forecast",
+    description: "Fetches the current weather forecast (temperature and conditions) for the user\'s pre-configured city. Input is not required as the city is set in the environment configuration.",
+    func: async () => getWeatherForecastFunc(),
+  });
+  coreTools.push(getWeatherForecast);
 
   const pluginTools = getPluginAgentTools();
   log(LogLevel.INFO, "Retrieved %d tools from plugins.", pluginTools.length);

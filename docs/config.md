@@ -142,3 +142,16 @@ Manages the agent's ability to send emails. This tool is provided by the `GmailP
     -   **Default**: (none)
 -   `TOOLS_EMAIL_EMAIL_APP_PASSWORD`
     -   **Description**: App password for the `TOOLS_EMAIL_SENDER_EMAIL_ADDRESS`
+
+#### 4b. Weather Tool (for Daily Review)
+
+Provides weather forecasts, primarily for the Daily Review feature.
+
+-   `WEATHER_CITY`
+    -   **Description**: The city for which to fetch the weather forecast (e.g., "London", "New York, US").
+    -   **Required**: Yes, if you want weather in the Daily Review.
+    -   **Default**: (none) - If not set, the weather part of the Daily Review will be skipped.
+-   `OPENWEATHERMAP_API_KEY` (Example API Key Variable)
+    -   **Description**: Your API key for the chosen weather service (e.g., OpenWeatherMap). The specific variable name might change depending on the service selected.
+    -   **Required**: Yes, if you want weather in the Daily Review.
+    -   **Default**: (none) - If not set, the weather part of the Daily Review will be skipped.

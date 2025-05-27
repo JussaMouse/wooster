@@ -58,3 +58,6 @@ projects.json
 # If you want to commit a default 'projects/home/' or example projects,
 # remove 'projects/' from this file and manage its contents with Git.
 projects/
+
+# User-specific SystemPrompts
+prompts/

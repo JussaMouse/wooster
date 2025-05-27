@@ -17,6 +17,7 @@ export interface ToolsConfig {
   email: EmailToolConfig;
   googleCalendar: GoogleCalendarToolConfig;
   webSearch: WebSearchToolConfig;
+  weather: WeatherToolConfig;
 }
 
 // Define interfaces for each configuration section
@@ -60,6 +61,11 @@ export interface WebSearchToolConfig {
   enabled: boolean;
 }
 
+export interface WeatherToolConfig {
+  city: string | null;
+  openWeatherMapApiKey: string | null;
+}
+
 // Define the default configuration
 export const DEFAULT_CONFIG: AppConfig = {
   openai: {
@@ -97,6 +103,10 @@ export const DEFAULT_CONFIG: AppConfig = {
     },
     webSearch: {
       enabled: true, // Will be overridden if TAVILY_API_KEY is missing
+    },
+    weather: {
+      city: null,
+      openWeatherMapApiKey: null,
     }
   },
   plugins: {}, 
@@ -189,8 +199,18 @@ export function loadConfig(): AppConfig {
           ? DEFAULT_CONFIG.tools.webSearch.enabled 
           : false
       ),
+    },
+    weather: {
+      city: parseNullableString(getEnvVar('WEATHER_CITY'), DEFAULT_CONFIG.tools.weather.city),
+      openWeatherMapApiKey: parseNullableString(getEnvVar('OPENWEATHERMAP_API_KEY'), DEFAULT_CONFIG.tools.weather.openWeatherMapApiKey),
     }
   };
+
+  // TEMPORARY DEBUG LOGGING START - FOR WEATHER API KEY
+  const rawEnvApiKey = getEnvVar('OPENWEATHERMAP_API_KEY');
+  console.log(`[DEBUG ConfigLoader] Raw OPENWEATHERMAP_API_KEY from env: '${rawEnvApiKey}'`);
+  console.log(`[DEBUG ConfigLoader] Loaded tools.weather.openWeatherMapApiKey: '${currentConfig.tools.weather.openWeatherMapApiKey}'`);
+  // TEMPORARY DEBUG LOGGING END
 
   // TEMPORARY DEBUG LOGGING START - REMOVE AFTER CONFIRMATION
   // console.log('[DEBUG ConfigLoader] Email Config Loaded:');

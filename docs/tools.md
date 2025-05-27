@@ -59,6 +59,10 @@ The following core tools are available to the Wooster agent. Each tool has its o
     - Documentation: `docs/tools/TOOL_TaskScheduler.MD`
     - Briefly: Schedules a task for the agent to perform at a specified future time.
 
+- **Get Weather Forecast**
+    - Documentation: `docs/tools/TOOL_Weather.MD`
+    - Briefly: Fetches the current weather forecast for the user's configured city.
+
 *This list may expand as more capabilities and plugins are added to Wooster.*
 
 ## 4. Configuration
