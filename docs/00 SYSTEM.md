@@ -46,7 +46,7 @@ Wooster is a modular, extensible CLI assistant. This document explains its boot 
   3. If not a REPL command, the input and `conversationHistory` are passed to `agentRespond(...)` in `src/agent.ts`.
      - `agentRespond` now acts as a wrapper, passing the input and history to `executeAgent` in `src/agentExecutorService.ts`.
      - This service uses LangChain's `AgentExecutor` with an OpenAI Tools Agent. The `AgentExecutor` manages a sophisticated interaction loop:
-        - It uses a specific prompt template (combining a system message, chat history, user input, and an `agent_scratchpad` for internal work).
+        - It uses a specific prompt template. The system message provides Wooster with its core instructions and persona. This prompt is constructed by first loading `prompts/base_system_prompt.txt`, then appending the content of any other `.txt` files found in the `prompts/` directory (in alphabetical order). See `06 CONFIG.MD` for details on this customization.
         - The LLM (within the agent) decides whether to use one of its configured tools or generate a direct answer.
         - If a tool is chosen, the agent prepares the input for that tool, invokes it, and receives the observation (tool's output).
         - This observation is added to the `agent_scratchpad`, and the loop continues until the LLM generates a final answer for the user.

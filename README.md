@@ -2,6 +2,11 @@
 
 Wooster is an AI assistant designed to be extended and customized. It leverages large language models and a suite of tools to help with various tasks, from answering questions to managing your information and schedule.
 
+⚠️ This software is experimental and has no guarantee of working or being maintained.
+
+⚠️ This software will share data about you with whichever LLM you attach to it. Use a local LLM if you care about your privacy.
+
+
 ## Installation and Configuration
 
 1.  **Clone the repository:**
@@ -21,18 +26,24 @@ Wooster is an AI assistant designed to be extended and customized. It leverages 
     ```bash
     cp .env.example .env
     ```
-    Open `.env` and configure the following **essential** variables:
-    *   `OPENAI_API_KEY`: Your OpenAI API key for accessing LLMs.
-    *   `GMAIL_SENDER_EMAIL_ADDRESS` (for Email Tool): The Gmail address Wooster will send emails from.
-    *   `GMAIL_APP_PASSWORD` (for Email Tool): An App Password for the Gmail account above. [How to generate App Passwords](https://support.google.com/accounts/answer/185833).
+    Open `.env` and configure the **essential** variables. Refer to `.env.example` for a full list of configurable variables and their purposes, including API keys and tool settings.
 
-    Other services like Tavily for web search or Google Calendar might require additional API keys or configuration in `.env` if you enable their respective tools. Refer to `.env.example` for a full list of configurable variables.
+4.  **Customize System Prompt (Optional):**
+    *   The base system prompt is loaded from `prompts/base_system_prompt.txt`.
+    *   To add custom instructions or tailor Wooster's persona, create additional `.txt` files in the `prompts/` directory (e.g., `prompts/my_custom_instructions.txt`).
+    *   The content of these additional `.txt` files will be appended to the base prompt in alphabetical order by filename.
 
-4.  **Run Wooster:**
+5.  **Run Wooster:**
+    For general use, start Wooster in a quieter mode:
+    ```bash
+    pnpm start
+    ```
+    This will primarily show the LLM's responses. Interactions are logged to files as configured in `.env` (e.g., `logs/wooster_session.log`).
+
+    For development or debugging with more verbose console output:
     ```bash
     pnpm dev
     ```
-    This will start Wooster, and interactions will be logged to `wooster_session.log`.
 
 ## System Design and Capabilities
 
@@ -40,7 +51,7 @@ Wooster is built with Node.js and TypeScript, utilizing the Langchain.js framewo
 
 **Core Components:**
 
-*   **Agent**: An OpenAI Functions agent orchestrates tasks, decides when to use tools, and formulates responses.
+*   **Agent**: An OpenAI Functions agent orchestrates tasks, decides when to use tools, and formulates responses. Its core behavior can be customized (see System Prompt customization in the Configuration section).
 *   **LLM**: Powered by OpenAI models (configurable, e.g., GPT-4o, GPT-3.5-turbo).
 *   **Chat History**: Maintains conversation context for more coherent interactions.
 

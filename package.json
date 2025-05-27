@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "LANGCHAIN_VERBOSE=true tsx src/index.ts 2>&1 | tee -a wooster_session.log",
     "build": "tsc",
-    "start": "pnpm run build && node dist/index.js",
+    "start": "pnpm run build && cross-env TOOLS_LOGGING_CONSOLE_QUIET_MODE=true node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -44,6 +44,7 @@
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^8.31.1",
     "@typescript-eslint/parser": "^8.31.1",
+    "cross-env": "^7.0.3",
     "eslint": "^9.25.1",
     "eslint-config-prettier": "^10.1.2",
     "eslint-plugin-prettier": "^5.2.6",

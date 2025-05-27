@@ -7,6 +7,8 @@ import { FaissStore } from "@langchain/community/vectorstores/faiss";
 import { createHistoryAwareRetriever } from "langchain/chains/history_aware_retriever";
 import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
 import { createRetrievalChain } from "langchain/chains/retrieval";
+import * as fs from 'fs';
+import * as path from 'path';
 
 import { AppConfig, getConfig } from "./configLoader";
 import { log, LogLevel } from "./logger";
@@ -95,7 +97,7 @@ async function initializeTools() {
         const currentChatHistory: BaseMessage[] = runManager?.config?.configurable?.chat_history || [];
         const ragChatHistory = currentChatHistory.filter(m => m._getType() === 'human' || m._getType() === 'ai');
 
-        const historyAwareRetriever = await createHistoryAwareRetriever({
+        const historyAwareRetrieverChain = await createHistoryAwareRetriever({
             llm: agentLlm, 
             retriever,
             rephrasePrompt: historyAwarePrompt,
@@ -107,7 +109,7 @@ async function initializeTools() {
         });
 
         const retrievalChain = await createRetrievalChain({
-            retriever: historyAwareRetriever,
+            retriever: historyAwareRetrieverChain,
             combineDocsChain: documentChain,
         });
         
@@ -154,15 +156,60 @@ async function getAgentExecutor(): Promise<AgentExecutor> {
     await initializeTools();
   }
   
+  let baseSystemPromptText = 
+    "You are Wooster, a helpful AI assistant. Your goal is to assist the user with their tasks and questions." +
+    "You have access to the following tools. Only use tools if necessary. If you can answer directly, do so." +
+    "When using a tool, you must provide your reasoning and the exact input to the tool." +
+    "If a tool provides an error or unusable results, try to analyze the error and retry if appropriate, or inform the user." +
+    "Always strive to be helpful, polite, and provide clear, concise answers."; // Default/Fallback
+
+  const promptsDirPath = path.join(process.cwd(), 'prompts');
+
+  try {
+    const basePromptFilePath = path.join(promptsDirPath, 'base_system_prompt.txt');
+    if (fs.existsSync(basePromptFilePath)) {
+      baseSystemPromptText = fs.readFileSync(basePromptFilePath, 'utf-8').trim();
+      log(LogLevel.INFO, "Successfully loaded base system prompt from file: prompts/base_system_prompt.txt");
+    } else {
+      log(LogLevel.WARN, `Base system prompt file not found at ${basePromptFilePath}. Using default hardcoded prompt.`);
+    }
+  } catch (error) {
+    log(LogLevel.ERROR, "Error reading base system prompt file. Using default hardcoded prompt.", { error });
+  }
+
+  let appendedPromptsText = "";
+  try {
+    if (fs.existsSync(promptsDirPath)) {
+      const allFiles = fs.readdirSync(promptsDirPath);
+      const additionalPromptFiles = allFiles
+        .filter(file => file.endsWith('.txt') && file !== 'base_system_prompt.txt')
+        .sort(); // Sort alphabetically for consistent order
+
+      for (const file of additionalPromptFiles) {
+        try {
+          const filePath = path.join(promptsDirPath, file);
+          const content = fs.readFileSync(filePath, 'utf-8').trim();
+          if (content) {
+            appendedPromptsText += "\n\n" + content;
+            log(LogLevel.INFO, `Appended content from prompt file: prompts/${file}`);
+          }
+        } catch (fileReadError) {
+          log(LogLevel.ERROR, `Error reading additional prompt file: prompts/${file}. Skipping.`, { fileReadError });
+        }
+      }
+    } else {
+      log(LogLevel.INFO, "Prompts directory not found, no additional prompts will be appended.");
+    }
+  } catch (dirReadError) {
+    log(LogLevel.ERROR, "Error reading prompts directory. No additional prompts will be appended.", { dirReadError });
+  }
+  
+  const finalSystemPrompt = baseSystemPromptText + 
+    appendedPromptsText + // appendedPromptsText already contains leading newlines if populated
+    "\n\nCurrent date and time: {current_date_time}";
+
   const prompt = ChatPromptTemplate.fromMessages([
-    ["system", 
-      "You are Wooster, a helpful AI assistant. Your goal is to assist the user with their tasks and questions." +
-      "You have access to the following tools. Only use tools if necessary. If you can answer directly, do so." +
-      "When using a tool, you must provide your reasoning and the exact input to the tool." +
-      "If a tool provides an error or unusable results, try to analyze the error and retry if appropriate, or inform the user." +
-      "Always strive to be helpful, polite, and provide clear, concise answers." +
-      "Current date and time: {current_date_time}"
-    ],
+    ["system", finalSystemPrompt],
     new MessagesPlaceholder("chat_history"),
     ["human", "{input}"],
     new MessagesPlaceholder("agent_scratchpad"),
@@ -186,7 +233,9 @@ async function getAgentExecutor(): Promise<AgentExecutor> {
   if (appConfig.logging.logAgentLLMInteractions) {
     agentExecutorOptions.callbacks = [new ChatDebugFileCallbackHandler()];
     agentExecutorOptions.verbose = false;
-  } else {
+  }
+  // Ensure verbose is false if not explicitly set for logging, to avoid double console output
+  if (agentExecutorOptions.verbose === undefined) {
     agentExecutorOptions.verbose = false;
   }
 
@@ -199,7 +248,7 @@ export async function initializeAgentExecutorService(
   ucmStore?: FaissStore,
   projectStore?: FaissStore
 ): Promise<void> {
-  appConfig = await getConfig();
+  appConfig = await getConfig(); // Ensure appConfig is loaded here as well if not already
   if (ucmStore) {
     userContextStoreInstance = ucmStore;
     setGlobalUCMStore(ucmStore);
@@ -225,7 +274,7 @@ export async function executeAgent(
     // Process chat history: Ensure HumanMessage and AIMessage content is in the new format
     const processedChatHistory = chatHistory.map(msg => {
       if (msg._getType() === 'human' && typeof msg.content === 'string') {
-        return new HumanMessage({ content: [{ type: "text", text: msg.content }], name: msg.name });
+        return new HumanMessage({ content: [{ type: "text", text: msg.content }], name: msg.name, id: msg.id });
       }
       // For AIMessage, if content is a string, transform it, preserving other properties like tool_calls.
       // If content is already in the structured format or not a string (e.g. null for some AIMessages with only tool calls), leave it as is.
@@ -234,12 +283,11 @@ export async function executeAgent(
         return new AIMessage({ 
           content: [{ type: "text", text: aiMsg.content }], 
           name: aiMsg.name, 
+          id: aiMsg.id,
           tool_calls: aiMsg.tool_calls, 
           invalid_tool_calls: aiMsg.invalid_tool_calls,
-          // Copy any other relevant properties from the original AIMessage
           additional_kwargs: aiMsg.additional_kwargs,
           response_metadata: aiMsg.response_metadata,
-          id: aiMsg.id,
         });
       }
       // ToolMessage content should be a string, so no transformation needed.

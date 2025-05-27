@@ -19,24 +19,24 @@ Wooster's configuration is managed exclusively through environment variables set
 - Go to "APIs & Services" -> "Credentials."
 	- `https://console.cloud.google.com/apis/credentials`
 - Click "+ CREATE CREDENTIALS" -> "OAuth client ID."
-- For "Application type," select "Web application".
+- For "Application type," select "Web application".
 - Give it a name (e.g., "Wooster Web App Client for Playground").
-- Under "Authorized redirect URIs," ADD A URI: `https://developers.google.com/oauthplayground`
+- Under "Authorized redirect URIs," ADD A URI: `https://developers.google.com/oauthplayground`
 - This is crucial. The Playground explicitly told you it needs to be listed as a valid redirect URI for the "Web application" client ID you're providing it.
 - Click "Create." You will get a new Client ID and Client Secret.
 #### 2. In OAuth 2.0 Playground:
 - go to `https://developers.google.com/oauthplayground`
 - Go back to the settings cog.
 - Ensure "Use your own OAuth credentials" is checked.
-- Enter the new Client ID and Client Secret you just generated for the "Web application" type.
+- Enter the new Client ID and Client Secret you just generated for the "Web application" type.
 - Ensure "OAuth flow" is set to "Server-side" (usually default and appropriate for web apps getting refresh tokens).
 - Ensure "Access type" is set to "offline" (to get a refresh token).
 #### 3. Re-authorize in OAuth 2.0 Playground:
-- Go through "Step 1: Select & authorize APIs" again (select Calendar API v3, and the `https://www.googleapis.com/auth/calendar.events` scope).
+- Go through "Step 1: Select & authorize APIs" again (select Calendar API v3, and the `https://www.googleapis.com/auth/calendar.events` scope).
 - Click "Authorize APIs."
 - Go through the Google Sign-In and Consent screen again.
 - Exchange the new authorization code for tokens.
-- Copy the new Refresh token that is generated.
+- Copy the new Refresh token that is generated.
 
 ### checking your OAuth client's client id and client secret 
 - got to `https://console.cloud.google.com/auth/clients` and click on your client's name
@@ -67,6 +67,17 @@ These variables configure the primary Language Model used by Wooster.
 -   `OPENAI_MAX_TOKENS`
     -   **Description**: Maximum number of tokens to generate in the LLM response.
     -   **Default**: `2048`
+
+### 1a. System Prompt Customization
+
+Wooster's system prompt, which provides its core instructions and persona to the LLM, can be customized:
+
+-   **Base Prompt**: The foundational system prompt is loaded from `prompts/base_system_prompt.txt` at the project root.
+-   **Appending Custom Instructions**: To add your own standing instructions, define a specific persona, or provide additional context, create one or more `.txt` files in the `prompts/` directory (e.g., `prompts/persona_definition.txt`, `prompts/domain_specific_rules.txt`).
+    -   The content of each of these additional `.txt` files will be read, trimmed of whitespace, and appended to the base system prompt.
+    -   Files are processed in alphabetical order by filename to ensure consistent application of appended prompts.
+    -   Each appended prompt section will be separated from the previous section by two newline characters.
+    -   This method provides a modular way to build up complex system prompts.
 
 ### 2. Logging Configuration
 
@@ -130,61 +141,4 @@ Manages the agent's ability to send emails. This tool is provided by the `GmailP
     -   **Description**: User's personal email, can be used as a default recipient (e.g., for `SELF_EMAIL_RECIPIENT`).
     -   **Default**: (none)
 -   `TOOLS_EMAIL_EMAIL_APP_PASSWORD`
-    -   **Description**: App password for the `TOOLS_EMAIL_SENDER_EMAIL_ADDRESS` (e.g., Gmail App Password). Required if `TOOLS_EMAIL_ENABLED=true`.
-    -   **Default**: (none)
-
-#### 4b. Google Calendar Tool (Provided by GoogleCalendarPlugin)
-
-Configuration for Google Calendar tools (e.g., `create_calendar_event`, `list_calendar_events`), provided by the `GoogleCalendarPlugin`. For these tools to be available, the `GoogleCalendarPlugin` must be active (see Plugin Activation section below), `TOOLS_GOOGLE_CALENDAR_ENABLED` must be `true`, and all necessary Google API credentials must be correctly configured. See `docs/tools/TOOL_GoogleCalendar.MD` for full details on the tools themselves.
-
--   `TOOLS_GOOGLE_CALENDAR_ENABLED`
-    -   **Description**: Set to `true` to enable Google Calendar features within the `GoogleCalendarPlugin`.
-    -   **Valid Values**: `true`, `false`
-    -   **Default**: `false`
--   `GOOGLE_CLIENT_ID`
-    -   **Description**: Your Google Cloud OAuth 2.0 Client ID. Required if `TOOLS_GOOGLE_CALENDAR_ENABLED=true`.
-    -   **Default**: (none)
--   `GOOGLE_CLIENT_SECRET`
-    -   **Description**: Your Google Cloud OAuth 2.0 Client Secret. Required if `TOOLS_GOOGLE_CALENDAR_ENABLED=true`.
-    -   **Default**: (none)
--   `GOOGLE_CALENDAR_REFRESH_TOKEN`
-    -   **Description**: OAuth 2.0 Refresh Token for Google Calendar access. Required if `TOOLS_GOOGLE_CALENDAR_ENABLED=true`.
-    -   **Default**: (none)
--   `GOOGLE_CALENDAR_ID`
-    -   **Description**: The ID of the Google Calendar to manage (e.g., `primary`).
-    -   **Default**: `primary`
-
-#### 4c. Web Search Tool
-
-Manages the agent's ability to perform web searches. See `docs/tools/TOOL_WebSearch.MD` for full details.
-
--   `TOOLS_WEB_SEARCH_ENABLED`
-    -   **Description**: Set to `true` to enable the web search tool. Requires `TAVILY_API_KEY` to be set.
-    -   **Valid Values**: `true`, `false`
-    -   **Default**: `true` (but will be auto-disabled if `TAVILY_API_KEY` is missing)
--   `TAVILY_API_KEY`
-    -   **Description**: Your API key for Tavily AI, used by the web search tool.
-    -   **Required**: If `TOOLS_WEB_SEARCH_ENABLED=true`.
-    -   **Default**: (none)
-
-*(Note: The User Context Recall (`recall_user_context`) and Project Knowledge Base (`queryKnowledgeBase`) tools are core capabilities. Their availability is primarily determined by `UCM_ENABLED` for UCM and the presence of a project vector store for the knowledge base, rather than specific `TOOLS_*_ENABLED` flags for these two.)*
-
-### 5. Plugin Activation
-
-Controls which plugins are active. Wooster discovers plugins from the `src/plugins/` directory (e.g., `myPlugin.ts`, `gmailPlugin.ts`, `googleCalendarPlugin.ts`).
-
--   **General Rule:** Plugins are **ENABLED BY DEFAULT** if found in the `src/plugins/` directory.
--   **To Disable a Specific Plugin:** Set an environment variable `PLUGIN_[PLUGINNAME]_ENABLED=false`.
-    -   Replace `[PLUGINNAME]` with the plugin's `name` property (as defined in the plugin file, e.g., `GmailPlugin`, `GoogleCalendarPlugin`), converted to uppercase. If unsure, it typically matches the filename without `.ts` or `.js`, also uppercased.
-    -   Example: For a plugin defined in `src/plugins/myCoolPlugin.ts` with `name: "MyCoolPlugin"`, to disable it, add: `PLUGIN_MYCOOLPLUGIN_ENABLED=false`
-    -   **Example for GmailPlugin**: To disable the Gmail plugin: `PLUGIN_GMAILPLUGIN_ENABLED=false`.
-    -   **Example for GoogleCalendarPlugin**: To disable the Google Calendar plugin: `PLUGIN_GOOGLECALENDARPLUGIN_ENABLED=false`.
--   **To Explicitly Enable (Optional):** `PLUGIN_[PLUGINNAME]_ENABLED=true`. Usually not needed.
-
-If a plugin is enabled (e.g., `PLUGIN_GOOGLECALENDARPLUGIN_ENABLED=true` or not set), its specific tool enablement flags (like `TOOLS_GOOGLE_CALENDAR_ENABLED`) and credential configurations then determine if the tools it provides are actually made available to the agent and can function correctly.
-
-## Loading Mechanism
-
-The `src/configLoader.ts` module reads these environment variables at startup, applies defaults for any that are missing (unless critical), performs type conversions, and constructs an internal `AppConfig` object used by Wooster.
-
-If critical variables like `OPENAI_API_KEY` are missing, Wooster will log an error and may refuse to start. Always check console output after modifying your `.env` file. 
+    -   **Description**: App password for the `TOOLS_EMAIL_SENDER_EMAIL_ADDRESS`
