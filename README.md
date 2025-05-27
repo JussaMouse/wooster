@@ -1,6 +1,6 @@
 # Wooster: Personal Digital Assistant
 
-Wooster is an AI assistant designed to be extended and customized. He leverages large language models and a suite of tools to help with various tasks, from answering questions to managing your information and schedule.
+Wooster is an AI assistant designed to be extended and customized. He uses LLMs and a suite of tools to help with various tasks, from answering questions to managing your information and schedule.
 
 ⚠️ This software is experimental and has no guarantee of working or being maintained.
 
@@ -40,7 +40,7 @@ Wooster is an AI assistant designed to be extended and customized. He leverages 
     ```bash
     pnpm start
     ```
-    This will primarily show the LLM's responses. See [Logging](#logging) for more.
+    This will primarily show the LLM's responses and Tool calls. See [Logging](#logging) for more.
 
 
 ## Core Design
@@ -58,12 +58,14 @@ Wooster is meant to be interacted with in the terminal.
 ### Projects:
 In Wooster you manage Projects, which are knowledge work environments with their own reference materials, notes, and histories.
 
-- There is always exactly one Project open in Wooster. 
-- The default Project is called Home 
-    - Like any project you create with Wooster, it lives in a directory called `projects`. 
-- The project directory (`projects/my_project/`) is where you can add PDFs and other documents to feed to wooster. 
-- Wooster automatically creates `projects/my_project/my_project.md` which is meant to be periodically updated as a sort of long term record of your project.
-- Wooster's "memory" (RAG) is specific to the current Project. 
+- There is always exactly one Project active in Wooster.
+- The default Project is called Home.
+    - Like any project you create with Wooster, it lives in a directory called `projects`.
+- The Project Directory (`projects/my_project/`) is where you can add PDFs and other documents to feed to wooster.
+- Wooster automatically creates `projects/my_project/my_project.md` which is meant to be an ongoing Project Journal.
+- Wooster automatically loads the file `projects/my_project/prompt.txt` if it exists. This text will be appended to the system prompt when the Project is active.
+- Wooster has Project Memory (RAG) specific to the active Project.
+
 
 ### User Profile:
 Besides the Project RAG, Wooster has a separate "memory" (RAG) trained on user behavior.
@@ -72,13 +74,13 @@ Besides the Project RAG, Wooster has a separate "memory" (RAG) trained on user b
 
 ### Tools:
 Tools are functions for Wooster to use himself.
-- Wooster is designed to call on any currently enabled Tools at will.
+- Wooster is designed to call on any active Tools at will.
 - He is designed to follow multi-step chains tool use in pursuit of a goal.
 - Tools are grouped into Plugins.
 - Community-made Tools are encouraged; Wooster is meant to be extensible.
 
 ### Adding new Tools
-- To add your own Tool to Wooster, put the function in a `myTool.ts` file and add it to `tools`.
+- To add your own Tool to Wooster, put the function in a `myTool.ts` file and add it to `tools/`.
 - Write a `plugins/myPlugin.ts` to control myTool and any other associated tools.
 - example: 
 ```
@@ -95,7 +97,6 @@ tools/mySendAttachment.ts
 
 
 ### Built-in Tools:
-*note: Tool settings and on/off are located in `.env`*
 *   **Web Search**: Utilizes Tavily Search API for up-to-date information from the internet.
 *   **Task Scheduling**: Schedule tasks for Wooster to perform at a later time (e.g., "remind me tomorrow at 10 am to...").
 *   **Email Sending**: Send emails on your behalf via Gmail.
@@ -113,4 +114,4 @@ tools/mySendAttachment.ts
 *   Available services:
     *   Console logging.
     *   Log to `logs/wooster_session.log`.
-    *   Log conversation to `chat.history` in the current project folder.
+    *   Log conversation to `chat.history` in the active Project Directory.
