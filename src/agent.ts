@@ -1,26 +1,11 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, AIMessage, SystemMessage, BaseMessage } from "@langchain/core/messages";
 import { executeAgent } from "./agentExecutorService";
-// import { PromptTemplate } from "@langchain/core/prompts"; // Less likely needed for this direct tool use pattern
-// import { ToolExecutor } from "@langchain/langgraph/prebuilt"; // REMOVE
-// import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents"; // REMOVE
-// import { RunnableSequence } from "@langchain/core/runnables"; // REMOVE
-// import { formatToOpenAIToolMessages } from "langchain/agents/format_scratchpad/openai_tools"; // REMOVE
-// import { OpenAIToolsAgentOutputParser } from "langchain/agents/openai/output_parser"; // REMOVE
-// import { TavilySearchResults } from "@langchain/community/tools/tavily_search_results"; // REMOVE
-// import { createRetrieverTool } from "langchain/tools/retriever"; // REMOVE
-// import type { FaissStore } from "@langchain/community/vectorstores/faiss"; // REMOVE if retriever tool is gone
 
-
-import { sendEmail, EmailArgs } from './tools/email';
-// import { scheduleAgentTask } from './tools/scheduler';
-import { recallUserContextFunc } from "./tools/userContextTool";
-import { performWebSearch } from "./tools/webSearchTool"; // Corrected path
-// import { queryKnowledgeBaseTool, QueryKnowledgeBaseParams } from './tools/knowledgeBaseTool'; // REMOVE - File missing, handled in agentRespond
 
 import { log, LogLevel, logLLMInteraction } from './logger';
 import { AppConfig /*, EmailToolConfig */ } from "./configLoader";
-// import { logWoosterAction } from "./projectMetadataService"; // CORRECTED PATH
+
 
 let appConfigInstance: AppConfig | null = null;
 

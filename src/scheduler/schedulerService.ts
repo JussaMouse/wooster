@@ -1,357 +1,721 @@
 import schedule from 'node-schedule';
-import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs for reminders
+import { v4 as uuidv4 } from 'uuid';
+import { Cron, CronOptions } from 'croner';
 import {
-  addReminder as dbAddReminder,
-  getActiveReminders as dbGetActiveReminders,
-  updateReminder as dbUpdateReminder,
-  deactivateReminder as dbDeactivateReminder,
-  deleteReminder as dbDeleteReminder,
-  getReminderById as dbGetReminderById,
-  Reminder,
+  addScheduleItem as dbAddScheduleItem,
+  getActiveScheduleItems as dbGetActiveScheduleItems,
+  updateScheduleItem as dbUpdateScheduleItem,
+  deactivateScheduleItem as dbDeactivateScheduleItem,
+  deleteScheduleItem as dbDeleteScheduleItem,
+  getScheduleItemById as dbGetScheduleItemById,
+  getScheduleItemByKey as dbGetScheduleItemByKey,
+  addExecutionLog as dbAddExecutionLog,
+  getExecutionLogByPeriod as dbGetExecutionLogByPeriod,
 } from './reminderRepository';
-import { parseReminderTextAndDate, ParsedReminder, parseDateString } from './scheduleParser';
-import { log, LogLevel } from '../logger'; // Import logger
+import { parseDateString } from './scheduleParser';
+import { log, LogLevel } from '../logger';
+import { getConfig } from '../configLoader';
+import { AppConfig } from '../configLoader';
+import { ScheduledTaskSetupOptions } from '../types/scheduler';
+import type {
+  NewScheduleItemPayload,
+  UpdateScheduleItemArgs,
+  TaskExecutionStatus,
+  ScheduleItem // This should come from schedulerCore
+} from '../types/schedulerCore'; // Corrected import path for ScheduleItem
+import { CoreServices, WoosterPlugin } from '../types/plugin'; // WoosterPlugin for type hint
 
-// In-memory store for active node-schedule jobs. Key is reminder ID.
+// In-memory store for active node-schedule jobs. Key is schedule ID.
 const activeJobs = new Map<string, schedule.Job>();
 
-// Callback for executing agent intents
+// Callback for executing agent intents (AGENT_PROMPT tasks)
 let agentExecutionCallback: ((taskPayload: string) => Promise<void>) | null = null;
 
-/**
- * The actual function that gets executed when a reminder fires.
- * @param reminder The reminder object from the database.
- */
-async function executeReminder(reminder: Reminder): Promise<void> {
-  console.log(`Executing reminder ID: ${reminder.id}, Type: ${reminder.task_type}`);
-  log(LogLevel.INFO, `Executing reminder:`, { id: reminder.id, type: reminder.task_type, message: reminder.message });
+// Registry for DIRECT_FUNCTION tasks
+const directFunctionRegistry: Map<string, (payload: any) => Promise<void>> = new Map();
 
-  if (reminder.task_type === 'agentIntent' && reminder.task_payload && agentExecutionCallback) {
-    console.log(`Executing agent intent for reminder ID ${reminder.id}. Payload: ${reminder.task_payload}`);
-    log(LogLevel.DEBUG, `Calling agentExecutionCallback for agentIntent`, { reminderId: reminder.id, payload: reminder.task_payload });
-    try {
-      await agentExecutionCallback(reminder.task_payload);
-      console.log(`Agent intent for reminder ID ${reminder.id} processed.`);
-      log(LogLevel.INFO, `Agent intent processed for reminder.`, { reminderId: reminder.id });
-    } catch (error) {
-      console.error(`Error executing agent intent for reminder ID ${reminder.id}:`, error);
-      log(LogLevel.ERROR, `Error executing agent intent for reminder.`, { reminderId: reminder.id, error });
-      // Optionally, update reminder status to 'error' or retry logic here
+export function registerDirectScheduledFunction(taskKey: string, func: (payload: any) => Promise<void>) {
+  if (directFunctionRegistry.has(taskKey)) {
+    log(LogLevel.WARN, `SchedulerService: Task key "${taskKey}" is already registered in directFunctionRegistry. Overwriting.`);
+  }
+  directFunctionRegistry.set(taskKey, func);
+  log(LogLevel.INFO, `SchedulerService: Direct function registered for task key: "${taskKey}". Registry size: ${directFunctionRegistry.size}`);
+  // For debugging, log the name of the function if available
+  if (func && func.name) {
+    log(LogLevel.DEBUG, `SchedulerService: Function registered for "${taskKey}" is named "${func.name}"`);
+  }
+}
+
+function getPeriodIdentifier(scheduleExpression: string, executionTime: Date): string {
+  try {
+    // Check if it's a cron expression first
+    new Cron(scheduleExpression);
+    // For cron, if it's finer than daily, use hour as part of the period.
+    // Example: "0 * * * *" (hourly) or "0 9,17 * * *" (9am and 5pm)
+    // A simple heuristic: if minute or hour spec is not '*', it's at least hourly specific.
+    const parts = scheduleExpression.split(' ');
+    if (parts.length >= 2 && (parts[0] !== '*' || parts[1] !== '*')) { // minute or hour is specified
+        return `${executionTime.getFullYear()}-${(executionTime.getMonth() + 1).toString().padStart(2, '0')}-${executionTime.getDate().toString().padStart(2, '0')}-${executionTime.getHours().toString().padStart(2, '0')}`;
     }
-  } else if (reminder.task_type === 'logMessage') {
-    console.log(`
---------------------------------------------------
-🔔 REMINDER: ${reminder.message} (ID: ${reminder.id})
---------------------------------------------------
-`);
-  } else {
-    console.warn(`Unknown task_type "${reminder.task_type}" for reminder ID ${reminder.id}. Defaulting to log.`);
-    console.log(`
---------------------------------------------------
-🔔 REMINDER: ${reminder.message} (ID: ${reminder.id}) - Type: ${reminder.task_type}
-Payload: ${reminder.task_payload || 'N/A'}
---------------------------------------------------
-`);
+    // Otherwise, for daily or less frequent cron, just the date.
+    return `${executionTime.getFullYear()}-${(executionTime.getMonth() + 1).toString().padStart(2, '0')}-${executionTime.getDate().toString().padStart(2, '0')}`;
+  } catch (e) {
+    // Not a cron, assume it's a specific date/time, use daily period.
+    // For one-off ISO dates, the period is simply the day it's scheduled for.
+    const scheduledDate = new Date(scheduleExpression);
+    if (!isNaN(scheduledDate.getTime())) {
+        return `${scheduledDate.getFullYear()}-${(scheduledDate.getMonth() + 1).toString().padStart(2, '0')}-${scheduledDate.getDate().toString().padStart(2, '0')}`;
+    }
+    // Fallback for unexpected cases, use execution time's day
+    return `${executionTime.getFullYear()}-${(executionTime.getMonth() + 1).toString().padStart(2, '0')}-${executionTime.getDate().toString().padStart(2, '0')}`;
   }
-
-  if (reminder.schedule_type === 'one-off') {
-    dbDeactivateReminder(reminder.id);
-    activeJobs.delete(reminder.id);
-    console.log(`One-off reminder ID ${reminder.id} processed and deactivated.`);
-    log(LogLevel.INFO, `One-off reminder processed and deactivated.`, { reminderId: reminder.id });
-  }
-  // For cron jobs, they will continue to run based on their schedule
 }
 
 /**
- * Schedules a single reminder job using node-schedule.
- * @param reminder The reminder object to schedule.
+ * The actual function that gets executed when a schedule fires.
+ * @param item The ScheduleItem object from the database.
  */
-function scheduleJob(reminder: Reminder): boolean {
-  if (!reminder.is_active) {
-    console.log(`Reminder ID ${reminder.id} is not active. Skipping scheduling.`);
-    log(LogLevel.DEBUG, `Skipping scheduling for non-active reminder.`, { reminderId: reminder.id });
+async function executeScheduledItem(item: ScheduleItem): Promise<void> {
+  log(LogLevel.INFO, `Executing scheduled item:`, { id: item.id, task_key: item.task_key, handler_type: item.task_handler_type });
+  const { task_handler_type, task_key, payload, id, schedule_expression, execution_policy } = item;
+  const executionTime = new Date();
+  const currentPeriodId = getPeriodIdentifier(schedule_expression, executionTime);
+
+  if (execution_policy === 'RUN_ONCE_PER_PERIOD_CATCH_UP') {
+    const existingLog = await dbGetExecutionLogByPeriod(id, currentPeriodId);
+    if (existingLog && existingLog.status === 'SUCCESS') {
+      log(LogLevel.INFO, `Skipping execution for item ${id} (RUN_ONCE_PER_PERIOD_CATCH_UP). Already ran successfully in period ${currentPeriodId}. Job was triggered by node-schedule.`);
+      dbAddExecutionLog({ 
+        schedule_id: id, 
+        period_identifier: currentPeriodId, 
+        status: 'SKIPPED_DUPLICATE', 
+        executed_at: executionTime.toISOString(), 
+        notes: 'Skipped by node-schedule trigger; successful catch-up run already occurred in period.'
+      });
+      const jobInstance = activeJobs.get(id);
+      if (jobInstance) {
+          try {
+              const nextInvocation = jobInstance.nextInvocation()?.toISOString() || null;
+              dbUpdateScheduleItem(id, { next_run_time: nextInvocation, last_invocation: item.last_invocation || new Date(0).toISOString() });
+          } catch(e) {
+              log(LogLevel.DEBUG, `Could not get nextInvocation for job ${id} during skip, it might have completed or been cancelled.`);
+              dbUpdateScheduleItem(id, { next_run_time: null, last_invocation: item.last_invocation || new Date(0).toISOString() });
+          }
+      }
+      return;
+    }
+  }
+
+  let success = false;
+  let notes = "";
+
+  try {
+    if (task_handler_type === 'AGENT_PROMPT') {
+      if (payload && agentExecutionCallback) {
+        log(LogLevel.DEBUG, `Calling agentExecutionCallback for AGENT_PROMPT`, { itemId: id, payload });
+        await agentExecutionCallback(payload);
+        log(LogLevel.INFO, `AGENT_PROMPT processed for item.`, { itemId: id });
+        success = true;
+      } else {
+        notes = 'Agent execution callback not set or payload missing for AGENT_PROMPT.';
+        log(LogLevel.WARN, notes, { itemId: id });
+      }
+    } else if (task_handler_type === 'DIRECT_FUNCTION') {
+      log(LogLevel.DEBUG, `SchedulerService: Attempting to execute DIRECT_FUNCTION for task_key: "${task_key}". Current registry keys: [${Array.from(directFunctionRegistry.keys()).join(', ')}]`);
+      const func = directFunctionRegistry.get(task_key);
+      if (func) {
+        log(LogLevel.DEBUG, `SchedulerService: Executing direct function for task key "${task_key}"`, { itemId: id, payload });
+        await func(payload ? JSON.parse(payload) : {}); // Assume payload is JSON or empty
+        log(LogLevel.INFO, `DIRECT_FUNCTION processed for item.`, { itemId: id, task_key });
+        success = true;
+      } else {
+        notes = `No direct function registered for task_key "${task_key}".`;
+        log(LogLevel.ERROR, notes, { itemId: id });
+      }
+    } else {
+      notes = `Unknown task_handler_type "${task_handler_type}" for item ID ${id}.`;
+      log(LogLevel.WARN, notes, { itemId: id });
+    }
+  } catch (error: any) {
+    console.error(`Error executing scheduled item ID ${id}:`, error);
+    log(LogLevel.ERROR, `Error executing scheduled item.`, { itemId: id, task_key, error });
+    notes = error.message || 'Unknown error during execution.';
+    success = false;
+  }
+
+  dbAddExecutionLog({ 
+    schedule_id: id, 
+    period_identifier: currentPeriodId, 
+    status: success ? 'SUCCESS' : 'FAILURE', 
+    executed_at: executionTime.toISOString(), 
+    notes 
+  });
+
+  let nextRunTimeForDb: string | null = null;
+  const jobInstance = activeJobs.get(id);
+  if (jobInstance) {
+    try {
+        nextRunTimeForDb = jobInstance.nextInvocation()?.toISOString() || null;
+    } catch(e) {
+        // job.nextInvocation() can throw if the job is completed or cancelled (e.g. one-off that just ran)
+        log(LogLevel.DEBUG, `Could not get nextInvocation for job ${id}, it might have completed.`);
+        nextRunTimeForDb = null; // Explicitly set to null if it can't be determined
+    }
+  }
+
+  const updatePayload: {last_invocation: string, next_run_time?: string | null} = { 
+    last_invocation: executionTime.toISOString()
+  };
+  // Only include next_run_time in the update if it was determined (it could be null if a one-off job finished)
+  // This check ensures we don't accidentally send `undefined` if nextRunTimeForDb was not set.
+  if (nextRunTimeForDb !== undefined) { 
+    updatePayload.next_run_time = nextRunTimeForDb;
+  }
+  dbUpdateScheduleItem(id, updatePayload);
+
+  // Deactivation logic for one-off tasks (ISO dates)
+  let isOneOffDate = false;
+  let isDefinitelyCron = false;
+  try {
+    // Attempt to parse as cron. If it succeeds, it's a cron.
+    new Cron(schedule_expression);
+    isDefinitelyCron = true;
+  } catch (e) {
+    // Not a cron. Now check if it's a valid ISO-like date.
+    try {
+        const d = new Date(schedule_expression);
+        // Check if it's a valid date and contains typical ISO date characters.
+        isOneOffDate = !isNaN(d.getTime()) && (schedule_expression.includes('-') || schedule_expression.includes(':'));
+    } catch (dateErr) {
+        // Not a date either, or failed to parse.
+        isOneOffDate = false;
+    }
+  }
+  
+  // Only proceed with deactivation if it's determined to be a one-off date and NOT a cron.
+  if (isOneOffDate && !isDefinitelyCron) { 
+    if (execution_policy === 'DEFAULT_SKIP_MISSED' || execution_policy === 'RUN_ONCE_PER_PERIOD_CATCH_UP' || execution_policy === 'RUN_IMMEDIATELY_IF_MISSED') {
+        log(LogLevel.INFO, `Deactivating one-off item (determined as ISO date) after execution (policy: ${execution_policy}).`, { itemId: id });
+        if (jobInstance) jobInstance.cancel(); 
+        activeJobs.delete(id);
+        dbDeactivateScheduleItem(id);
+    }
+  }
+  // For cron jobs (recurring), node-schedule handles rescheduling them automatically.
+  // Their next_run_time was updated above.
+}
+
+function calculateNextRunTime(expression: string, fromDate: Date = new Date()): Date | null {
+    try {
+        // croner constructor throws if the expression is invalid.
+        // .next() returns a Date or null if no future run (e.g. for a past specific date not in a cron pattern)
+        const options: CronOptions = {};
+        if (fromDate) {
+            options.startAt = fromDate.toISOString(); 
+        }
+        const cronJob = new Cron(expression, options);
+        return cronJob.nextRun(); 
+    } catch (e) {
+        // Not a valid cron expression, try to parse as ISO date
+        try {
+            const date = new Date(expression);
+            const compareDate = fromDate || new Date();
+            if (!isNaN(date.getTime()) && date.getTime() > compareDate.getTime()) {
+                return date;
+            }
+            return null; // Invalid date or in the past relative to fromDate
+        } catch (dateError) {
+            return null; // Not a valid cron or date
+        }
+    }
+}
+
+/**
+ * Schedules a single item using node-schedule.
+ * @param item The ScheduleItem object to schedule.
+ */
+function scheduleJob(item: ScheduleItem): boolean {
+  if (!item.is_active) {
+    log(LogLevel.DEBUG, `Item ID ${item.id} is not active. Skipping scheduling.`);
     return false;
   }
 
   let job: schedule.Job | null = null;
-  // Ensure executeReminder is called correctly, it's now async
   const jobFunction = () => {
-    executeReminder(reminder).catch(err => {
-        console.error(`Unhandled error in executeReminder for job ${reminder.id}:`, err);
-        log(LogLevel.ERROR, `Unhandled error in executeReminder for job.`, { reminderId: reminder.id, err });
+    executeScheduledItem(item).catch(err => {
+        log(LogLevel.ERROR, `Unhandled error in executeScheduledItem for job.`, { itemId: item.id, err });
     });
   };
 
-  if (reminder.schedule_type === 'one-off' && reminder.when_date) {
-    const scheduleDate = new Date(reminder.when_date);
-    if (scheduleDate.getTime() > Date.now()) {
-      job = schedule.scheduleJob(reminder.id, scheduleDate, jobFunction);
+  let scheduleValue: string | Date;
+  let nextInvocationTime: Date | null = null;
+
+  try {
+    // Try as cron first using croner
+    const cronPattern = new Cron(item.schedule_expression);
+    nextInvocationTime = cronPattern.nextRun(); // Get next run from now
+    if (!nextInvocationTime) { // If croner returns null (e.g. a very specific cron that won't run again)
+        log(LogLevel.WARN, `Cron expression for item ${item.id} ("${item.description}") will not run again. Expression: ${item.schedule_expression}`);
+        // Potentially deactivate if it makes sense for the policy, or just don't schedule.
+        if(item.execution_policy === 'DEFAULT_SKIP_MISSED') dbDeactivateScheduleItem(item.id);
+        return false;
     }
-  } else if (reminder.schedule_type === 'cron' && reminder.cron_spec) {
-    job = schedule.scheduleJob(reminder.id, reminder.cron_spec, jobFunction);
+    scheduleValue = item.schedule_expression; // node-schedule can take a cron string
+    log(LogLevel.DEBUG, `Item ${item.id} is a cron job. Next calculated run: ${nextInvocationTime.toISOString()}`);
+  } catch (e) {
+    // Not a cron, try as ISO date
+    try {
+      const date = new Date(item.schedule_expression);
+      if (isNaN(date.getTime())) {
+        log(LogLevel.ERROR, `Invalid date format in schedule_expression for item ${item.id}: ${item.schedule_expression}`);
+        return false;
+      }
+      nextInvocationTime = date;
+      scheduleValue = date; // node-schedule can take a Date object
+      log(LogLevel.DEBUG, `Item ${item.id} is a one-off date job. Scheduled for: ${date.toISOString()}`);
+    } catch (dateError) {
+      log(LogLevel.ERROR, `Schedule expression for item ${item.id} ("${item.description}") is not a valid cron or ISO date: ${item.schedule_expression}`);
+      return false;
+    }
+  }
+
+  if (!nextInvocationTime) { 
+      log(LogLevel.WARN, `Could not determine next invocation time for item ${item.id} ("${item.description}"). Expression: ${item.schedule_expression}. It will not be scheduled by node-schedule.`);
+      // If we can't determine a next run time (e.g., past one-off date, or unparsable croner expression that somehow passed initial createSchedule checks)
+      // and it's not already set for deactivation by executeScheduledItem's one-off logic,
+      // consider deactivating it here if appropriate for its policy.
+      // This is a fallback. executeScheduledItem should handle most one-off deactivations.
+      // We don't want to deactivate recurring crons that croner just happens to say have no *next* run if they *should* run.
+      // The calculateNextRunTime in createSchedule should be the primary gate for bad expressions.
+      
+      // If it's not a cron and nextInvocationTime is null, it implies a past or invalid date.
+      let isDefinitelyCronCheck = false;
+      try { new Cron(item.schedule_expression); isDefinitelyCronCheck = true; } catch(e){}
+      if (!isDefinitelyCronCheck) {
+          log(LogLevel.INFO, `Item ${item.id} appears to be a past/invalid one-off date and won't be scheduled by node-schedule. Deactivating.`);
+          dbDeactivateScheduleItem(item.id);
+      }
+      return false;
+  }
+
+  if (nextInvocationTime.getTime() <= Date.now()) {
+      let isOneOffByDate = false;
+      try { isOneOffByDate = !isNaN(new Date(item.schedule_expression).getTime()); } catch(e){/*ignore*/}
+
+      if (isOneOffByDate) { // Specific handling for one-off dates that are past due
+          if (item.execution_policy === 'RUN_ONCE_PER_PERIOD_CATCH_UP' || item.execution_policy === 'RUN_IMMEDIATELY_IF_MISSED') {
+              log(LogLevel.INFO, `Item ${item.id} (one-off, policy: ${item.execution_policy}) is past due. Will be handled by init/catch-up logic. Not scheduling here.`);
+              return false; 
+          } else if (item.execution_policy === 'DEFAULT_SKIP_MISSED') {
+              log(LogLevel.INFO, `Item ID ${item.id} ("${item.description}") (one-off) was in the past. Deactivating (DEFAULT_SKIP_MISSED).`);
+              dbDeactivateScheduleItem(item.id);
+              return false; 
+          }
+          // If a one-off date is past and doesn't match above policies, it won't be scheduled by this function.
+          log(LogLevel.WARN, `One-off past due item ${item.id} with policy ${item.execution_policy} not scheduled by scheduleJob.`);
+          return false;
+      } else {
+          // For CRON expressions, node-schedule will find the NEXT valid future time.
+          log(LogLevel.DEBUG, `Cron item ${item.id} next calculated time ${nextInvocationTime.toISOString()} is past/present. node-schedule will find the next future slot.`);
+      }
+  }
+
+  try {
+    job = schedule.scheduleJob(item.id, scheduleValue, jobFunction);
+  } catch (scheduleError: any) {
+    log(LogLevel.ERROR, `Error creating node-schedule job for item ${item.id}. Expression: "${String(scheduleValue)}"`, { error: scheduleError.message });
+    return false;
   }
 
   if (job) {
-    activeJobs.set(reminder.id, job);
-    console.log(`Reminder ID ${reminder.id} ("${reminder.message || 'Agent Task'}") of type "${reminder.task_type}" scheduled for ${job.nextInvocation()?.toISOString() || 'N/A'}`);
-    log(LogLevel.INFO, `Reminder scheduled.`, { reminderId: reminder.id, message: reminder.message, type: reminder.task_type, nextInvocation: job.nextInvocation()?.toISOString() });
-    const nextRun = job.nextInvocation()?.toISOString();
-    if (nextRun && reminder.next_run_time !== nextRun) {
-        dbUpdateReminder(reminder.id, { next_run_time: nextRun });
+    activeJobs.set(item.id, job);
+    const actualNextRun = job.nextInvocation()?.toISOString();
+    log(LogLevel.INFO, `Item scheduled by node-schedule.`, { itemId: item.id, description: item.description, task_key: item.task_key, nextInvocation: actualNextRun });
+    if (item.next_run_time !== actualNextRun && actualNextRun) { 
+        dbUpdateScheduleItem(item.id, { next_run_time: actualNextRun });
     }
     return true;
   } else {
-    if (reminder.schedule_type === 'one-off' && new Date(reminder.when_date!).getTime() <= Date.now()) { // Added null assertion for when_date
-        console.log(`Reminder ID ${reminder.id} ("${reminder.message || 'Agent Task'}") was in the past. Deactivating.`);
-        dbDeactivateReminder(reminder.id);
-        log(LogLevel.INFO, `Deactivated past-due one-off reminder during scheduleJob.`, { reminderId: reminder.id });
-    } else {
-        console.log(`Reminder ID ${reminder.id} ("${reminder.message || 'Agent Task'}") could not be scheduled (possibly invalid cron or other issue).`);
-        log(LogLevel.WARN, `Reminder could not be scheduled.`, { reminderId: reminder.id, message: reminder.message, type: reminder.task_type });
-        // If it's a one-off that somehow wasn't caught by past check, but still didn't schedule, maybe deactivate.
-        if (reminder.schedule_type === 'one-off') {
-            dbDeactivateReminder(reminder.id);
-            log(LogLevel.INFO, `Deactivated unschedulable one-off reminder.`, { reminderId: reminder.id });
-        }
-    }
+    log(LogLevel.WARN, `Item ID ${item.id} ("${item.description}") could not be scheduled by node-schedule. This might indicate an issue with a past one-off date not handled by policies or an unexpected error from node-schedule.`);
     return false;
   }
 }
 
 /**
  * Initializes the SchedulerService:
- * - Stores the agent execution callback.
- * - Loads all active reminders from the database.
+ * - Registers agent execution callback.
+ * - Loads all active schedules from the database.
  * - Schedules them with node-schedule.
- * - Deactivates any one-off reminders that are in the past.
+ * - Handles past-due items based on policy (simplified for now).
  */
 export async function initSchedulerService(
-  callback?: (taskPayload: string) => Promise<void> // Optional for now to avoid breaking existing calls immediately
+  callback?: (taskPayload: string) => Promise<void>
 ): Promise<void> {
-  console.log('Initializing SchedulerService...');
-  log(LogLevel.INFO, 'Initializing SchedulerService...');
   if (callback) {
     agentExecutionCallback = callback;
-    console.log('Agent execution callback registered with SchedulerService.');
-    log(LogLevel.INFO, 'Agent execution callback registered with SchedulerService.');
-  } else {
-    console.warn('SchedulerService initialized without an agent execution callback. Agent intents will only be logged.');
-    log(LogLevel.WARN, 'SchedulerService initialized without an agent execution callback.');
+  }
+  log(LogLevel.INFO, 'Initializing SchedulerService...');
+
+  // Clear any existing jobs from a previous run (e.g. if service restarted)
+  // This is important to prevent duplicate jobs if the service restarts without clearing the map.
+  for (const [id, job] of activeJobs.entries()) {
+    job.cancel();
+    log(LogLevel.DEBUG, `Cancelled pre-existing job in activeJobs map during init: ${id}`);
+  }
+  activeJobs.clear();
+
+  const items = dbGetActiveScheduleItems();
+  log(LogLevel.INFO, `Found ${items.length} active schedule items to process.`);
+
+  for (const item of items) {
+    // scheduleJob will now just set up the future job with node-schedule
+    // and update its next_run_time in the DB based on node-schedule's calculation.
+    // It no longer executes anything immediately.
+    scheduleJob(item);
   }
 
-  const activeReminders = dbGetActiveReminders();
-  let rescheduledCount = 0;
-  let pastDueDeactivatedCount = 0;
+  log(LogLevel.INFO, 'SchedulerService initialized. Active jobs scheduled with node-schedule.');
+  // Catch-up logic will be called separately after all initializations are done.
+}
 
-  for (const reminder of activeReminders) {
-    if (reminder.schedule_type === 'one-off' && reminder.when_date) {
-      const scheduleDate = new Date(reminder.when_date);
-      if (scheduleDate.getTime() <= Date.now()) {
-        dbDeactivateReminder(reminder.id);
-        pastDueDeactivatedCount++;
-        console.log(`Deactivated past-due one-off reminder ID ${reminder.id}: ${reminder.message || 'Agent Task'}`);
-        log(LogLevel.INFO, `Deactivated past-due one-off reminder during init.`, { reminderId: reminder.id, message: reminder.message });
-        continue; 
+export async function processCatchUpTasks(): Promise<void> {
+  log(LogLevel.INFO, 'SchedulerService: Starting to process catch-up tasks...');
+  const now = new Date();
+  const items = dbGetActiveScheduleItems(); // Get all active items
+
+  for (const item of items) {
+    const { id, schedule_expression, execution_policy, next_run_time, task_key, last_invocation } = item;
+
+    // Ensure direct functions are registered before trying to execute them
+    if (item.task_handler_type === 'DIRECT_FUNCTION' && !directFunctionRegistry.has(item.task_key)) {
+        log(LogLevel.ERROR, `Catch-up: Direct function for task_key "${item.task_key}" not found in registry. Skipping item ${id}.`);
+        continue;
+    }
+    
+    // Ensure agent callback is registered for agent tasks
+    if (item.task_handler_type === 'AGENT_PROMPT' && !agentExecutionCallback) {
+        log(LogLevel.ERROR, `Catch-up: Agent execution callback not set. Skipping AGENT_PROMPT item ${id}.`);
+        continue;
+    }
+
+    if (execution_policy === 'RUN_ONCE_PER_PERIOD_CATCH_UP') {
+      const scheduledTimeForThisPeriod = calculateNextRunTime(schedule_expression, new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0)); // Start of today for daily, or actual next for cron. More sophisticated needed for *true* period.
+      
+      if (!scheduledTimeForThisPeriod) {
+        log(LogLevel.WARN, `Catch-up: Could not determine a valid scheduled time for ${id} (${task_key}) with expression ${schedule_expression}. Skipping catch-up.`);
+        continue;
+      }
+
+      const currentPeriodId = getPeriodIdentifier(schedule_expression, scheduledTimeForThisPeriod); // Use scheduledTime to define period
+      const existingLog = await dbGetExecutionLogByPeriod(id, currentPeriodId);
+
+      if (existingLog && existingLog.status === 'SUCCESS') {
+        log(LogLevel.INFO, `Catch-up: Item ${id} (${task_key}) already ran successfully in period ${currentPeriodId}. Skipping.`);
+        continue;
+      }
+
+      // If it hasn't run successfully, and 'now' is past its scheduled time for this period.
+      if (now >= scheduledTimeForThisPeriod) {
+        log(LogLevel.INFO, `Catch-up: Executing item ${id} (${task_key}) for period ${currentPeriodId}. Scheduled: ${scheduledTimeForThisPeriod.toISOString()}, Now: ${now.toISOString()}`);
+        await executeScheduledItem(item); // This will log its own execution (success/failure)
+      } else {
+        log(LogLevel.DEBUG, `Catch-up: Item ${id} (${task_key}) for period ${currentPeriodId} is not due yet for catch-up. Scheduled: ${scheduledTimeForThisPeriod.toISOString()}`);
+      }
+    } else if (execution_policy === 'RUN_IMMEDIATELY_IF_MISSED') {
+      if (next_run_time) {
+        const nextRunDate = new Date(next_run_time);
+        if (now > nextRunDate) {
+          // Check if it has a last_invocation and if that invocation was at or after the missed next_run_time.
+          // This avoids re-running if the job actually did run but the service restarted before its next_run_time could be updated by node-schedule.
+          let alreadyRanAroundMissedTime = false;
+          if (last_invocation) {
+            const lastRunDate = new Date(last_invocation);
+            // If last run was very close to or after the missed nextRunDate, assume it ran.
+            // This isn't perfect but helps prevent immediate re-runs on restart for tasks that just ran.
+            if (lastRunDate >= nextRunDate || Math.abs(lastRunDate.getTime() - nextRunDate.getTime()) < 5000) { // 5s tolerance
+              alreadyRanAroundMissedTime = true;
+            }
+          }
+
+          if (!alreadyRanAroundMissedTime) {
+            log(LogLevel.INFO, `Catch-up: Executing missed item ${id} (${task_key}) (RUN_IMMEDIATELY_IF_MISSED). Scheduled: ${next_run_time}, Now: ${now.toISOString()}`);
+            await executeScheduledItem(item);
+          } else {
+            log(LogLevel.INFO, `Catch-up: Missed item ${id} (${task_key}) (RUN_IMMEDIATELY_IF_MISSED) appears to have run recently. Last: ${last_invocation}. Scheduled: ${next_run_time}. Skipping explicit catch-up.`);
+            // Reschedule it normally to ensure it's in node-schedule's queue
+            scheduleJob(item);
+          }
+        }
       }
     }
-    if (scheduleJob(reminder)) {
-        rescheduledCount++;
-    }
   }
-  console.log(`SchedulerService initialized: ${rescheduledCount} reminders rescheduled, ${pastDueDeactivatedCount} past-due one-off reminders deactivated.`);
-  log(LogLevel.INFO, `SchedulerService initialized.`, { rescheduledCount, pastDueDeactivatedCount });
+  log(LogLevel.INFO, 'SchedulerService: Finished processing catch-up tasks.');
 }
 
 /**
- * Creates and schedules a new reminder for an agent task.
- * @param taskName A human-readable name or description for the task.
- * @param scheduleDate The date/time when the task should be executed.
- * @param taskPayload The payload (e.g., original user query) for the agent to process.
- * @returns A promise that resolves to the created Reminder object or null if an error occurs.
+ * Creates and schedules a new task.
+ * Replaces createAgentTaskSchedule and createReminderFromText.
+ * The 'id' for the ScheduleItem will be generated (uuidv4).
+ * next_run_time will be calculated based on schedule_expression.
  */
-export async function createAgentTaskSchedule(
-  taskName: string,
-  scheduleDate: Date,
-  taskPayload: string
-): Promise<Reminder | null> {
-  if (scheduleDate.getTime() <= Date.now()) {
-    console.warn('Attempted to schedule an agent task in the past.');
-    log(LogLevel.WARN, 'Attempted to schedule an agent task in the past.', { taskName, scheduleDate: scheduleDate.toISOString(), taskPayload });
-    // Optionally throw an error or return a specific message
-    return null; 
+export async function createSchedule(
+  details: Omit<ScheduleItem, 'id' | 'created_at' | 'updated_at' | 'is_active' | 'last_invocation' | 'next_run_time'>
+): Promise<ScheduleItem | null> {
+  const id = uuidv4();
+  let initialNextRunTime: string | null = null;
+  const calculatedNextDate = calculateNextRunTime(details.schedule_expression);
+  if(calculatedNextDate) {
+      initialNextRunTime = calculatedNextDate.toISOString();
+  } else {
+      log(LogLevel.WARN, `Could not calculate initial next run time for new schedule: "${details.description}". Expression: "${details.schedule_expression}". May be invalid or a past one-off not meeting catch-up criteria.`);
+      let isOneOffByDate = false;
+      try { isOneOffByDate = !isNaN(new Date(details.schedule_expression).getTime()); } catch(e){/*ignore*/}
+
+      if (isOneOffByDate && details.execution_policy === 'DEFAULT_SKIP_MISSED') {
+          log(LogLevel.ERROR, `Cannot create schedule for "${details.description}": past one-off date with DEFAULT_SKIP_MISSED policy.`);
+          return null; 
+      }
   }
 
-  const newAgentReminder: Reminder = { // Ensure this matches the Reminder interface and dbAddReminder expectations
-    id: uuidv4(),
-    message: taskName, // Human-readable name for the task
-    schedule_type: 'one-off', // Agent tasks are typically one-off executions of an intent
-    when_date: scheduleDate.toISOString(),
-    next_run_time: scheduleDate.toISOString(),
-    task_type: 'agentIntent',
-    task_payload: taskPayload,
-    is_active: true, // New tasks are active by default
-    // cron_spec, created_at are optional or handled by DB
+  const newItem: ScheduleItem = {
+    id,
+    ...details,
+    is_active: true,
+    next_run_time: initialNextRunTime,
   };
 
   try {
-    // dbAddReminder expects certain fields. The Reminder interface from reminderRepository.ts should be the guide.
-    // The `dbAddReminder` function in `reminderRepository.ts` takes an object that includes:
-    // id, message, schedule_type, when_date, cron_spec, next_run_time, task_type, task_payload
-    // The `newAgentReminder` object above should satisfy this.
-    dbAddReminder({
-        id: newAgentReminder.id,
-        message: newAgentReminder.message,
-        schedule_type: newAgentReminder.schedule_type,
-        when_date: newAgentReminder.when_date,
-        cron_spec: newAgentReminder.cron_spec, // Will be null/undefined for one-off
-        next_run_time: newAgentReminder.next_run_time!, // Not null for one-off here
-        task_type: newAgentReminder.task_type,
-        task_payload: newAgentReminder.task_payload
-    });
+    dbAddScheduleItem(id, {
+        description: newItem.description,
+        schedule_expression: newItem.schedule_expression,
+        payload: newItem.payload,
+        task_key: newItem.task_key,
+        task_handler_type: newItem.task_handler_type,
+        execution_policy: newItem.execution_policy,
+    }, initialNextRunTime);
     
-    // scheduleJob expects a Reminder object. Our newAgentReminder should be suitable.
-    const scheduled = scheduleJob(newAgentReminder);
-
-    if (scheduled) {
-      console.log(`Agent task "${taskName}" scheduled for ${scheduleDate.toLocaleString()}. ID: ${newAgentReminder.id}`);
-      log(LogLevel.INFO, `Agent task scheduled.`, { taskName, scheduleDate: scheduleDate.toLocaleString(), id: newAgentReminder.id });
-      return newAgentReminder; // Return the full reminder object
+    if (scheduleJob(newItem)) {
+      log(LogLevel.INFO, `New schedule created and job set.`, { id: newItem.id, task_key: newItem.task_key });
+      return newItem;
     } else {
-      // This might happen if scheduleJob itself fails for other reasons post past-check
-      console.error(`Failed to schedule agent task ID ${newAgentReminder.id} even after past-time check.`);
-      log(LogLevel.ERROR, `Failed to schedule agent task even after past-time check.`, { id: newAgentReminder.id });
-      // Deactivate if it was added to DB but not scheduled
-      dbDeactivateReminder(newAgentReminder.id); 
-      return null;
+      log(LogLevel.WARN, `New schedule "${newItem.description}" (ID: ${newItem.id}) added to DB, but node-schedule job NOT set (e.g. past one-off not schedulable by policy). May run via catch-up if applicable.`);
+      // Return the item as it is in DB. It might be picked up by catch-up logic if policy allows.
+      return newItem; 
     }
   } catch (error: any) {
-    console.error('Error creating agent task schedule:', error);
-    log(LogLevel.ERROR, 'Error creating agent task schedule:', { error: error.message, taskName });
+    log(LogLevel.ERROR, 'Error creating new schedule and adding to DB:', { error: error.message, details });
     return null;
   }
 }
 
-/**
- * Processes a natural language request to create and schedule a new LOG reminder.
- * @param fullText The full text of the reminder request (e.g., "remind me to call mom tomorrow at 5pm").
- * @returns A promise that resolves to a confirmation message or an error message.
- */
-export async function createReminderFromText(fullText: string): Promise<string> {
-  const parsed = parseReminderTextAndDate(fullText);
-
-  if (!parsed) {
-    return 'Could not understand the time or reminder details. Please try a different phrasing, like "remind me to [task] [time/date]".';
-  }
-
-  const { date: scheduleDate, reminderText } = parsed;
-
-  if (scheduleDate.getTime() <= Date.now()) {
-    log(LogLevel.WARN, 'Attempted to schedule a log reminder in the past.', { reminderText, scheduleDate: scheduleDate.toISOString() });
-    return 'The specified time is in the past. Please provide a future time for the reminder.';
-  }
-
-  const newLogReminder: Reminder = {
-    id: uuidv4(),
-    message: reminderText,
-    schedule_type: 'one-off',
-    when_date: scheduleDate.toISOString(),
-    next_run_time: scheduleDate.toISOString(),
-    task_type: 'logMessage',
-    task_payload: null,
-    is_active: true,
-  };
-
-  try {
-    dbAddReminder({
-        id: newLogReminder.id,
-        message: newLogReminder.message,
-        schedule_type: newLogReminder.schedule_type,
-        when_date: newLogReminder.when_date,
-        next_run_time: newLogReminder.next_run_time!,
-        task_type: newLogReminder.task_type,
-        task_payload: newLogReminder.task_payload
-    });
-    
-    const scheduled = scheduleJob(newLogReminder);
-
-    if (scheduled) {
-      log(LogLevel.INFO, `Log reminder scheduled: "${reminderText}"`, { id: newLogReminder.id, time: scheduleDate.toLocaleString() });
-      return `Reminder set: "${reminderText}" for ${scheduleDate.toLocaleString()}. (ID: ${newLogReminder.id})`;
-    } else {
-      log(LogLevel.ERROR, `Log reminder "${reminderText}" failed to schedule (post-parse).`, { id: newLogReminder.id });
-      // Deactivate if it was added to DB but not scheduled
-      dbDeactivateReminder(newLogReminder.id); 
-      return 'Failed to schedule reminder even after parsing. Please try again.';
-    }
-  } catch (error: any) {
-    log(LogLevel.ERROR, `Error creating log reminder from text: "${fullText}"`, { error: error.message });
-    return `Error creating reminder: ${error.message}`;
-  }
-}
-
-/**
- * Cancels an active reminder by its ID.
- * @param reminderId The ID of the reminder to cancel.
- * @returns A boolean indicating if the cancellation was successful.
- */
-export function cancelReminderById(reminderId: string): boolean {
-  log(LogLevel.INFO, `Attempting to cancel reminder by ID: ${reminderId}`);
-  const job = activeJobs.get(reminderId);
+export function cancelScheduleById(id: string): boolean {
+  const job = activeJobs.get(id);
   if (job) {
     job.cancel();
-    activeJobs.delete(reminderId);
-    dbDeactivateReminder(reminderId);
-    log(LogLevel.INFO, `Reminder ID ${reminderId} cancelled and deactivated successfully.`);
+    activeJobs.delete(id);
+    dbDeactivateScheduleItem(id); 
+    log(LogLevel.INFO, `Schedule cancelled and deactivated.`, { id });
     return true;
   }
-  // If job not in activeJobs, it might be already inactive or past.
-  // Still try to deactivate in DB just in case.
-  const dbResult = dbDeactivateReminder(reminderId);
-  if (dbResult) {
-    log(LogLevel.INFO, `Reminder ID ${reminderId} was not in active jobs map, but deactivated in DB.`);
-    return true; // Considered success if DB deactivation happened
+  log(LogLevel.WARN, `No active job found to cancel for schedule ID. Attempting DB deactivation.`, { id });
+  const result = dbDeactivateScheduleItem(id);
+  return result.changes > 0;
+}
+
+export function listActiveSchedules(): ScheduleItem[] {
+  return dbGetActiveScheduleItems();
+}
+
+export function getScheduleStatus(): { id: string; description: string; task_key: string; nextRun: string | null; handler: string; policy: string, last_invocation: string | null }[] {
+  const statusList: { id: string; description: string; task_key: string; nextRun: string | null; handler: string; policy: string, last_invocation: string | null }[] = [];
+  const dbItems = dbGetActiveScheduleItems(); 
+
+  for (const item of dbItems) {
+    const job = activeJobs.get(item.id);
+    statusList.push({
+        id: item.id,
+        description: item.description,
+        task_key: item.task_key,
+        nextRun: job?.nextInvocation()?.toISOString() || item.next_run_time || "(not scheduled/past)",
+        handler: item.task_handler_type,
+        policy: item.execution_policy,
+        last_invocation: item.last_invocation || null,
+    });
   }
-  log(LogLevel.WARN, `Reminder ID ${reminderId} not found for cancellation or already inactive.`);
-  return false;
+   statusList.sort((a, b) => {
+    const timeA = a.nextRun && !a.nextRun.startsWith("(") ? new Date(a.nextRun).getTime() : Infinity;
+    const timeB = b.nextRun && !b.nextRun.startsWith("(") ? new Date(b.nextRun).getTime() : Infinity;
+    if (timeA === Infinity && timeB === Infinity) return 0;
+    return timeA - timeB;
+  });
+  return statusList;
 }
 
-/**
- * Gets a list of currently scheduled (active) reminders.
- */
-export function listActiveReminders(): Reminder[] {
-    return dbGetActiveReminders();
+export async function updateScheduleExpressionAndReschedule(itemId: string, newScheduleExpression: string): Promise<ScheduleItem | null> {
+  log(LogLevel.INFO, `Attempting to update schedule expression for item ${itemId} to "${newScheduleExpression}"`);
+  const existingItem = await dbGetScheduleItemById(itemId);
+  if (!existingItem) {
+    log(LogLevel.ERROR, `Cannot update schedule expression: Item with ID ${itemId} not found.`);
+    return null;
+  }
+
+  // Update the schedule expression in the database
+  // Also, critically, nullify next_run_time so scheduleJob can recalculate it.
+  // last_invocation remains unchanged.
+  dbUpdateScheduleItem(itemId, { 
+    schedule_expression: newScheduleExpression, 
+    next_run_time: null 
+  });
+
+  // Fetch the item again to get all fields including the updated expression
+  const updatedItem = await dbGetScheduleItemById(itemId);
+  if (!updatedItem) {
+    log(LogLevel.ERROR, `Failed to retrieve item ${itemId} after attempting DB update for schedule expression.`);
+    // This is a problematic state, the DB might be updated but we can't reschedule.
+    return null;
+  }
+
+  // Cancel existing job if it's active
+  const currentJob = activeJobs.get(itemId);
+  if (currentJob) {
+    currentJob.cancel();
+    activeJobs.delete(itemId);
+    log(LogLevel.DEBUG, `Cancelled existing node-schedule job for item ${itemId} before rescheduling.`);
+  }
+
+  // Reschedule with the updated item
+  if (updatedItem.is_active) {
+    if (scheduleJob(updatedItem)) {
+      log(LogLevel.INFO, `Item ${itemId} successfully rescheduled with new expression "${newScheduleExpression}". Next run: ${updatedItem.next_run_time}`);
+      return updatedItem;
+    } else {
+      log(LogLevel.WARN, `Item ${itemId} DB expression updated to "${newScheduleExpression}", but failed to set new node-schedule job. It may run via catch-up if applicable.`);
+      // The item is in DB with new expression, but not actively scheduled by node-schedule.
+      return updatedItem; // Return the item as it is in DB
+    }
+  } else {
+    log(LogLevel.INFO, `Item ${itemId} schedule expression updated in DB, but item is not active. Not rescheduling.`);
+    return updatedItem; // Return the item as it is in DB
+  }
 }
 
-/**
- * Gets details of the next invocation for all active jobs.
- * Returns an array of objects with id and nextRun time.
- */
-export function getNextInvocations(): { id: string; message: string; nextRun: string | null }[] {
-    const invocations: { id: string; message: string; nextRun: string | null }[] = [];
-    activeJobs.forEach((job, id) => {
-        const reminder = dbGetReminderById(id); // Fetch message from DB
-        invocations.push({
-            id,
-            message: reminder?.message || 'N/A',
-            nextRun: job.nextInvocation()?.toISOString() || 'N/A',
-        });
-    });
-    return invocations.sort((a, b) => {
-        if (a.nextRun === null) return 1;
-        if (b.nextRun === null) return -1;
-        return new Date(a.nextRun).getTime() - new Date(b.nextRun).getTime();
-    });
-}
-
-// Gracefully shut down scheduled jobs on exit
 function gracefulShutdown() {
-  log(LogLevel.INFO, 'SchedulerService shutting down gracefully...');
+  log(LogLevel.INFO, 'SchedulerService V2 shutting down gracefully...');
   const jobsToCancel = Array.from(activeJobs.values());
-  jobsToCancel.forEach(job => job.cancel(false)); // false = don't execute on cancel
+  jobsToCancel.forEach(job => job.cancel(false)); 
   activeJobs.clear();
-  log(LogLevel.INFO, `Cancelled ${jobsToCancel.length} active jobs. SchedulerService shutdown complete.`);
+  log(LogLevel.INFO, `Cancelled ${jobsToCancel.length} active jobs. SchedulerService V2 shutdown complete.`);
 }
 
 process.on('SIGINT', gracefulShutdown);
-process.on('SIGTERM', gracefulShutdown); 
+process.on('SIGTERM', gracefulShutdown);
+
+// Old functions to be removed or fully refactored:
+// createAgentTaskSchedule -> Replaced by generic createSchedule, tools need to adapt.
+// createReminderFromText -> This was for CLI reminders, likely needs a V2 equivalent if that feature is kept.
+// listActiveReminders -> Replaced by listActiveSchedules
+// getNextInvocations -> Replaced by getScheduleStatus or similar.
+// cancelReminderById -> Replaced by cancelScheduleById
+// deleteReminderById -> Use dbDeleteScheduleItem directly if needed for hard delete.
+// getReminderById -> Use dbGetScheduleItemById.
+// updateReminder -> Use dbUpdateScheduleItem.
+
+// The `scheduleAgentTaskTool` in `src/tools/scheduler.ts` will need to be updated
+// to use `createSchedule` and provide the new V2 parameters.
+
+// Example of how a tool might call it:
+// await createSchedule({
+//   description: "Agent task: " + taskName,
+//   schedule_expression: scheduleDate.toISOString(),
+//   payload: taskPayload,
+//   task_key: `agent.intent.${uuidv4()}`, // Or a more specific key
+//   task_handler_type: 'AGENT_PROMPT',
+//   execution_policy: 'DEFAULT_SKIP_MISSED', // Or as specified by user/tool
+// });
+
+// TODO: Adapt `createAgentTaskSchedule` for tools to use the new `createSchedule`
+// This will require the calling tool (e.g. scheduleAgentTaskTool) to provide more V2 details like task_key, execution_policy.
+// For now, let's provide a simplified bridge if needed by existing tools,
+// or update the tools themselves (preferred).
+
+// Example of how a tool might call it:
+// await createSchedule({
+//   description: "Agent task: " + taskName,
+//   schedule_expression: scheduleDate.toISOString(),
+//   payload: taskPayload,
+//   task_key: `agent.intent.${uuidv4()}`, // Or a more specific key
+//   task_handler_type: 'AGENT_PROMPT',
+//   execution_policy: 'DEFAULT_SKIP_MISSED', // Or as specified by user/tool
+// }); 
+
+// Expose getScheduleItemByKey from the repository through the service
+export async function getScheduleItemByKey(task_key: string): Promise<ScheduleItem | undefined> {
+  return dbGetScheduleItemByKey(task_key);
+}
+
+export async function ensureScheduleIsManaged(options: ScheduledTaskSetupOptions, appConfig: AppConfig): Promise<void> {
+  const { taskKey, description, defaultScheduleExpression, configKeyForSchedule, functionToExecute, executionPolicy, initialPayload } = options;
+
+  log(LogLevel.INFO, `Ensuring schedule is managed for task: "${taskKey}" ("${description}")`);
+
+  // 1. Determine the cron expression
+  let cronExpression = defaultScheduleExpression;
+  if (configKeyForSchedule) {
+    // Helper to navigate a path like "tools.dailyReview.scheduleCronExpression" in appConfig
+    const getConfigValueByPath = (obj: any, path: string): string | undefined => {
+      const keys = path.split('.');
+      let current = obj;
+      for (const key of keys) {
+        if (current && typeof current === 'object' && key in current) {
+          current = current[key];
+        } else {
+          return undefined;
+        }
+      }
+      return typeof current === 'string' ? current : undefined;
+    };
+    const configuredCron = getConfigValueByPath(appConfig, configKeyForSchedule);
+    if (configuredCron) {
+      cronExpression = configuredCron;
+      log(LogLevel.DEBUG, `Using configured cron expression "${cronExpression}" for task "${taskKey}" from config key "${configKeyForSchedule}".`);
+    } else {
+      log(LogLevel.DEBUG, `Config key "${configKeyForSchedule}" not found or not a string for task "${taskKey}". Using default: "${defaultScheduleExpression}".`);
+    }
+  }
+
+  // 2. Register the direct function (idempotent, but good to ensure)
+  registerDirectScheduledFunction(taskKey, functionToExecute);
+
+  // 3. Check if the job exists
+  const existingJob = await getScheduleItemByKey(taskKey);
+
+  if (!existingJob) {
+    log(LogLevel.INFO, `Task "${taskKey}" not found in DB. Creating new schedule with expression "${cronExpression}".`);
+    const newSchedule = await createSchedule({
+      description,
+      schedule_expression: cronExpression,
+      payload: initialPayload ? JSON.stringify(initialPayload) : JSON.stringify({}),
+      task_key: taskKey,
+      task_handler_type: 'DIRECT_FUNCTION',
+      execution_policy: executionPolicy,
+    });
+    if (newSchedule) {
+      log(LogLevel.INFO, `Task "${taskKey}" created successfully.`, { id: newSchedule.id });
+    } else {
+      log(LogLevel.ERROR, `Failed to create schedule for task "${taskKey}".`);
+    }
+  } else {
+    // Job exists, check if its schedule expression needs an update
+    if (existingJob.schedule_expression !== cronExpression) {
+      log(LogLevel.INFO, `Task "${taskKey}" (ID: ${existingJob.id}) exists, but its schedule ('${existingJob.schedule_expression}') differs from determined cron ('${cronExpression}'). Attempting update.`);
+      const updatedJob = await updateScheduleExpressionAndReschedule(existingJob.id, cronExpression);
+      if (updatedJob) {
+        log(LogLevel.INFO, `Task "${taskKey}" (ID: ${updatedJob.id}) successfully updated to schedule '${updatedJob.schedule_expression}'. Next run: ${updatedJob.next_run_time}`);
+      } else {
+        log(LogLevel.ERROR, `Failed to update schedule for task "${taskKey}" (ID: ${existingJob.id}). It will continue with its old schedule '${existingJob.schedule_expression}'.`);
+      }
+    } else {
+      log(LogLevel.INFO, `Task "${taskKey}" (ID: ${existingJob.id}) already exists and its schedule ("${existingJob.schedule_expression}") is up-to-date.`);
+    }
+  }
+} 

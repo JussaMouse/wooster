@@ -1,121 +1,158 @@
-# Scheduler (Wooster's Clock)
+# Wooster Scheduler System (V2)
 
-## 1. Explanation
-Wooster's **Scheduler** subsystem provides a human-friendly, durable scheduling engine. It allows the agent to defer the execution of its own reasoning processes or specific tasks. Instead of scheduling fully resolved actions, the Scheduler stores an "agent intent" or a "deferred query". At the scheduled time, this intent is passed back to the agent for fresh evaluation and execution. This ensures that any data fetching or decision-making happens with the most current information.
+## 1. Overview
 
-It uses `chrono-node` for natural-language parsing of time expressions and `node-schedule` for cron-style or date-based job execution. Scheduled tasks are persisted in an SQLite database (`database/memory.db`).
+The Wooster Scheduler System is responsible for managing and executing tasks at predefined times or intervals. It supports recurring tasks (via cron expressions), one-off future tasks, and different policies for handling missed executions. The system can trigger two main types of handlers: direct TypeScript functions within Wooster or prompts to be processed by the Wooster agent.
 
-It allows Wooster to:
+## 2. Core Components
 
-- **Parse** free-form date/time expressions ("tomorrow at noon," "every Monday at 9am," "in two hours").
-- **Persist** every scheduled agent intent in SQLite so nothing is lost on crashes or restarts.
-- **Schedule** one-off or recurring deferred tasks in-process and automatically rehydrate them at startup.
-- **Trigger** a re-invocation of the agent's logic with the stored intent when jobs fire.
-- **Monitor** its own liveness via a heartbeat table to power an external dead-man's switch.
+*   **`SchedulerService` (`src/scheduler/schedulerService.ts`)**: The central orchestrator.
+    *   Initializes and loads schedules from the database.
+    *   Uses `node-schedule` to manage the timing of job executions.
+    *   Uses `croner` to parse cron expressions and calculate next run times.
+    *   Handles task execution, including catch-up logic for missed tasks based on their execution policy.
+    *   Provides an API to create, cancel, and query schedules.
+    *   Maintains a registry for `DIRECT_FUNCTION` handlers.
+*   **`ReminderRepository` (`src/scheduler/reminderRepository.ts`)**: Manages data persistence.
+    *   Interacts with an SQLite database (`database/scheduler.sqlite3`).
+    *   Stores schedule definitions and execution logs.
+*   **`scheduleAgentTaskTool` (`src/tools/scheduler.ts`)**: A tool available to the Wooster agent, allowing it to schedule new tasks (typically `AGENT_PROMPT` type) based on user requests.
+*   **Direct Function Registration (in `src/index.ts`)**: System-level tasks (like the Daily Review email) are registered as direct functions with specific `task_key`s.
 
-## 2. Design
+## 3. Database Schema
 
-### 2.1 Architecture Overview
+The scheduler uses an SQLite database (`scheduler.sqlite3`) with two main tables:
 
-```text
-┌────────────┐        ┌────────────────┐      ┌───────────────────┐
-│ Agent Logic│◀──┐    │ ScheduleParser |      │ SchedulerService  │
-└────────────┘    │    └────────────────┘      └───────────────────┘
-        │         │           │                          │
-        │         └───────────┼──────────────────────────┘
-        │ (Formulates Intent) │ (Parses Time)            │ (Stores & Triggers Job)
-        ▼                     │                          ▼
-  ┌────────────┐              │                   ┌───────────────┐
-  │ Repository │◀─────────────┴──────────────────▶│ node-schedule │
-  └────────────┘ (SQLite: database/memory.db)    └───────────────┘
-        ▲                                                 │
-        │ (Heartbeat Updates)                             │ (Job Fires)
-        │                                                 │
-        │                               ┌──────────────┐  │
-        └───────────────────────────────│HeartbeatService│  │
-                                        └──────────────┘  │
-                                                          │
-                 (Re-invokes Agent Logic)                 │
-                         └────────────────────────────────┘
-``` 
+### 3.1. `schedules` Table
 
-### 2.2 Components
+Stores the definitions of all scheduled tasks.
 
-- **ScheduleParser**: Wraps `chrono.parseDate`/`chrono.parse` to turn arbitrary text into a `Date`. Used by the `scheduleAgentTask` tool.
-- **ReminderRepository**: CRUD layer on SQLite (`database/memory.db`) for `reminders` and `heartbeats` tables.
-- **SchedulerService**: 
-    - Manages `node-schedule` jobs.
-    - Stores agent intents received from the `scheduleAgentTask` tool (via Agent Logic) into the `ReminderRepository`.
-    - On job fire, retrieves the stored agent intent and triggers a callback to re-invoke the main Agent logic with this intent.
-- **HeartbeatService**: Writes a `last_heartbeat` timestamp to the DB every interval.
-- **Startup Bootstrap**: On launch, reloads all pending scheduled intents and re-registers them with `node-schedule`; initializes heartbeat.
-- **CLI Interface & Agent Interaction**: 
-    - Users typically ask the agent to schedule tasks (e.g., "remind me to X"). The agent then uses the `scheduleAgentTask` tool.
-    - Direct REPL commands (`list reminders`, `cancel <id>`, `status`) allow management of these scheduled tasks.
+| Column                | Type    | Description                                                                                                | Example                               |
+| :-------------------- | :------ | :--------------------------------------------------------------------------------------------------------- | :------------------------------------ |
+| `id`                  | TEXT    | Primary Key (UUID)                                                                                         | `uuidv4()`                            |
+| `description`         | TEXT    | Human-readable description of the task.                                                                    | "Daily Review Email"                  |
+| `schedule_expression` | TEXT    | Cron string for recurring tasks (e.g., "0 9 * * *") or an ISO 8601 datetime string for one-off tasks.       | "30 6 * * *" / "2024-12-31T23:59:00Z" |
+| `payload`             | TEXT    | JSON string containing data for the task. For `AGENT_PROMPT`, this is the prompt. For `DIRECT_FUNCTION`, it\'s arguments for the function. | `"{}"` / `"{ \\"userId\\": 123 }"`    |
+| `is_active`           | BOOLEAN | Whether the schedule is currently active. Defaults to `TRUE`.                                              | `TRUE`                                |
+| `created_at`          | TEXT    | Timestamp of creation (ISO 8601).                                                                          | `strftime(\'%Y-%m-%dT%H:%M:%fZ\', \'now\')` |
+| `updated_at`          | TEXT    | Timestamp of last update (ISO 8601).                                                                       | `strftime(\'%Y-%m-%dT%H:%M:%fZ\', \'now\')` |
+| `next_run_time`       | TEXT    | Calculated next execution time (ISO 8601). Updated by `SchedulerService`.                                  | "2024-07-01T09:00:00Z"                |
+| `last_invocation`     | TEXT    | Timestamp of the last time the task was invoked (ISO 8601).                                                | "2024-06-30T09:00:00Z"                |
+| `task_key`            | TEXT    | A unique key identifying the task\'s nature or target function/prompt. `UNIQUE`.                            | "system.dailyReview.sendEmail"        |
+| `task_handler_type`   | TEXT    | Type of handler: `AGENT_PROMPT` or `DIRECT_FUNCTION`.                                                      | "DIRECT_FUNCTION"                     |
+| `execution_policy`    | TEXT    | How to handle missed schedules: `DEFAULT_SKIP_MISSED`, `RUN_ONCE_PER_PERIOD_CATCH_UP`, `RUN_IMMEDIATELY_IF_MISSED`. | "RUN_ONCE_PER_PERIOD_CATCH_UP"        |
 
-### 2.3 Data Model
+### 3.2. `task_execution_log` Table
 
-```sql
--- Located in database/memory.db
--- Reminders table
-CREATE TABLE IF NOT EXISTS reminders (
-  id TEXT PRIMARY KEY,
-  message TEXT NOT NULL,              -- Human-readable description of the scheduled intent
-  schedule_type TEXT NOT NULL CHECK(schedule_type IN ('one-off', 'cron')),
-  when_date DATETIME,                 -- For one-off execution
-  cron_spec TEXT,                     -- For recurring execution
-  task_type TEXT NOT NULL DEFAULT 'executeAgentQuery', -- Type of task, e.g., 'executeAgentQuery'
-  task_payload TEXT NOT NULL,         -- JSON string: agent query or intent to be re-evaluated
-  is_active BOOLEAN DEFAULT TRUE,     -- To mark if the scheduled intent is still active
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  next_run_time DATETIME              -- Cache of the next calculated run time
-);
+Records each execution attempt of a scheduled task.
 
--- Heartbeat table (single-row)
-CREATE TABLE IF NOT EXISTS heartbeats (
-  id             INTEGER PRIMARY KEY CHECK(id = 1),
-  last_heartbeat DATETIME NOT NULL
-);
-``` 
+| Column              | Type    | Description                                                                    | Example                          |
+| :------------------ | :------ | :----------------------------------------------------------------------------- | :------------------------------- |
+| `id`                | INTEGER | Primary Key (Auto-increment)                                                   | `1`                              |
+| `schedule_id`       | TEXT    | Foreign Key referencing `schedules.id`. `ON DELETE CASCADE`.                   | `uuid_of_schedule_item`          |
+| `period_identifier` | TEXT    | A string identifying the execution period (e.g., date for daily tasks).        | "2024-07-01" / "2024-07-01-09"   |
+| `status`            | TEXT    | Execution status: `SUCCESS`, `FAILURE`, `SKIPPED_DUPLICATE`.                   | "SUCCESS"                        |
+| `executed_at`       | TEXT    | Timestamp of execution attempt (ISO 8601).                                     | "2024-07-01T09:00:05Z"           |
+| `notes`             | TEXT    | Optional notes about the execution (e.g., error messages, skipped reason).     | "Successfully sent daily review" |
 
-## 3. Key Implementation Aspects & Workflow
+## 4. Key Concepts
 
-This section details how the components interact to achieve the scheduling functionality.
+### 4.1. `ScheduleItem`
+This is the TypeScript interface representing a record from the `schedules` table.
 
-1.  **Database Setup (`src/scheduler/reminderRepository.ts`):**
-    *   The `reminders` and `heartbeats` tables are created in `database/memory.db` if they don't exist.
-    *   The `ReminderRepository` provides methods for CRUD operations.
+### 4.2. `task_key`
+A crucial identifier string that links a `ScheduleItem` to its actual execution logic.
+*   For `DIRECT_FUNCTION` handlers, this key is used to look up the registered TypeScript function in `SchedulerService`\'s `directFunctionRegistry`.
+*   For `AGENT_PROMPT` handlers, this key can be used for categorization or logging, often generated dynamically (e.g., `agent.toolScheduled.<uuid>`).
 
-2.  **Agent Interaction with the Scheduler Tool:**
-    *   When a user request implies deferred execution (e.g., "remind me to X in 1 hour"), the agent (in `src/agent.ts`) identifies this intent.
-    *   It formulates a `taskPayload` (typically the core query string), a `humanReadableDescription`, and identifies the `timeExpression`. 
-    *   The agent then decides to call the `scheduleAgentTask` tool, providing these parameters.
+### 4.3. `task_handler_type`
+Defines how the schedule is processed:
+*   **`DIRECT_FUNCTION`**: The `payload` (if any) is passed to a TypeScript function registered with `SchedulerService` via its `task_key`. This is used for system tasks like the Daily Review.
+*   **`AGENT_PROMPT`**: The `payload` (which is a string prompt) is sent to the Wooster agent for processing via the `schedulerAgentCallback` function. This is typically used for tasks scheduled by the agent itself (e.g., "remind me to X").
 
-3.  **`scheduleAgentTask` Tool Execution (`src/tools/scheduler.ts`):**
-    *   Receives `taskPayload`, `timeExpression`, and `humanReadableDescription` from the agent.
-    *   Uses the `ScheduleParser` (wrapping `chrono-node`) to convert `timeExpression` into a specific date/time.
-    *   Calls a method on the `SchedulerService` (e.g., `schedulerService.scheduleTask(...)`).
+### 4.4. `schedule_expression`
+Determines when the task should run.
+*   **Cron Expressions**: For recurring tasks (e.g., `"0 8 * * *"` for 8 AM daily). Parsed using `croner`.
+*   **ISO 8601 Date Strings**: For one-off tasks (e.g., `"2025-01-01T10:00:00Z"`).
 
-4.  **`SchedulerService` Core Logic (`src/scheduler/schedulerService.ts`):**
-    *   Takes task details (payload, description, schedule).
-    *   Persists this to the `reminders` table via `ReminderRepository`.
-    *   Uses `node-schedule` to create a job.
-    *   The job, when triggered, executes a callback provided during `initSchedulerService` at startup.
+### 4.5. `execution_policy`
+Defines behavior when Wooster starts up and finds tasks that should have run in the past:
+*   **`DEFAULT_SKIP_MISSED`**: If a task\'s scheduled time is missed, it is skipped. The scheduler will only run it at its next scheduled future time.
+*   **`RUN_IMMEDIATELY_IF_MISSED`**: If a task\'s `next_run_time` is in the past, it will be executed immediately during the catch-up process, provided it hasn\'t already run recently (based on `last_invocation`).
+*   **`RUN_ONCE_PER_PERIOD_CATCH_UP`**: Designed for tasks that should run once per defined period (e.g., daily, hourly). If missed, the scheduler will attempt to run it once for the current period during catch-up, provided it hasn\'t already succeeded in that period (checked via `task_execution_log`). The `period_identifier` in the log helps track this.
 
-5.  **Job Execution and Agent Re-invocation:**
-    *   When a `node-schedule` job fires:
-        *   It executes the `agentExecutionCallback` (defined in `src/index.ts`).
-        *   This callback retrieves the `task_payload` for the job and re-invokes main agent logic (`agentRespond`) with this `task_payload`. 
+## 5. `SchedulerService` Operations
 
-6.  **Startup Bootstrap (`src/index.ts` and `src/scheduler/schedulerService.ts`):**
-    *   On Wooster's launch, `initSchedulerService` is called, passing the `agentExecutionCallback`.
-    *   The service loads pending tasks from `ReminderRepository` and re-registers jobs with `node-schedule`.
+### 5.1. Initialization (`initSchedulerService`)
+*   Called at Wooster startup.
+*   Clears any pre-existing `node-schedule` jobs from a previous run.
+*   Loads all `is_active = TRUE` schedules from the database.
+*   For each loaded item, it calls `scheduleJob` to:
+    *   Calculate the next invocation time using `croner` (for cron) or by parsing the date string.
+    *   Updates the item\'s `next_run_time` in the database.
+    *   Schedules the actual job with `node-schedule`.
+*   Sets up the `agentExecutionCallback` if provided.
 
-7.  **`HeartbeatService` (`src/heartbeat.ts`):**
-    *   Periodically updates `last_heartbeat` in `heartbeats` table via `ReminderRepository`.
+### 5.2. Catch-up Processing (`processCatchUpTasks`)
+*   Called at Wooster startup *after* `initSchedulerService` and after direct functions are registered.
+*   Iterates through active schedule items.
+*   For `RUN_ONCE_PER_PERIOD_CATCH_UP` tasks:
+    *   Calculates the expected run time for the current period.
+    *   Checks `task_execution_log` to see if it already ran successfully for this period.
+    *   If not run and past its scheduled time for the current period, `executeScheduledItem` is called.
+*   For `RUN_IMMEDIATELY_IF_MISSED` tasks:
+    *   If `next_run_time` is in the past and `last_invocation` doesn\'t indicate a recent run, `executeScheduledItem` is called.
 
-8.  **REPL Commands (`src/index.ts`):**
-    *   Users typically interact with scheduling via natural language, which the agent translates into calls to the `scheduleAgentTask` tool.
-    *   Direct REPL commands `list reminders`, `cancel <id>`, and `status` interact with the `SchedulerService` and/or `ReminderRepository` for managing and viewing scheduled tasks.
+### 5.3. Task Execution (`executeScheduledItem`)
+*   This is the core function called when a `node-schedule` job fires or during catch-up.
+*   Determines the `currentPeriodId`.
+*   For `RUN_ONCE_PER_PERIOD_CATCH_UP` tasks, it performs a final check against `task_execution_log` to prevent duplicate execution if a catch-up already ran it for the current period.
+*   Based on `task_handler_type`:
+    *   `DIRECT_FUNCTION`: Looks up the function in `directFunctionRegistry` by `task_key` and executes it with the parsed `payload`.
+    *   `AGENT_PROMPT`: Calls `agentExecutionCallback` with the `payload`.
+*   Logs the execution result (`SUCCESS` or `FAILURE`) to `task_execution_log`.
+*   Updates `last_invocation` and `next_run_time` (if applicable, from `node-schedule`\'s next invocation) in the `schedules` table.
+*   Handles deactivation of one-off tasks after they run.
 
-This flow ensures that user requests for future actions are reliably stored, managed, and then re-processed by the agent with fresh context at the appropriate time.
+### 5.4. Creating Schedules (`createSchedule`)
+*   Used by `src/index.ts` (e.g., for seeding the Daily Review) and by `scheduleAgentTaskTool`.
+*   Takes schedule details, generates a UUID for `id`.
+*   Calculates the initial `next_run_time`.
+*   Adds the new `ScheduleItem` to the database via `reminderRepository.addScheduleItem`.
+*   Calls `scheduleJob` to activate it in `node-schedule`.
+
+### 5.5. Registering Direct Functions (`registerDirectScheduledFunction`)
+*   Called in `src/index.ts` to map a `task_key` (e.g., `"system.dailyReview.sendEmail"`) to a specific TypeScript function (e.g., `sendDailyReviewEmail` from `src/tools/dailyReview.ts`).
+
+## 6. Example: Daily Review Seeding
+
+In `src/index.ts`, the Daily Review task is set up as follows:
+
+1.  **Registration**:
+    `registerDirectScheduledFunction("system.dailyReview.sendEmail", sendDailyReviewEmail);`
+2.  **Seeding (if not exists)**:
+    \`\`\`typescript
+    const dailyReviewJob = await getScheduleItemByKey("system.dailyReview.sendEmail");
+    if (!dailyReviewJob) {
+      await createSchedule({
+        description: "Sends the Daily Review email each morning.",
+        schedule_expression: "30 6 * * *", // 6:30 AM daily
+        payload: JSON.stringify({}),
+        task_key: "system.dailyReview.sendEmail",
+        task_handler_type: "DIRECT_FUNCTION",
+        execution_policy: "RUN_ONCE_PER_PERIOD_CATCH_UP",
+      });
+    }
+    \`\`\`
+
+## 7. Agent-Scheduled Tasks
+
+The `scheduleAgentTaskTool` allows the LLM agent to create tasks:
+*   Input to the tool is a JSON object: `{ taskPayload: string, timeExpression: string, humanReadableDescription: string }`.
+*   The tool parses `timeExpression` into a future date.
+*   Calls `createSchedule` with:
+    *   `task_handler_type: \'AGENT_PROMPT\'`
+    *   `payload`: the `taskPayload` string.
+    *   `task_key`: dynamically generated like `agent.toolScheduled.<uuid>`.
+    *   `execution_policy`: typically `DEFAULT_SKIP_MISSED`.
+*   When the scheduled time arrives, `executeScheduledItem` invokes `agentExecutionCallback` (which is `schedulerAgentCallback` in `src/index.ts`), passing the `taskPayload`. The agent then processes this payload as a new prompt. 

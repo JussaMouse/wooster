@@ -1,29 +1,27 @@
 import { ChatOpenAI } from "@langchain/openai";
-import { DynamicTool } from "@langchain/core/tools";
+import { Tool, DynamicTool } from "@langchain/core/tools";
 import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents";
 import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
-import { BaseMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
+import { BaseMessage, HumanMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
 import { FaissStore } from "@langchain/community/vectorstores/faiss";
 import { createHistoryAwareRetriever } from "langchain/chains/history_aware_retriever";
 import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
 import { createRetrievalChain } from "langchain/chains/retrieval";
 import * as fs from 'fs';
 import * as path from 'path';
+import { calendar_v3 } from 'googleapis';
 
 import { AppConfig, getConfig } from "./configLoader";
 import { log, LogLevel } from "./logger";
-import { performWebSearch, initializeWebSearchTool as initTavilyTool } from "./tools/webSearchTool";
-import { recallUserContextFunc, setUserContextStore as setGlobalUCMStore } from "./tools/userContextTool";
-import { initializeWeatherTool, getWeatherForecastFunc } from "./tools/weatherTool";
-import { createAgentTaskSchedule } from "./scheduler/schedulerService";
 import { parseDateString } from "./scheduler/scheduleParser";
 import { getPluginAgentTools } from "./pluginManager";
 import { ChatDebugFileCallbackHandler } from "./chatDebugFileCallbackHandler";
-import { scheduleAgentTaskTool } from "./tools/scheduler";
+import { scheduleAgentTaskTool } from "./schedulerTool";
+import { createFileTool, readFileTool } from './fileSystemTool';
 
-let userContextStoreInstance: FaissStore | null = null;
+let userProfileStoreInstance: FaissStore | null = null;
 let projectVectorStoreInstance: FaissStore | null = null;
-let tools: DynamicTool[] = [];
+let tools: any[] = [];
 let agentExecutorInstance: AgentExecutor | null = null;
 let appConfig: AppConfig;
 let agentLlm: ChatOpenAI;
@@ -54,30 +52,7 @@ async function initializeTools() {
     openAIApiKey: appConfig.openai.apiKey,
   });
 
-  initTavilyTool(appConfig);
-  initializeWeatherTool(appConfig);
-
-  const coreTools: DynamicTool[] = [];
-
-  const webSearch = new DynamicTool({
-    name: "web_search",
-    description: "Searches the web for current information, news, facts, or any topic that requires up-to-date knowledge beyond the AI's training data. Input should be a concise search query string.",
-    func: async (input: string) => performWebSearch(input),
-  });
-  coreTools.push(webSearch);
-
-  const recallUserContext = new DynamicTool({
-    name: "recall_user_context",
-    description: "Recalls specific facts, preferences, or context about the current user to personalize responses or remember user-specific information. Input should be a question or topic to recall (e.g., 'my favorite color', 'what did I say about project X').",
-    func: async (input: string) => {
-      if (!userContextStoreInstance) {
-        log(LogLevel.ERROR, "User context store not initialized for recall_user_context tool.");
-        return "User Context Memory store is not currently available for this tool.";
-      }
-      return recallUserContextFunc({ topic: input });
-    },
-  });
-  coreTools.push(recallUserContext);
+  const coreTools: any[] = [];
 
   const queryKnowledgeBase = new DynamicTool({
     name: "queryKnowledgeBase",
@@ -91,35 +66,28 @@ async function initializeTools() {
         log(LogLevel.ERROR, "Agent LLM not initialized for queryKnowledgeBase tool.");
         return "LLM for knowledge base is not available.";
       }
-
       log(LogLevel.DEBUG, "queryKnowledgeBaseTool: Invoked", { input });
       try {
         const retriever = projectVectorStoreInstance.asRetriever();
-        
         const currentChatHistory: BaseMessage[] = runManager?.config?.configurable?.chat_history || [];
         const ragChatHistory = currentChatHistory.filter(m => m._getType() === 'human' || m._getType() === 'ai');
-
         const historyAwareRetrieverChain = await createHistoryAwareRetriever({
             llm: agentLlm, 
             retriever,
             rephrasePrompt: historyAwarePrompt,
         });
-
         const documentChain = await createStuffDocumentsChain({
             llm: agentLlm,
             prompt: answerPrompt,
         });
-
         const retrievalChain = await createRetrievalChain({
             retriever: historyAwareRetrieverChain,
             combineDocsChain: documentChain,
         });
-        
         const result = await retrievalChain.invoke({ 
             input: input, 
             chat_history: ragChatHistory,
         });
-
         log(LogLevel.DEBUG, "queryKnowledgeBaseTool: RAG chain result", { result });
         return result.answer || "No relevant information found in the project knowledge base.";
       } catch (error) {
@@ -131,24 +99,19 @@ async function initializeTools() {
   coreTools.push(queryKnowledgeBase);
 
   coreTools.push(scheduleAgentTaskTool);
-
-  const getWeatherForecast = new DynamicTool({
-    name: "get_weather_forecast",
-    description: "Fetches the current weather forecast (temperature and conditions) for the user\'s pre-configured city. Input is not required as the city is set in the environment configuration.",
-    func: async () => getWeatherForecastFunc(),
-  });
-  coreTools.push(getWeatherForecast);
+  coreTools.push(createFileTool);
+  coreTools.push(readFileTool);
 
   const pluginTools = getPluginAgentTools();
   log(LogLevel.INFO, "Retrieved %d tools from plugins.", pluginTools.length);
 
-  const allToolsMap = new Map<string, DynamicTool>();
+  const allToolsMap = new Map<string, any>();
   coreTools.forEach(tool => allToolsMap.set(tool.name, tool));
   pluginTools.forEach(tool => {
     if (!allToolsMap.has(tool.name)) {
       allToolsMap.set(tool.name, tool);
     } else {
-      log(LogLevel.WARN, `Plugin tool "${tool.name}" conflicts with a core tool name. Core tool "${allToolsMap.get(tool.name)?.description.substring(0,50)}..." will be used.`)
+      log(LogLevel.WARN, `Plugin tool \"${tool.name}\" conflicts with a core tool name. Core tool \"${allToolsMap.get(tool.name)?.description.substring(0,50)}...\" will be used.`)
     }
   });
 
@@ -170,7 +133,7 @@ async function getAgentExecutor(): Promise<AgentExecutor> {
     "You have access to the following tools. Only use tools if necessary. If you can answer directly, do so." +
     "When using a tool, you must provide your reasoning and the exact input to the tool." +
     "If a tool provides an error or unusable results, try to analyze the error and retry if appropriate, or inform the user." +
-    "Always strive to be helpful, polite, and provide clear, concise answers."; // Default/Fallback
+    "Always strive to be helpful, polite, and provide clear, concise answers.";
 
   const promptsDirPath = path.join(process.cwd(), 'prompts');
 
@@ -192,7 +155,7 @@ async function getAgentExecutor(): Promise<AgentExecutor> {
       const allFiles = fs.readdirSync(promptsDirPath);
       const additionalPromptFiles = allFiles
         .filter(file => file.endsWith('.txt') && file !== 'base_system_prompt.txt')
-        .sort(); // Sort alphabetically for consistent order
+        .sort();
 
       for (const file of additionalPromptFiles) {
         try {
@@ -214,7 +177,12 @@ async function getAgentExecutor(): Promise<AgentExecutor> {
   }
   
   const finalSystemPrompt = baseSystemPromptText + 
-    appendedPromptsText + // appendedPromptsText already contains leading newlines if populated
+    appendedPromptsText +
+    "\n\nYour current active project is '{current_project_name}'. For tools requiring a project name, like 'create_file', you should use this active project name by default. " +
+    "If the user explicitly specifies a different project for a particular action (e.g., 'save this note in project X'), then you should use the project name specified by the user for that action's tool call. " +
+    "If you are unsure which project to use for an operation that requires one, and the user has not specified one, you should ask for clarification or use the active project '{current_project_name}'. " +
+    "Do not change the active project context itself without explicit instruction." +
+    "\n\nTo add content to an existing file (e.g., add an entry to a log file), you should first use the 'read_file_content' tool to get the current content. Then, append your new content to the existing content in your internal thought process. Finally, use the 'create_file' tool to save the entire new combined content back to the same file. This ensures you don't overwrite existing data unintentionally when the user asks to add something." +
     "\n\nCurrent date and time: {current_date_time}";
 
   const prompt = ChatPromptTemplate.fromMessages([
@@ -242,9 +210,7 @@ async function getAgentExecutor(): Promise<AgentExecutor> {
   if (appConfig.logging.logAgentLLMInteractions) {
     agentExecutorOptions.callbacks = [new ChatDebugFileCallbackHandler()];
     agentExecutorOptions.verbose = false;
-  }
-  // Ensure verbose is false if not explicitly set for logging, to avoid double console output
-  if (agentExecutorOptions.verbose === undefined) {
+  } else {
     agentExecutorOptions.verbose = false;
   }
 
@@ -254,20 +220,13 @@ async function getAgentExecutor(): Promise<AgentExecutor> {
 }
 
 export async function initializeAgentExecutorService(
-  ucmStore?: FaissStore,
   projectStore?: FaissStore
 ): Promise<void> {
-  appConfig = await getConfig(); // Ensure appConfig is loaded here as well if not already
-  if (ucmStore) {
-    userContextStoreInstance = ucmStore;
-    setGlobalUCMStore(ucmStore);
-    log(LogLevel.INFO, "AgentExecutorService: User Context Store initialized.");
-  }
+  appConfig = await getConfig();
   if (projectStore) {
     projectVectorStoreInstance = projectStore;
     log(LogLevel.INFO, "AgentExecutorService: Project Vector Store initialized with FaissStore.");
   }
-  // Ensure tools are not initialized here, but lazily by getAgentExecutor later
 }
 
 export async function executeAgent(
@@ -280,13 +239,10 @@ export async function executeAgent(
   const currentDateTime = new Date().toLocaleString();
 
   try {
-    // Process chat history: Ensure HumanMessage and AIMessage content is in the new format
     const processedChatHistory = chatHistory.map(msg => {
       if (msg._getType() === 'human' && typeof msg.content === 'string') {
         return new HumanMessage({ content: [{ type: "text", text: msg.content }], name: msg.name, id: msg.id });
       }
-      // For AIMessage, if content is a string, transform it, preserving other properties like tool_calls.
-      // If content is already in the structured format or not a string (e.g. null for some AIMessages with only tool calls), leave it as is.
       if (msg._getType() === 'ai' && typeof msg.content === 'string') {
         const aiMsg = msg as AIMessage;
         return new AIMessage({ 
@@ -299,8 +255,16 @@ export async function executeAgent(
           response_metadata: aiMsg.response_metadata,
         });
       }
-      // ToolMessage content should be a string, so no transformation needed.
-      // Other message types or AIMessages with already structured content are returned as is.
+      if (msg._getType() === 'tool' && typeof msg.content === 'string') {
+        const toolMsg = msg as ToolMessage;
+        return new ToolMessage({ 
+            content: [{ type: "text", text: toolMsg.content }], 
+            tool_call_id: toolMsg.tool_call_id,
+            name: toolMsg.name, 
+            id: toolMsg.id,
+            additional_kwargs: toolMsg.additional_kwargs,
+         });
+      }
       return msg;
     });
 
@@ -310,6 +274,7 @@ export async function executeAgent(
       input: userInput,
       chat_history: processedChatHistory,
       current_date_time: currentDateTime,
+      current_project_name: "home", // Hardcode for now
     });
 
     log(LogLevel.DEBUG, "AgentExecutorService: Raw execution result", { result });
@@ -323,4 +288,4 @@ export async function executeAgent(
     log(LogLevel.ERROR, "AgentExecutorService: Error during agent execution", { error });
     return `An error occurred while processing your request: ${error instanceof Error ? error.message : String(error)}`;
   }
-} 
+}

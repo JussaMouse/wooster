@@ -28,8 +28,8 @@ export async function extractUserKnowledge(
     return null;
   }
 
-  const config = getConfig(); // Now uses statically imported getConfig
-  const configuredPrompt = config.ucm.extractorLlmPrompt;
+  const config = getConfig();
+  const configuredPrompt = config.userProfile.extractorLlmPrompt;
 
   const defaultPromptTemplate = `Analyze the following conversation turn:
 User: "${userInput}"

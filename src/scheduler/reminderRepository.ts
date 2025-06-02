@@ -1,6 +1,15 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import {
+  ScheduleItem,
+  NewScheduleItemPayload,
+  UpdateScheduleItemArgs,
+  TaskExecutionLogEntry,
+  TaskHandlerType,
+  TaskExecutionStatus,
+  ExecutionPolicyType // Though not directly used in function signatures here, it's part of ScheduleItem
+} from '../types/schedulerCore';
 
 const DB_DIR = path.join(process.cwd(), 'database');
 const DB_PATH = path.join(DB_DIR, 'scheduler.sqlite3');
@@ -14,143 +23,143 @@ const db = new Database(DB_PATH);
 
 // Function to initialize the database and create tables if they don't exist
 export function initDatabase(): void {
-  const createRemindersTable = `
-    CREATE TABLE IF NOT EXISTS reminders (
+  const createSchedulesTable = `
+    CREATE TABLE IF NOT EXISTS schedules (
       id TEXT PRIMARY KEY,
-      message TEXT NOT NULL, -- Still useful for a human-readable description of the scheduled task
-      schedule_type TEXT NOT NULL CHECK(schedule_type IN ('one-off', 'cron')),
-      when_date DATETIME,      -- For one-off reminders
-      cron_spec TEXT,          -- For recurring cron jobs
-      task_type TEXT NOT NULL DEFAULT 'logMessage', -- Type of task: e.g., 'logMessage', 'invokeTool'
-      task_payload TEXT,       -- JSON string containing payload for the task, e.g., { toolName: 'sendEmail', args: { ... } }
-      is_active BOOLEAN DEFAULT TRUE, -- To mark if a reminder is still active
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      next_run_time DATETIME   -- Store the next calculated run time
+      description TEXT NOT NULL,
+      schedule_expression TEXT NOT NULL, 
+      payload TEXT,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      next_run_time TEXT,  
+      last_invocation TEXT, 
+      
+      task_key TEXT NOT NULL UNIQUE DEFAULT 'unknown.task',
+      task_handler_type TEXT NOT NULL DEFAULT 'AGENT_PROMPT' CHECK(task_handler_type IN ('AGENT_PROMPT', 'DIRECT_FUNCTION')),
+      execution_policy TEXT NOT NULL DEFAULT 'DEFAULT_SKIP_MISSED' CHECK(execution_policy IN ('DEFAULT_SKIP_MISSED', 'RUN_ONCE_PER_PERIOD_CATCH_UP', 'RUN_IMMEDIATELY_IF_MISSED'))
     );
   `;
 
-  const createHeartbeatsTable = `
-    CREATE TABLE IF NOT EXISTS heartbeats (
-      id INTEGER PRIMARY KEY CHECK(id = 1), -- Ensures only one row
-      last_heartbeat DATETIME NOT NULL
+  const createSchedulesIndexes = `
+    CREATE INDEX IF NOT EXISTS idx_schedules_next_run_time ON schedules(next_run_time);
+    CREATE INDEX IF NOT EXISTS idx_schedules_is_active ON schedules(is_active);
+  `;
+  
+  const createTaskExecutionLogTable = `
+    CREATE TABLE IF NOT EXISTS task_execution_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      schedule_id TEXT NOT NULL, 
+      period_identifier TEXT NOT NULL, 
+      status TEXT NOT NULL CHECK(status IN ('SUCCESS', 'FAILURE', 'SKIPPED_DUPLICATE')),
+      executed_at TEXT NOT NULL, 
+      notes TEXT,
+      FOREIGN KEY (schedule_id) REFERENCES schedules(id) ON DELETE CASCADE
     );
   `;
+  const createTaskExecutionLogIndexes = `
+    CREATE INDEX IF NOT EXISTS idx_task_log_schedule_period ON task_execution_log(schedule_id, period_identifier);
+  `;
 
-  // Indexes for potentially queried columns
-  const createRemindersIndex = `CREATE INDEX IF NOT EXISTS idx_reminders_next_run_time ON reminders(next_run_time);`;
-  const createRemindersActiveIndex = `CREATE INDEX IF NOT EXISTS idx_reminders_is_active ON reminders(is_active);`;
+  db.exec(createSchedulesTable);
+  db.exec(createSchedulesIndexes);
+  db.exec(createTaskExecutionLogTable);
+  db.exec(createTaskExecutionLogIndexes);
 
-
-  db.exec(createRemindersTable);
-  db.exec(createHeartbeatsTable);
-  db.exec(createRemindersIndex);
-  db.exec(createRemindersActiveIndex);
-
-  // Initialize heartbeat if not present
-  const stmt = db.prepare('SELECT last_heartbeat FROM heartbeats WHERE id = 1');
-  const heartbeat = stmt.get();
-  if (!heartbeat) {
-    const insertStmt = db.prepare('INSERT INTO heartbeats (id, last_heartbeat) VALUES (1, CURRENT_TIMESTAMP)');
-    insertStmt.run();
-  }
-
-  console.log('Scheduler database initialized and tables (reminders, heartbeats) are ready.');
+  console.log('Scheduler database initialized: schedules and task_execution_log tables are ready.');
 }
 
-// Placeholder for Reminder type/interface
-export interface Reminder {
-  id: string;
-  message: string; // Human-readable description
-  schedule_type: 'one-off' | 'cron';
-  when_date?: string | null; // ISO 8601 string
-  cron_spec?: string | null;
-  task_type: 'logMessage' | 'invokeTool' | string; // Allow for custom task types
-  task_payload?: string | null; // JSON string
-  is_active?: boolean;
-  created_at?: string; // ISO 8601 string
-  next_run_time?: string | null; // ISO 8601 string
-}
+// --- ScheduleItem CRUD Operations ---
 
-// --- Reminder CRUD Operations ---
-
-// Create a new reminder
-export function addReminder(
-  reminder: Omit<Reminder, 'created_at' | 'is_active'> & { 
-    id: string; 
-    next_run_time: string; 
-    // Ensure task_type is provided, task_payload is optional but should be null if not used
-    task_type: Reminder['task_type']; 
-    task_payload?: Reminder['task_payload'];
-  }
-): Database.RunResult {
-  const { id, message, schedule_type, when_date, cron_spec, next_run_time, task_type, task_payload } = reminder;
-  const stmt = db.prepare(
-    'INSERT INTO reminders (id, message, schedule_type, when_date, cron_spec, next_run_time, task_type, task_payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  );
+export function addScheduleItem(id: string, item: NewScheduleItemPayload, next_run_time: string | null): Database.RunResult {
+  const {
+    description, schedule_expression, payload,
+    task_key, task_handler_type, execution_policy
+  } = item;
+  
+  const sql = `INSERT INTO schedules 
+                 (id, description, schedule_expression, payload, task_key, task_handler_type, execution_policy, next_run_time, created_at, updated_at)
+               VALUES 
+                 (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`;
+  const stmt = db.prepare(sql);
   return stmt.run(
-    id, 
-    message, 
-    schedule_type, 
-    when_date || null, 
-    cron_spec || null, 
-    next_run_time, 
-    task_type, 
-    task_payload || null
+    id, description, schedule_expression, payload || null,
+    task_key, task_handler_type, execution_policy, next_run_time
   );
 }
 
-// Get all active reminders
-export function getActiveReminders(): Reminder[] {
-  const stmt = db.prepare("SELECT * FROM reminders WHERE is_active = TRUE ORDER BY next_run_time ASC");
-  return stmt.all() as Reminder[];
+export function getActiveScheduleItems(): ScheduleItem[] {
+  const stmt = db.prepare("SELECT * FROM schedules WHERE is_active = TRUE ORDER BY next_run_time ASC");
+  return stmt.all() as ScheduleItem[];
 }
 
-// Get a specific reminder by ID
-export function getReminderById(id: string): Reminder | undefined {
-  const stmt = db.prepare('SELECT * FROM reminders WHERE id = ?');
-  return stmt.get(id) as Reminder | undefined;
+export function getScheduleItemById(id: string): ScheduleItem | undefined {
+  const stmt = db.prepare('SELECT * FROM schedules WHERE id = ?');
+  return stmt.get(id) as ScheduleItem | undefined;
 }
 
-// Update a reminder (e.g., to set next_run_time for a cron job, or deactivate a one-off)
-export function updateReminder(id: string, updates: Partial<Pick<Reminder, 'next_run_time' | 'is_active' | 'cron_spec' | 'when_date' | 'message' | 'task_type' | 'task_payload'>>): Database.RunResult {
-  const fields = Object.keys(updates);
-  // Explicitly convert boolean values to integers (0 or 1) for SQLite compatibility
-  const values = Object.values(updates).map(val => (typeof val === 'boolean' ? (val ? 1 : 0) : val));
+export function getScheduleItemByKey(task_key: string): ScheduleItem | undefined {
+  const stmt = db.prepare('SELECT * FROM schedules WHERE task_key = ?');
+  return stmt.get(task_key) as ScheduleItem | undefined;
+}
 
-  if (fields.length === 0) {
-    throw new Error("No updates provided for reminder.");
+export function updateScheduleItem(id: string, updates: UpdateScheduleItemArgs): Database.RunResult {
+  const fields = Object.keys(updates).filter(k => k !== 'updated_at');
+  const values = fields.map(field => {
+    const val = (updates as any)[field];
+    return typeof val === 'boolean' ? (val ? 1 : 0) : val;
+  });
+
+  if (fields.length === 0 && !updates.updated_at) {
+    if (!updates.updated_at && fields.length === 0) {
+        throw new Error("No updates provided for schedule item.");
+    }
+  }
+  
+  let setClause = fields.map(field => `${field} = ?`).join(', ');
+  if (updates.updated_at) {
+      setClause += (setClause ? ', ' : '') + 'updated_at = ?';
+      values.push(updates.updated_at);
+  } else {
+      setClause += (setClause ? ', ' : '') + `updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`;
   }
 
-  const setClause = fields.map(field => `${field} = ?`).join(', ');
-  const stmt = db.prepare(`UPDATE reminders SET ${setClause} WHERE id = ?`);
+  const sql = `UPDATE schedules SET ${setClause} WHERE id = ?`;
+  const stmt = db.prepare(sql);
   return stmt.run(...values, id);
 }
 
-// Deactivate a reminder (soft delete)
-export function deactivateReminder(id: string): Database.RunResult {
-  return updateReminder(id, { is_active: false });
+export function deactivateScheduleItem(id: string): Database.RunResult {
+  return updateScheduleItem(id, { is_active: false });
 }
 
-// Delete a reminder (hard delete)
-export function deleteReminder(id: string): Database.RunResult {
-  const stmt = db.prepare('DELETE FROM reminders WHERE id = ?');
+export function deleteScheduleItem(id: string): Database.RunResult {
+  const stmt = db.prepare('DELETE FROM schedules WHERE id = ?');
   return stmt.run(id);
 }
 
+// --- TaskExecutionLog CRUD Operations ---
 
-// --- Heartbeat Operations ---
-
-// Update the heartbeat timestamp
-export function updateHeartbeat(): Database.RunResult {
-  const stmt = db.prepare('UPDATE heartbeats SET last_heartbeat = CURRENT_TIMESTAMP WHERE id = 1');
-  return stmt.run();
+export function addExecutionLog(logEntry: Omit<TaskExecutionLogEntry, 'id'>): Database.RunResult {
+  const { schedule_id, period_identifier, status, executed_at, notes } = logEntry;
+  const stmt = db.prepare(
+    'INSERT INTO task_execution_log (schedule_id, period_identifier, status, executed_at, notes) VALUES (?, ?, ?, ?, ?)'
+  );
+  return stmt.run(schedule_id, period_identifier, status, executed_at, notes || null);
 }
 
-// Get the last heartbeat timestamp
-export function getLastHeartbeat(): string | null {
-  const stmt = db.prepare('SELECT last_heartbeat FROM heartbeats WHERE id = 1');
-  const row = stmt.get() as { last_heartbeat: string } | undefined;
-  return row ? row.last_heartbeat : null;
+export function getExecutionLogsForSchedule(schedule_id: string, limit: number = 50): TaskExecutionLogEntry[] {
+  const stmt = db.prepare(
+    'SELECT * FROM task_execution_log WHERE schedule_id = ? ORDER BY executed_at DESC LIMIT ?'
+  );
+  return stmt.all(schedule_id, limit) as TaskExecutionLogEntry[];
+}
+
+export function getExecutionLogByPeriod(schedule_id: string, period_identifier: string): TaskExecutionLogEntry | undefined {
+  const stmt = db.prepare(
+    'SELECT * FROM task_execution_log WHERE schedule_id = ? AND period_identifier = ? ORDER BY executed_at DESC LIMIT 1'
+  );
+  return stmt.get(schedule_id, period_identifier) as TaskExecutionLogEntry | undefined;
 }
 
 // Ensure the database connection is closed gracefully on application exit

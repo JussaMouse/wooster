@@ -28,7 +28,7 @@ export function bootstrapLogger() {
   if (envConsoleLogLevel && LogLevel[envConsoleLogLevel as keyof typeof LogLevel]) {
     configuredConsoleLogLevel = LogLevel[envConsoleLogLevel as keyof typeof LogLevel];
   }
-  console.log(`[${new Date().toISOString()}] [INFO] Logger bootstrapped. Initial console Loglevel: ${configuredConsoleLogLevel}. Full config pending.`);
+  console.log(`[${new Date().toLocaleString()}] [INFO] Logger bootstrapped. Initial console Loglevel: ${configuredConsoleLogLevel}. Full config pending.`);
 }
 
 /**
@@ -54,7 +54,7 @@ export function applyLoggerConfig(config: LoggingConfig): void {
       try {
         fs.mkdirSync(logDir, { recursive: true });
       } catch (err) {
-        console.error(`[${new Date().toISOString()}] [ERROR] Failed to create log directory: ${logDir}. File logging will be disabled. Error: ${util.format(err)}`);
+        console.error(`[${new Date().toLocaleString()}] [ERROR] Failed to create log directory: ${logDir}. File logging will be disabled. Error: ${util.format(err)}`);
         currentLogFile = null;
       }
     }
@@ -72,7 +72,7 @@ export function applyLoggerConfig(config: LoggingConfig): void {
  * @param args Additional arguments to format into the message string (like console.log).
  */
 export function log(level: LogLevel, message: string, ...args: any[]) {
-  const timestamp = new Date().toISOString();
+  const timestamp = new Date().toLocaleString();
   // LogLevel is already a string, e.g., "INFO"
   const fullLogMessage = `[${timestamp}] [${level}] ${util.format(message, ...args)}`;
 
@@ -119,7 +119,7 @@ export function log(level: LogLevel, message: string, ...args: any[]) {
       fs.appendFileSync(currentLogFile, fullLogMessage + '\n', { encoding: 'utf8' });
     } catch (err) {
       // Avoid recursive log calls on file write error
-      console.error(`[${new Date().toISOString()}] [ERROR] Failed to write to log file ${currentLogFile}: ${util.format(err)}`);
+      console.error(`[${new Date().toLocaleString()}] [ERROR] Failed to write to log file ${currentLogFile}: ${util.format(err)}`);
     }
   }
 }

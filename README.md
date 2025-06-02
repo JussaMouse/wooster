@@ -66,6 +66,7 @@ In Wooster you manage Projects, which are knowledge work environments with their
 - Wooster automatically creates `projects/my_project/my_project.md` which is meant to be an ongoing Project Journal.
 - Wooster automatically loads the file `projects/my_project/prompt.txt` if it exists. This text will be appended to the system prompt when the Project is active.
 - Wooster has Project Memory (RAG) specific to the active Project.
+- Wooster has filesystem read/write capabilities. So you can, for example, save your notes to a markdown file in the Project Directory.
 
 
 ### User Profile:

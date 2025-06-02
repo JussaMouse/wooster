@@ -1,54 +1,72 @@
-# Tool: User Profile Recall (`recall_user_profile`)
+# Agent Tool: `recall_user_profile`
 
-This document details the `recall_user_profile` tool available to Wooster's agent, part of the User Profile system.
+**Purpose:** This tool allows the Wooster agent to access and retrieve information from the User Profile system. The User Profile system stores learned facts, preferences, and other information specific to the user, gathered over time from conversations.
 
-## 1. Purpose
+**Tool Name (for agent):** `recall_user_profile`
 
-The `recall_user_profile` tool enables the agent to access and retrieve previously learned information specific to the current user. This allows Wooster to personalize responses, remember preferences, and maintain conversational context over time.
+**Function in Code:** `recallUserProfileFunc` (located in `src/tools/userProfileTool.ts`)
 
-## 2. Agent-Facing Description
+**Vector Store Path:** `vector_data/user_profile_store/` (managed by `src/memoryVector.ts` via `initUserProfileStore`)
 
-When deciding to use this tool, the agent is provided with the following description:
+## Description (Provided to Agent):
 
-```
-Recalls specific facts, preferences, or context about the current user to personalize responses or remember user-specific information. Input should be a question or topic to recall (e.g., 'my favorite color', 'what did I say about project X', 'my writing style preferences').
-```
+"Recalls specific facts, preferences, or profile data about the current user to personalize responses or remember user-specific information. Input should be a question or topic to recall (e.g., 'my favorite color', 'what did I say about project X')."
 
-## 3. Tool Name
+## Input to Tool (from Agent):
 
-`recall_user_profile`
+*   **Type:** JSON object string
+*   **Schema:**
+    ```json
+    {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "type": "string",
+          "description": "The topic, question, or specific piece of information to recall about the user. Be specific for better results."
+        }
+      },
+      "required": ["topic"]
+    }
+    ```
+*   **Example (stringified JSON input for the tool function via AgentExecutor):**
+    `"{\"topic\": \"my preferences for project planning\"}"`
 
-## 4. Input Schema
+## Output from Tool (to Agent):
 
-- **Type**: `string`
-- **Description**: A question or topic phrase describing the specific user context the agent needs to recall.
-- **Example**: `"my preferred programming language"`, `"what are my project deadlines"`, `"notes on the last meeting about Project Phoenix"`
+*   **Type:** String
+*   **Content:**
+    *   If relevant facts are found in the User Profile store, the tool returns a string containing these facts, often as a bulleted list or a concise summary.
+    *   Example: "- User prefers visual aids for project planning.\n- User mentioned using mind maps for brainstorming."
+    *   If no relevant information is found for the given topic, it returns a message like: "No specific information found in your profile regarding [topic]."
+    *   If the User Profile system is disabled (via `USER_PROFILE_ENABLED=false` in `.env`), it should return a message indicating this, e.g., "User Profile system is currently disabled."
 
-## 5. Output Schema
+## How the Agent Uses This Tool:
 
-- **Type**: `string`
-- **Description**: A string containing the retrieved fact(s) or a statement that no relevant information was found in the User Profile. If the User Profile store is not initialized (e.g., disabled), it will return a message indicating unavailability.
+The agent decides to use this tool when it believes that recalling specific information *about the user* (not about the project's content) would be beneficial for the current task. This could be to:
+*   Personalize a response.
+*   Remember a previously stated preference.
+*   Avoid asking the user for information they might have already provided.
+*   Tailor suggestions based on known user characteristics.
 
-## 6. Dependencies & Configuration
+**Example Agent Thought Process (Conceptual):**
 
-- **Underlying System**: User Profile.
-- **Vector Store**: FaissStore, typically located at `vector_data/user_profile_store/`.
-- **Function**: `recallUserProfileFunc({ topic: input })` (defined in `src/tools/userProfileTool.ts`, called by `agentExecutorService.ts`).
-- **Environment Variables** (from `.env` - see `06 CONFIG.MD` and `02 USER_PROFILE.MD`):
-    - `USER_PROFILE_ENABLED`: Must be `true` for this tool to be functional (and for the User Profile system to learn). If `false`, the tool will indicate that the User Profile store is unavailable.
-    - `USER_PROFILE_EXTRACTOR_LLM_PROMPT`: (Indirectly related) Governs how facts are learned by the User Profile system.
+*User asks: "Can you help me draft an outline for my new novel?"*
 
-## 7. When to Use (Agent Guidance)
+*Agent thinks:* "The user is asking for help with a novel outline. I should check if I know anything about their writing preferences or past novel projects. I will use `recall_user_profile` with the topic 'novel writing preferences' or 'past novel projects' to see if there's relevant information in their User Profile."
 
-The agent should consider using this tool when:
+*Agent calls `recall_user_profile` with `{"topic": "user's novel writing preferences"}`.*
 
-- The user's query explicitly or implicitly refers to their personal preferences, habits, or previously stated information.
-- Personalization of the response would be beneficial.
-- Continuity from previous interactions regarding user-specific details is required.
-- The user asks "What do you know about me regarding X?" or similar.
+## Configuration & Dependencies:
 
-## 8. When NOT to Use
+*   **User Profile System:** This tool relies entirely on the User Profile system being active and populated.
+    *   Enabling/Disabling: Controlled by `USER_PROFILE_ENABLED` in the `.env` file.
+    *   Vector Store: Populated by the `UserKnowledgeExtractor` (see `src/userKnowledgeExtractor.ts`) and stored at `vector_data/user_profile_store/`.
+    *   Initialization: `initUserProfileStore` in `src/memoryVector.ts`.
+*   **LLM for Extraction:** The User Profile is populated by an LLM. Its prompt can be configured via `USER_PROFILE_EXTRACTOR_LLM_PROMPT` in `.env`.
 
-- For general knowledge or facts not specific to the user (use `web_search` or direct answer).
-- For information contained within the current project's documents (use `queryKnowledgeBase` instead).
-- If the User Profile system is known to be disabled (though the tool will handle this gracefully by returning an appropriate message). 
+## Notes & Best Practices for the Agent:
+
+*   **Specificity of Query:** The more specific the `topic` provided by the agent, the more relevant the results are likely to be. Broad queries like "user information" might be less helpful than "user's preferred communication style."
+*   **Distinction from Project Knowledge:** The agent should understand that this tool is for *user-specific* information, distinct from the project-specific knowledge retrieved by tools like `queryKnowledgeBase`.
+*   **Handling "No Information Found":** If the tool returns that no information was found, the agent should proceed gracefully, perhaps by asking the user the relevant question directly if appropriate.
+*   **Respecting Privacy:** While the tool retrieves learned information, the agent should use this information thoughtfully and avoid making assumptions or over-personalizing in a way that feels intrusive. 

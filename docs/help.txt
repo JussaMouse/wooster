@@ -1,0 +1,13 @@
+Wooster REPL Commands:
+
+- create project <name_or_path>: Creates a new project or loads an existing one if the name matches an existing project directory.
+- load project <name>: Loads an existing project.
+- quit project / exit project: Quits the current project and reverts to the "home" project.
+- list files: Lists all files in the currently loaded project's vector store.
+- list plugins: Lists all registered plugins.
+- list scheduler tasks: Lists all tasks currently scheduled in Wooster's internal scheduler.
+- help: Displays this help message.
+- exit / quit: Exits the Wooster application.
+
+You can also type any other query directly to interact with Wooster's AI assistant.
+Wooster can also perform actions like creating files in your project when asked. 

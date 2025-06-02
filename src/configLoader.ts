@@ -1,26 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import { LogLevel } from './logger'; // Assuming LogLevel is exported from logger.ts
-import { getPluginFileNames } from './pluginManager';
+import { getPluginDirectoryNames as getPluginFileNames } from './pluginManager';
 
-// Define an interface for the overall application configuration
-export interface AppConfig {
-  openai: OpenAIConfig;
-  logging: LoggingConfig;
-  ucm: UcmConfig;
-  plugins: Record<string, boolean>; // Maps plugin filename (w/o .ts) to enabled status
-  tavilyApiKey?: string; 
-  tools: ToolsConfig; // Group tool-specific configs
-}
-
-export interface ToolsConfig {
-  email: EmailToolConfig;
-  googleCalendar: GoogleCalendarToolConfig;
-  webSearch: WebSearchToolConfig;
-  weather: WeatherToolConfig;
-}
-
-// Define interfaces for each configuration section
+// Define interfaces for OpenAI and Logging configurations
 export interface OpenAIConfig {
   apiKey: string;
   modelName: string;
@@ -37,45 +20,65 @@ export interface LoggingConfig {
   consoleQuietMode: boolean;
 }
 
-export interface EmailToolConfig { // Renamed from EmailConfig for clarity
-  enabled: boolean;
-  senderEmailAddress: string | null; 
-  userPersonalEmailAddress: string | null;
-  emailAppPassword: string | null; 
+// Define an interface for the overall application configuration
+export interface AppConfig {
+  env: string;
+  appName: string;
+  version: string;
+  logging: LoggingConfig;
+  openai: OpenAIConfig;
+  tavily: TavilyConfig;
+  google?: GoogleConfig;
+  userProfile: UserProfileConfig;
+  plugins: Record<string, boolean>;
+  projects: ProjectConfig;
+  gmail?: GmailConfig;
+  weather?: WeatherConfig;
+  dailyReview?: DailyReviewConfig;
 }
 
-export interface UcmConfig {
+export interface GmailConfig {
+  senderEmailAddress: string | null;
+  userPersonalEmailAddress: string | null;
+  emailAppPassword: string | null;
+}
+
+export interface UserProfileConfig {
   enabled: boolean;
   extractorLlmPrompt: string | null;
 }
 
-export interface GoogleCalendarToolConfig { // Renamed from GoogleCalendarConfig
-  enabled: boolean;
-  clientId: string | null; // Moved from separate GoogleConfig
-  clientSecret: string | null; // Moved from separate GoogleConfig
-  refreshToken: string | null;
-  calendarId: string;
+export interface GoogleConfig {
+  calendar?: {
+    clientId: string | null;
+    clientSecret: string | null;
+    refreshToken: string | null;
+    calendarId: string;
+  };
 }
 
-export interface WebSearchToolConfig {
-  enabled: boolean;
-}
-
-export interface WeatherToolConfig {
+export interface WeatherConfig {
   city: string | null;
   openWeatherMapApiKey: string | null;
 }
 
+export interface DailyReviewConfig {
+  scheduleCronExpression: string;
+}
+
+export interface TavilyConfig {
+  apiKey: string | null;
+}
+
+export interface ProjectConfig {
+  // Add appropriate properties for project configuration
+}
+
 // Define the default configuration
 export const DEFAULT_CONFIG: AppConfig = {
-  openai: {
-    apiKey: "YOUR_OPENAI_API_KEY_HERE", // Placeholder, must be from env
-    modelName: "gpt-4o-mini",
-    embeddingModelName: "text-embedding-3-small",
-    temperature: 0.7,
-    maxTokens: 2048,
-  },
-  tavilyApiKey: undefined,
+  env: "development",
+  appName: "Wooster",
+  version: "1.0.0",
   logging: {
     consoleLogLevel: LogLevel.INFO,
     fileLogLevel: LogLevel.INFO,
@@ -83,33 +86,42 @@ export const DEFAULT_CONFIG: AppConfig = {
     logAgentLLMInteractions: false,
     consoleQuietMode: true,
   },
-  ucm: {
-    enabled: false,
-    extractorLlmPrompt: null,
+  openai: {
+    apiKey: "YOUR_OPENAI_API_KEY_HERE", // Placeholder, must be from env
+    modelName: "gpt-4o-mini",
+    embeddingModelName: "text-embedding-3-small",
+    temperature: 0.7,
+    maxTokens: 2048,
   },
-  tools: {
-    email: {
-      enabled: false,
-      senderEmailAddress: null,
-      userPersonalEmailAddress: null,
-      emailAppPassword: null,
-    },
-    googleCalendar: {
-      enabled: false,
+  tavily: {
+    apiKey: null,
+  },
+  google: {
+    calendar: {
       clientId: null,
       clientSecret: null,
       refreshToken: null,
       calendarId: 'primary',
-    },
-    webSearch: {
-      enabled: true, // Will be overridden if TAVILY_API_KEY is missing
-    },
-    weather: {
-      city: null,
-      openWeatherMapApiKey: null,
     }
   },
-  plugins: {}, 
+  userProfile: {
+    enabled: false,
+    extractorLlmPrompt: null,
+  },
+  plugins: {},
+  projects: {},
+  gmail: {
+    senderEmailAddress: null,
+    userPersonalEmailAddress: null,
+    emailAppPassword: null,
+  },
+  weather: {
+    city: null,
+    openWeatherMapApiKey: null,
+  },
+  dailyReview: {
+    scheduleCronExpression: "30 6 * * *",
+  }
 };
 
 // Holder for the current configuration
@@ -166,69 +178,57 @@ export function loadConfig(): AppConfig {
     maxTokens: parseNumber(getEnvVar('OPENAI_MAX_TOKENS'), DEFAULT_CONFIG.openai.maxTokens),
   };
 
+  const requestedConsoleLogLevel = parseLogLevel(getEnvVar('TOOLS_LOGGING_CONSOLE_LOG_LEVEL'), DEFAULT_CONFIG.logging.consoleLogLevel);
+  const defaultQuietMode = DEFAULT_CONFIG.logging.consoleQuietMode;
+  // If debug is explicitly requested for console, quiet mode should be off.
+  // Otherwise, respect default or a future specific env var.
+  const quietMode = requestedConsoleLogLevel === LogLevel.DEBUG ? false : parseBoolean(getEnvVar('TOOLS_LOGGING_CONSOLE_QUIET_MODE'), defaultQuietMode);
+
   currentConfig.logging = {
-    consoleLogLevel: parseLogLevel(getEnvVar('TOOLS_LOGGING_CONSOLE_LOG_LEVEL'), DEFAULT_CONFIG.logging.consoleLogLevel),
+    consoleLogLevel: requestedConsoleLogLevel,
     fileLogLevel: parseLogLevel(getEnvVar('TOOLS_LOGGING_FILE_LOG_LEVEL'), DEFAULT_CONFIG.logging.fileLogLevel),
     logFile: parseString(getEnvVar('TOOLS_LOGGING_LOG_FILE'), DEFAULT_CONFIG.logging.logFile),
     logAgentLLMInteractions: parseBoolean(getEnvVar('TOOLS_LOGGING_LOG_AGENT_LLM_INTERACTIONS'), DEFAULT_CONFIG.logging.logAgentLLMInteractions),
-    consoleQuietMode: parseBoolean(getEnvVar('TOOLS_LOGGING_CONSOLE_QUIET_MODE'), DEFAULT_CONFIG.logging.consoleQuietMode),
+    consoleQuietMode: quietMode,
   };
 
-  currentConfig.ucm = {
-    enabled: parseBoolean(getEnvVar('TOOLS_UCM_ENABLED'), DEFAULT_CONFIG.ucm.enabled),
-    extractorLlmPrompt: parseNullableString(getEnvVar('TOOLS_UCM_EXTRACTOR_LLM_PROMPT'), DEFAULT_CONFIG.ucm.extractorLlmPrompt),
+  currentConfig.userProfile = {
+    enabled: parseBoolean(getEnvVar('USER_PROFILE_ENABLED'), DEFAULT_CONFIG.userProfile.enabled),
+    extractorLlmPrompt: parseNullableString(getEnvVar('USER_PROFILE_EXTRACTOR_LLM_PROMPT'), DEFAULT_CONFIG.userProfile.extractorLlmPrompt),
   };
   
-  currentConfig.tools = {
-    email: {
-      enabled: parseBoolean(getEnvVar('TOOLS_EMAIL_ENABLED'), DEFAULT_CONFIG.tools.email.enabled),
-      senderEmailAddress: parseNullableString(getEnvVar('TOOLS_EMAIL_SENDER_EMAIL_ADDRESS'), DEFAULT_CONFIG.tools.email.senderEmailAddress),
-      userPersonalEmailAddress: parseNullableString(getEnvVar('TOOLS_EMAIL_USER_PERSONAL_EMAIL_ADDRESS'), DEFAULT_CONFIG.tools.email.userPersonalEmailAddress),
-      emailAppPassword: parseNullableString(getEnvVar('TOOLS_EMAIL_EMAIL_APP_PASSWORD'), DEFAULT_CONFIG.tools.email.emailAppPassword),
-    },
-    googleCalendar: {
-      enabled: parseBoolean(getEnvVar('TOOLS_GOOGLE_CALENDAR_ENABLED'), DEFAULT_CONFIG.tools.googleCalendar.enabled),
-      clientId: parseNullableString(getEnvVar('GOOGLE_CLIENT_ID'), DEFAULT_CONFIG.tools.googleCalendar.clientId),
-      clientSecret: parseNullableString(getEnvVar('GOOGLE_CLIENT_SECRET'), DEFAULT_CONFIG.tools.googleCalendar.clientSecret),
-      refreshToken: parseNullableString(getEnvVar('GOOGLE_CALENDAR_REFRESH_TOKEN'), DEFAULT_CONFIG.tools.googleCalendar.refreshToken),
-      calendarId: parseString(getEnvVar('GOOGLE_CALENDAR_ID'), DEFAULT_CONFIG.tools.googleCalendar.calendarId),
-    },
-    webSearch: {
-      enabled: parseBoolean(getEnvVar('TOOLS_WEB_SEARCH_ENABLED'), 
-        !!(getEnvVar('TAVILY_API_KEY') && getEnvVar('TAVILY_API_KEY') !== '') 
-          ? DEFAULT_CONFIG.tools.webSearch.enabled 
-          : false
-      ),
-    },
-    weather: {
-      city: parseNullableString(getEnvVar('WEATHER_CITY'), DEFAULT_CONFIG.tools.weather.city),
-      openWeatherMapApiKey: parseNullableString(getEnvVar('OPENWEATHERMAP_API_KEY'), DEFAULT_CONFIG.tools.weather.openWeatherMapApiKey),
+  currentConfig.gmail = {
+    senderEmailAddress: parseNullableString(getEnvVar('GMAIL_SENDER_EMAIL_ADDRESS'), DEFAULT_CONFIG.gmail?.senderEmailAddress || null),
+    userPersonalEmailAddress: parseNullableString(getEnvVar('GMAIL_USER_PERSONAL_EMAIL_ADDRESS'), DEFAULT_CONFIG.gmail?.userPersonalEmailAddress || null),
+    emailAppPassword: parseNullableString(getEnvVar('GMAIL_APP_PASSWORD'), DEFAULT_CONFIG.gmail?.emailAppPassword || null),
+  };
+
+  currentConfig.google = {
+    calendar: {
+      clientId: parseNullableString(getEnvVar('GOOGLE_CLIENT_ID'), DEFAULT_CONFIG.google?.calendar?.clientId || null),
+      clientSecret: parseNullableString(getEnvVar('GOOGLE_CLIENT_SECRET'), DEFAULT_CONFIG.google?.calendar?.clientSecret || null),
+      refreshToken: parseNullableString(getEnvVar('GOOGLE_CALENDAR_REFRESH_TOKEN'), DEFAULT_CONFIG.google?.calendar?.refreshToken || null),
+      calendarId: parseString(getEnvVar('GOOGLE_CALENDAR_ID'), DEFAULT_CONFIG.google?.calendar?.calendarId || 'primary'),
     }
   };
 
-  // TEMPORARY DEBUG LOGGING START - FOR WEATHER API KEY
-  const rawEnvApiKey = getEnvVar('OPENWEATHERMAP_API_KEY');
-  console.log(`[DEBUG ConfigLoader] Raw OPENWEATHERMAP_API_KEY from env: '${rawEnvApiKey}'`);
-  console.log(`[DEBUG ConfigLoader] Loaded tools.weather.openWeatherMapApiKey: '${currentConfig.tools.weather.openWeatherMapApiKey}'`);
-  // TEMPORARY DEBUG LOGGING END
+  currentConfig.weather = {
+    city: parseNullableString(getEnvVar('WEATHER_CITY'), DEFAULT_CONFIG.weather?.city || null),
+    openWeatherMapApiKey: parseNullableString(getEnvVar('OPENWEATHERMAP_API_KEY'), DEFAULT_CONFIG.weather?.openWeatherMapApiKey || null),
+  };
+  
+  currentConfig.dailyReview = {
+    scheduleCronExpression: parseString(getEnvVar('DAILY_REVIEW_SCHEDULE_CRON'), DEFAULT_CONFIG.dailyReview?.scheduleCronExpression || "30 6 * * *"),
+  };
 
-  // TEMPORARY DEBUG LOGGING START - REMOVE AFTER CONFIRMATION
-  // console.log('[DEBUG ConfigLoader] Email Config Loaded:');
-  // console.log(`  Enabled: ${currentConfig.tools.email.enabled}`);
-  // console.log(`  Sender Address: '${currentConfig.tools.email.senderEmailAddress}'`); // Log with quotes to see if it's empty or null
-  // console.log(`  App Password: '${currentConfig.tools.email.emailAppPassword}'`); // Log with quotes
-  // TEMPORARY DEBUG LOGGING END
-
-  currentConfig.tavilyApiKey = getEnvVar('TAVILY_API_KEY') || undefined;
-  if (currentConfig.tools.webSearch.enabled && !currentConfig.tavilyApiKey) {
-    // console.warn("Web search is enabled but TAVILY_API_KEY is not set. Disabling web search tool.");
-    currentConfig.tools.webSearch.enabled = false;
-  }
+  currentConfig.tavily = {
+    apiKey: getEnvVar('TAVILY_API_KEY') || DEFAULT_CONFIG.tavily?.apiKey || null,
+  };
 
   currentConfig.plugins = {};
   try {
     const pluginFiles = getPluginFileNames(); 
-    pluginFiles.forEach(fileName => {
+    pluginFiles.forEach((fileName: string) => {
       const pluginName = path.basename(fileName, '.ts'); 
       const envVarName = 'PLUGIN_' + pluginName.toUpperCase() + '_ENABLED'; 
       currentConfig.plugins[pluginName] = parseBoolean(getEnvVar(envVarName), true); // Default to true if env var is not set
@@ -245,4 +245,15 @@ export function getConfig(): AppConfig {
 }
 
 // Initial load of the configuration when this module is imported.
-loadConfig(); 
+loadConfig();
+
+export function getPluginSpecificConfig<T>(pluginName: string): T | undefined {
+  // This is a simplistic way; a plugin might want a sub-object like config.plugins.myPlugin.settings
+  // For now, assuming plugin-specific configs are top-level like currentConfig.weather, currentConfig.gmail
+  // This function would need to be smarter or plugins would directly access config.weather etc.
+  // For this example, let's assume it could return a part of AppConfig if the key matches.
+  if (currentConfig.hasOwnProperty(pluginName)) {
+    return (currentConfig as any)[pluginName] as T;
+  }
+  return undefined;
+} 
