@@ -15,7 +15,7 @@ const getDbSync = (): Database.Database => {
         fs.mkdirSync(DB_DIR, { recursive: true });
         log(LogLevel.INFO, '[PersonalHealthDB] Database directory created.', { path: DB_DIR });
     }
-    const newDb = new Database(DB_FILE_PATH, { verbose: console.log });
+    const newDb = new Database(DB_FILE_PATH);
     log(LogLevel.INFO, '[PersonalHealthDB] Connected to SQLite database (better-sqlite3).', { path: DB_FILE_PATH });
     db = newDb;
     return db;

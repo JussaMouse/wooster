@@ -79,26 +79,19 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
       }
     }
     
-    if (!this.userConfig) { // Should ideally not be reached if getDefaultUserConfig is robust
+    if (!this.userConfig) { 
         this.logMsg(LogLevel.ERROR, 'User config is null after load/default. Using emergency default.');
         this.userConfig = this.getDefaultUserConfig();
-        isNewConfig = true; // Treat as new if it was unexpectedly null
+        isNewConfig = true;
     }
 
     let configModified = false;
 
     // 1. Auto-populate delivery channels (for both new and existing configs if channel missing)
-    if (this.coreServices?.getService("EmailService")) {
-      if (!this.userConfig.deliveryChannels.email) {
-        this.logMsg(LogLevel.INFO, 'EmailService detected. Adding default email channel to Daily Review config.');
-        this.userConfig.deliveryChannels.email = {
-          enabled: false, 
-          recipient: this.appConfig.gmail?.userPersonalEmailAddress || undefined,
-        };
-        configModified = true;
-      }
-    }
-    // Future: Add Discord, Telegram service checks here similarly
+    // REMOVED: Block that checked for EmailService here
+    // if (this.coreServices?.getService("EmailService")) { ... }
+    // Users will need to ensure their dailyReview.json is configured for email if they want it,
+    // or this auto-config can be revisited with a post-initialization hook later.
 
     // 2. Auto-enable content modules IF it's a new config AND services are present
     if (isNewConfig) {
@@ -299,53 +292,46 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
   }
 
   private async sendDailyReviewEmail(): Promise<void> {
-    if (!this.coreServices || !this.userConfig) {
-      this.logMsg(LogLevel.ERROR, "Cannot send daily review: core services or user config not available.");
+    this.logMsg(LogLevel.INFO, 'Attempting to send daily review email...');
+    if (!this.userConfig || !this.userConfig.deliveryChannels.email?.enabled || !this.userConfig.deliveryChannels.email.recipient) {
+      this.logMsg(LogLevel.INFO, 'Email delivery for daily review is not enabled or recipient not set. Skipping.');
       return;
     }
-    if (!this.userConfig.isDailyReviewEnabled || !this.userConfig.deliveryChannels.email.enabled) {
-      this.logMsg(LogLevel.INFO, "Daily review email not sent: disabled by user configuration.");
-    return;
-  }
-  
+
+    if (!this.coreServices) {
+        this.logMsg(LogLevel.ERROR, "Cannot send daily review email: CoreServices not available.");
+        return;
+    }
+
     const emailService = this.coreServices.getService("EmailService") as EmailService | undefined;
-  if (!emailService) {
-      this.logMsg(LogLevel.ERROR, "EmailService not found. Cannot send daily review email.");
-    return;
-  }
+    if (!emailService) {
+      this.logMsg(LogLevel.ERROR, "EmailService not found when trying to send daily review. Email will not be sent.");
+      return;
+    }
 
-    const recipientEmail = this.userConfig.deliveryChannels.email.recipient || this.appConfig.gmail?.userPersonalEmailAddress;
-  if (!recipientEmail) {
-      this.logMsg(LogLevel.WARN, "User personal email address (recipient) not set. Cannot send daily review.");
-    return;
-  }
+    const reviewData = await this.getDailyReviewContentInternal();
+    const htmlContent = this.formatReviewDataToHtml(reviewData);
+    const recipient = this.userConfig.deliveryChannels.email.recipient;
+    const subject = `Your Wooster Daily Review - ${new Date().toLocaleDateString()}`;
 
-    this.logMsg(LogLevel.INFO, "Attempting to generate and send daily review email...");
-  try {
-      const reviewData = await this.getDailyReviewContentInternal();
-      const emailHtmlBody = this.formatReviewDataToHtml(reviewData);
-    const today = new Date().toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' });
-    const subject = `Wooster's Daily Review - ${today}`;
-
-      const emailArgs: GmailPluginEmailArgs = {
-      to: recipientEmail,
+    const emailArgs: GmailPluginEmailArgs = {
+      to: recipient,
       subject: subject,
-      body: emailHtmlBody,
+      body: htmlContent,
       isHtml: true,
     };
 
-      this.logMsg(LogLevel.DEBUG, "Sending daily review email via EmailService...", { to: recipientEmail, subject });
-    const sendResult = await emailService.send(emailArgs);
-    
-    if (sendResult.success) {
-        this.logMsg(LogLevel.INFO, `Daily review email sent successfully to ${recipientEmail}. Message ID: ${sendResult.messageId}`);
-    } else {
-        this.logMsg(LogLevel.ERROR, `Failed to send daily review email to ${recipientEmail}.`, { error: sendResult.message, details: sendResult.error });
+    try {
+      const result = await emailService.send(emailArgs);
+      if (result.success) {
+        this.logMsg(LogLevel.INFO, 'Daily review email sent successfully.', { recipient, messageId: result.messageId });
+      } else {
+        this.logMsg(LogLevel.ERROR, 'Failed to send daily review email.', { recipient, error: result.message });
+      }
+    } catch (error: any) {
+      this.logMsg(LogLevel.ERROR, 'Exception while sending daily review email.', { recipient, error: error.message });
     }
-  } catch (error: any) {
-      this.logMsg(LogLevel.ERROR, "Unexpected error generating or sending daily review email.", { error: error.message, stack: error.stack });
   }
-}
 
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
     this.appConfig = config;

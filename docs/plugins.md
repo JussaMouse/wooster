@@ -70,8 +70,11 @@ If your plugin needs to give the AI agent a new skill it can directly invoke:
 Plugins can offer reusable services to other parts of the application:
 -   **Implement within the plugin**: Define your service class or functions.
 -   **Register in `initialize()`**: Use `coreServices.registerService("YourServiceName", serviceInstance)` during plugin initialization.
--   **Consumption**: Other plugins (or core Wooster modules) can access your service via `coreServices.getService("YourServiceName")` typically within their own `initialize()` method or at runtime if `CoreServices` is available.
--   **Example**: The Gmail plugin registers an `EmailService`, which the Daily Review plugin then uses to send emails.
+-   **Consumption**: Other plugins (or core Wooster modules) can access your service via `coreServices.getService("YourServiceName")`.
+    -   While services *can* be retrieved during a consuming plugin's `initialize()` method, this can lead to issues if the providing plugin hasn't initialized yet due to load order.
+    -   **A more robust pattern is to acquire the service "just-in-time"** – that is, within the specific function that needs to use the service, right before it's called. This ensures the providing plugin has had a chance to register its service.
+    -   For example, the `DailyReviewPlugin` retrieves the `EmailService` (provided by `GmailPlugin`) directly within its `sendDailyReviewEmail` method rather than caching it during `initialize`, making it resilient to the load order of `GmailPlugin`.
+-   **Example**: The `GmailPlugin` registers an `EmailService`, which the `DailyReviewPlugin` then uses to send emails.
 
 ### c. Providing Scheduled Tasks
 
@@ -242,7 +245,14 @@ Wooster will discover your new plugin. If `config.plugins["myWeather"]` is not e
 
 ## 6. Advanced Considerations
 
--   **Inter-Plugin Dependencies**: If Plugin A needs a service from Plugin B, ensure Plugin B registers its service in `initialize()`, and Plugin A retrieves it using `coreServices.getService()` in its own `initialize()`. The loading order of plugins is based on directory reading order, which is usually alphabetical but not strictly guaranteed for complex dependency chains. For robust dependencies, check for service availability.
--   **Shared Types**: Place shared type definitions in `src/types/` (e.g., `src/types/plugin.ts`, `src/types/scheduler.ts`).
+-   **Inter-Plugin Dependencies & Service Acquisition Timing**:
+    -   Plugins often provide services that other plugins consume (e.g., `GmailPlugin` provides `EmailService` used by `DailyReviewPlugin`).
+    -   The `PluginManager` loads plugins based on an order derived from the filesystem (e.g., directory names), which is not guaranteed to satisfy all potential dependency orderings if plugins attempt to acquire services from each other strictly within their `initialize()` methods.
+    -   **Best Practice**: To handle this robustly, a consuming plugin should acquire a service "just-in-time" – that is, call `coreServices.getService("ServiceName")` within the specific function that *uses* the service, rather than caching the service instance during its own `initialize()` phase.
+    -   This ensures that the providing plugin has had the opportunity to initialize and register its service, regardless of the initial load order.
+    -   *Example*: `DailyReviewPlugin` retrieves `EmailService` inside its `sendDailyReviewEmail()` method, not in `initialize()`.
+    -   If a service is critical for the fundamental operation of a plugin and *must* be available at initialization, the plugin should gracefully handle the case where the service is not yet available (e.g., log a warning and disable features that depend on it), rather than failing to initialize entirely.
+
+-   **Shared Types**: Place shared type definitions (interfaces, enums, etc.) that might be used by multiple plugins or the core system in the `src/types/` directory (e.g., `src/types/plugin.ts`, `src/types/scheduler.ts`). This promotes consistency and avoids circular dependencies.
 
 This revised documentation should provide a clearer and more comprehensive guide for developing various types of plugins for Wooster.
