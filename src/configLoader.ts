@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { LogLevel } from './logger'; // Assuming LogLevel is exported from logger.ts
+import { log, LogLevel } from './logger'; // Assuming LogLevel and log are exported from logger.ts
 import { getPluginDirectoryNames as getPluginFileNames } from './pluginManager';
 
 // Define interfaces for OpenAI and Logging configurations
@@ -35,6 +35,8 @@ export interface AppConfig {
   gmail?: GmailConfig;
   weather?: WeatherConfig;
   dailyReview?: DailyReviewConfig;
+  taskCaptureApi?: TaskCaptureApiConfig;
+  apiPlugin?: ApiPluginConfig;
 }
 
 export interface GmailConfig {
@@ -60,10 +62,27 @@ export interface GoogleConfig {
 export interface WeatherConfig {
   city: string | null;
   openWeatherMapApiKey: string | null;
+  units?: "C" | "F";
 }
 
 export interface DailyReviewConfig {
   scheduleCronExpression: string;
+}
+
+export interface TaskCaptureApiConfig {
+  enabled: boolean;
+  port: number;
+  apiKey: string | null;
+  ipWhitelistEnabled: boolean;
+  allowedIps: string[];
+}
+
+export interface ApiPluginConfig {
+  enabled: boolean;
+  port: number;
+  apiKey: string | null;
+  globalIpWhitelistEnabled: boolean;
+  globalAllowedIps: string[];
 }
 
 export interface TavilyConfig {
@@ -71,7 +90,8 @@ export interface TavilyConfig {
 }
 
 export interface ProjectConfig {
-  // Add appropriate properties for project configuration
+  // Add appropriate properties for project configuration if needed
+  // For now, keeping it simple as it's not the focus
 }
 
 // Define the default configuration
@@ -109,7 +129,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     extractorLlmPrompt: null,
   },
   plugins: {},
-  projects: {},
+  projects: {}, // Kept simple
   gmail: {
     senderEmailAddress: null,
     userPersonalEmailAddress: null,
@@ -118,9 +138,24 @@ export const DEFAULT_CONFIG: AppConfig = {
   weather: {
     city: null,
     openWeatherMapApiKey: null,
+    units: "F",
   },
   dailyReview: {
     scheduleCronExpression: "30 6 * * *",
+  },
+  taskCaptureApi: {
+    enabled: false,
+    port: 3002,
+    apiKey: null,
+    ipWhitelistEnabled: false,
+    allowedIps: [],
+  },
+  apiPlugin: {
+    enabled: false,
+    port: 3000,
+    apiKey: null,
+    globalIpWhitelistEnabled: false,
+    globalAllowedIps: [],
   }
 };
 
@@ -166,6 +201,17 @@ function parseNullableString(envValue: string | undefined, defaultValue: string 
     return null;
   }
   return envValue;
+}
+
+// Function to parse units, defaulting to F for Fahrenheit
+function parseUnits(envValue: string | undefined, defaultValue: "C" | "F"): "C" | "F" {
+  if (envValue === undefined || envValue === '') return defaultValue;
+  const upperValue = envValue.toUpperCase();
+  if (upperValue === "C" || upperValue === "F") {
+    return upperValue as "C" | "F";
+  }
+  // console.warn(`Invalid WEATHER_UNITS value: "${envValue}". Defaulting to "${defaultValue}".`); // Optional warning
+  return defaultValue;
 }
 
 // Function to load configuration from environment variables
@@ -215,10 +261,27 @@ export function loadConfig(): AppConfig {
   currentConfig.weather = {
     city: parseNullableString(getEnvVar('WEATHER_CITY'), DEFAULT_CONFIG.weather?.city || null),
     openWeatherMapApiKey: parseNullableString(getEnvVar('OPENWEATHERMAP_API_KEY'), DEFAULT_CONFIG.weather?.openWeatherMapApiKey || null),
+    units: parseUnits(getEnvVar('WEATHER_UNITS'), DEFAULT_CONFIG.weather?.units || "F"),
   };
   
   currentConfig.dailyReview = {
     scheduleCronExpression: parseString(getEnvVar('DAILY_REVIEW_SCHEDULE_CRON'), DEFAULT_CONFIG.dailyReview?.scheduleCronExpression || "30 6 * * *"),
+  };
+
+  currentConfig.taskCaptureApi = {
+    enabled: parseBoolean(getEnvVar('PLUGIN_TASKCAPTURE_API_ENABLED'), DEFAULT_CONFIG.taskCaptureApi?.enabled || false),
+    port: parseNumber(getEnvVar('PLUGIN_TASKCAPTURE_API_PORT'), DEFAULT_CONFIG.taskCaptureApi?.port || 3002),
+    apiKey: parseNullableString(getEnvVar('PLUGIN_TASKCAPTURE_API_KEY'), DEFAULT_CONFIG.taskCaptureApi?.apiKey || null),
+    ipWhitelistEnabled: parseBoolean(getEnvVar('PLUGIN_TASKCAPTURE_API_WHITELIST_ENABLED'), DEFAULT_CONFIG.taskCaptureApi?.ipWhitelistEnabled || false),
+    allowedIps: (getEnvVar('PLUGIN_TASKCAPTURE_API_ALLOWED_IPS')?.split(',').map(ip => ip.trim()).filter(ip => ip) || DEFAULT_CONFIG.taskCaptureApi?.allowedIps || []),
+  };
+
+  currentConfig.apiPlugin = {
+    enabled: parseBoolean(getEnvVar('PLUGIN_API_ENABLED'), DEFAULT_CONFIG.apiPlugin?.enabled || false),
+    port: parseNumber(getEnvVar('PLUGIN_API_PORT'), DEFAULT_CONFIG.apiPlugin?.port || 3000),
+    apiKey: parseNullableString(getEnvVar('PLUGIN_API_KEY'), DEFAULT_CONFIG.apiPlugin?.apiKey || null),
+    globalIpWhitelistEnabled: parseBoolean(getEnvVar('PLUGIN_API_GLOBAL_IP_WHITELIST_ENABLED'), DEFAULT_CONFIG.apiPlugin?.globalIpWhitelistEnabled || false),
+    globalAllowedIps: (getEnvVar('PLUGIN_API_GLOBAL_ALLOWED_IPS')?.split(',').map(ip => ip.trim()).filter(ip => ip) || DEFAULT_CONFIG.apiPlugin?.globalAllowedIps || []),
   };
 
   currentConfig.tavily = {
@@ -228,13 +291,16 @@ export function loadConfig(): AppConfig {
   currentConfig.plugins = {};
   try {
     const pluginFiles = getPluginFileNames(); 
-    pluginFiles.forEach((fileName: string) => {
-      const pluginName = path.basename(fileName, '.ts'); 
+    pluginFiles.forEach((fileName: string) => { // fileName is a directory name e.g. "timeManagement"
+      const pluginName = fileName; // No need for path.basename if getPluginFileNames returns dir names
       const envVarName = 'PLUGIN_' + pluginName.toUpperCase() + '_ENABLED'; 
-      currentConfig.plugins[pluginName] = parseBoolean(getEnvVar(envVarName), true); // Default to true if env var is not set
+      // Default to false if the environment variable is not set or if not in DEFAULT_CONFIG.plugins
+      const defaultEnabledState = (DEFAULT_CONFIG.plugins && DEFAULT_CONFIG.plugins[pluginName]) || false;
+      currentConfig.plugins[pluginName] = parseBoolean(getEnvVar(envVarName), defaultEnabledState);
     });
   } catch (error) {
     // console.error('Error loading plugin configurations:', error);
+    log(LogLevel.ERROR, 'Error processing plugin configurations in configLoader', { error });
   }
   return currentConfig;
 }

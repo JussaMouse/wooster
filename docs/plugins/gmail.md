@@ -58,4 +58,4 @@ The actual email sending capability provided by this plugin is further controlle
 ## 5. Dependencies
 
 - Relies on the core email sending logic in `src/tools/email.ts` (which uses `nodemailer`).
-- Depends on `AppConfig` (from `src/configLoader.ts`) for its configuration settings.
+- Depends on `AppConfig` (from `src/configLoader.ts`) for its configuration settings. 

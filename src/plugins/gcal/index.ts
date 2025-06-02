@@ -3,34 +3,22 @@ import { google, calendar_v3 } from 'googleapis';
 import { AppConfig } from '../../configLoader';
 import { WoosterPlugin, CoreServices } from '../../types/plugin';
 import { LogLevel } from '../../logger';
+import {
+  CreateEventOptions, 
+  ListEventsOptions,
+  GCalEventData,
+  CreateCalendarEventService,
+  ListCalendarEventsService
+} from './types';
 
-export type GetCalendarEventsType = (options?: ListEventsOptions) => Promise<string | calendar_v3.Schema$Event[]>; // Adjusted for actual return type
-export type CreateCalendarEventType = (options: CreateEventOptions) => Promise<string | calendar_v3.Schema$Event>;
+// Types for service functions (matching those in types.ts but defined here for clarity of what is being provided)
+// export type GetCalendarEventsType = (options?: ListEventsOptions) => Promise<string | GCalEventData[]>; // Original, less precise for summary output
+// export type CreateCalendarEventType = (options: CreateEventOptions) => Promise<string | GCalEventData>;
 
 let core: CoreServices | null = null;
 let oauth2Client: any; // Consider a more specific type from googleapis
 let calendarApi: calendar_v3.Calendar | null = null;
 let defaultCalendarId: string = 'primary';
-
-// Types from googleCalendarClient.ts (can be moved to a types.ts file within the plugin)
-export interface CreateEventOptions {
-  summary: string;
-  description?: string;
-  startDateTime: string; 
-  endDateTime: string;   
-  timeZone?: string;    
-  attendees?: string[]; 
-  location?: string;
-}
-
-export interface ListEventsOptions {
-  timeMin?: string; 
-  timeMax?: string; 
-  maxResults?: number;
-  orderBy?: 'startTime' | 'updated';
-  singleEvents?: boolean; 
-  q?: string; 
-}
 
 async function initializeInternalClient(config: AppConfig): Promise<boolean> {
   const calendarConfig = config.google?.calendar;
@@ -56,8 +44,9 @@ async function initializeInternalClient(config: AppConfig): Promise<boolean> {
   }
 }
 
-async function listEventsInternal(options: ListEventsOptions = {}): Promise<string | calendar_v3.Schema$Event[]> {
+async function listEventsInternal(options: ListEventsOptions = {}): Promise<string | GCalEventData[]> {
   if (!calendarApi) {
+    core?.log(LogLevel.ERROR, 'GCalPlugin: Calendar client not initialized when calling listEventsInternal.');
     return 'GCalPlugin: Calendar client not initialized.';
   }
   try {
@@ -80,8 +69,9 @@ async function listEventsInternal(options: ListEventsOptions = {}): Promise<stri
   }
 }
 
-async function createEventInternal(options: CreateEventOptions): Promise<string | calendar_v3.Schema$Event> {
+const createEventInternal: CreateCalendarEventService = async (options: CreateEventOptions): Promise<string | GCalEventData> => {
   if (!calendarApi) {
+    core?.log(LogLevel.ERROR, 'GCalPlugin: Calendar client not initialized when calling createEventInternal.');
     return 'GCalPlugin: Calendar client not initialized.';
   }
    try {
@@ -118,20 +108,23 @@ async function createEventInternal(options: CreateEventOptions): Promise<string 
 }
 
 // Service function for DailyReview and other plugins
-const getCalendarEventsFunction: GetCalendarEventsType = async (options?: ListEventsOptions) => {
+const listCalendarEventsServiceFunction: ListCalendarEventsService = async (options?: ListEventsOptions) => {
     const events = await listEventsInternal(options || {});
     if (typeof events === 'string') return events; // Error string
-    if (events.length === 0) return "No upcoming events found.";
-    return events.map(event => {
-        const start = event.start?.dateTime || event.start?.date;
-        return `- ${start ? new Date(start).toLocaleString() : 'Date N/A'}: ${event.summary}`;
-    }).join('\n');
+    if (events.length === 0) return "No upcoming events found."; // This is a string summary, not string[]
+    // Return full event data for more versatile service consumers
+    // If a summarized string list is needed, the consumer can do that.
+    // For now, let's keep the DailyReview example of summarizing, but the service type should reflect it can be GCalEventData[]
+    // The ListCalendarEventsService type was: Promise<string | GCalEventData[] | string[]>
+    // The current implementation matches: Promise<string | GCalEventData[]>
+    // The original tool stringified it, DailyReview summarized. Let's make the service return full data.
+    return events; 
 };
 
 // Agent Tools
 const getCalendarEventsTool = new DynamicTool({
   name: "get_calendar_events",
-  description: "Provides a summary of today's (or a specified range of) calendar events. Optional input: JSON string with ListEventsOptions (timeMin, timeMax, maxResults, q, etc.).",
+  description: "Provides a summary of today's (or a specified range of) calendar events. Optional input: JSON string with ListEventsOptions (timeMin, timeMax, maxResults, q, etc.). Returns raw event data as JSON string.",
   func: async (jsonInput?: string) => {
     core?.log(LogLevel.DEBUG, "GCalPlugin: get_calendar_events tool called.", { jsonInput });
     let options: ListEventsOptions = {};
@@ -147,7 +140,7 @@ const getCalendarEventsTool = new DynamicTool({
 
 const createCalendarEventTool = new DynamicTool({
     name: "create_calendar_event",
-    description: "Creates a new event in Google Calendar. Input must be a JSON string with CreateEventOptions (summary, startDateTime, endDateTime are required).",
+    description: "Creates a new event in Google Calendar. Input must be a JSON string with CreateEventOptions (summary, startDateTime, endDateTime are required). Returns created event data as JSON string.",
     func: async (jsonInput: string) => {
         core?.log(LogLevel.DEBUG, "GCalPlugin: create_calendar_event tool called.", { jsonInput });
         try {
@@ -174,9 +167,9 @@ class GCalPluginDefinition implements WoosterPlugin {
     core.log(LogLevel.INFO, `GCalPlugin (v${this.version}): Initializing...`);
     const initialized = await initializeInternalClient(config);
     if (initialized) {
-        services.registerService("getCalendarEventsFunction", getCalendarEventsFunction);
-        // services.registerService("createCalendarEventFunction", createEventInternal); // If needed by other plugins directly
-        core.log(LogLevel.INFO, 'GCalPlugin: Calendar functions registered as services.');
+        services.registerService("ListCalendarEventsService", listCalendarEventsServiceFunction);
+        services.registerService("CreateCalendarEventService", createEventInternal);
+        core.log(LogLevel.INFO, 'GCalPlugin: Calendar services (ListCalendarEventsService, CreateCalendarEventService) registered.');
     } else {
         core.log(LogLevel.WARN, 'GCalPlugin: Client not initialized. Services not registered.');
     }
