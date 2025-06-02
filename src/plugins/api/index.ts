@@ -2,7 +2,7 @@ import { WoosterPlugin, CoreServices, AppConfig } from '../../types/plugin';
 import { LogLevel } from '../../logger';
 import express, { Express, Request, Response, NextFunction } from 'express';
 import http from 'http';
-import { TaskCaptureService, Task } from '../taskCapture/types';
+import { CaptureService, CapturedItem } from '../capture/types';
 
 let core: CoreServices;
 let apiConfig: AppConfig['apiPlugin'];
@@ -97,44 +97,44 @@ class ApiPluginDefinition implements WoosterPlugin {
     });
 
     // Define the handler function INSIDE initialize, where core and apiConfig are in scope
-    const handleTaskCapture = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const handleCaptureRequest = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
       try {
         const { description } = req.body;
         if (typeof description !== 'string' || description.trim() === '') {
-          res.status(400).json({ error: 'Task description is required and must be a non-empty string.' });
+          res.status(400).json({ error: 'Item description is required and must be a non-empty string.' });
           return;
         }
 
-        const taskCaptureService = core.getService("TaskCaptureService") as TaskCaptureService | undefined;
-        if (!taskCaptureService) {
-          core.log(LogLevel.ERROR, "ApiPlugin: TaskCaptureService not found!");
-          res.status(503).json({ error: 'Task capture feature is currently unavailable.' });
+        const captureService = core.getService("CaptureService") as CaptureService | undefined;
+        if (!captureService) {
+          core.log(LogLevel.ERROR, "ApiPlugin: CaptureService not found!");
+          res.status(503).json({ error: 'Capture feature is currently unavailable.' });
           return;
         }
 
-        const newTask = taskCaptureService.captureTask(description);
+        const newItem = captureService.captureItem(description);
 
-        if (newTask) {
+        if (newItem) {
           res.status(201).json({
-            message: "Task captured successfully.",
-            taskId: newTask.id,
-            description: newTask.description
+            message: "Item captured successfully.",
+            itemId: newItem.id,
+            description: newItem.description
           });
           return;
         } else {
-          core.log(LogLevel.WARN, `ApiPlugin: taskCaptureService.captureTask returned null for description: "${description}"`);
-          res.status(400).json({ error: 'Failed to capture task. Invalid description or system error.' });
+          core.log(LogLevel.WARN, `ApiPlugin: captureService.captureItem returned null for description: "${description}"`);
+          res.status(400).json({ error: 'Failed to capture item. Invalid description or system error.' });
           return;
         }
       } catch (error: any) {
-        core.log(LogLevel.ERROR, `ApiPlugin: Error in POST ${API_BASE_PATH}/tasks: ${error.message}`, { error });
+        core.log(LogLevel.ERROR, `ApiPlugin: Error in POST ${API_BASE_PATH}/capture: ${error.message}`, { error });
         next(error);
       }
     };
 
     // --- Routes (to be added here) ---
     // Task Capture Endpoint
-    app.post(`${API_BASE_PATH}/tasks`, handleTaskCapture);
+    app.post(`${API_BASE_PATH}/capture`, handleCaptureRequest);
 
     // Example: app.post(`${API_BASE_PATH}/health/workouts`, handleWorkoutLog);
 
@@ -150,7 +150,7 @@ class ApiPluginDefinition implements WoosterPlugin {
     const port = apiConfig.port || 3000;
     httpServer = app.listen(port, () => {
       core.log(LogLevel.INFO, `ApiPlugin: Unified API server listening on http://localhost:${port}`);
-      core.log(LogLevel.INFO, `ApiPlugin: Task endpoint (example): POST http://localhost:${port}${API_BASE_PATH}/tasks`);
+      core.log(LogLevel.INFO, `ApiPlugin: Item endpoint (example): POST http://localhost:${port}${API_BASE_PATH}/capture`);
       core.log(LogLevel.INFO, `ApiPlugin: Health workout endpoint (example): POST http://localhost:${port}${API_BASE_PATH}/health/workouts`);
     }).on('error', (err: Error & { code?: string }) => {
       if (err.code === 'EADDRINUSE') {

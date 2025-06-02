@@ -35,7 +35,7 @@ export interface AppConfig {
   gmail?: GmailConfig;
   weather?: WeatherConfig;
   dailyReview?: DailyReviewConfig;
-  taskCaptureApi?: TaskCaptureApiConfig;
+  captureApi?: CaptureApiConfig;
   apiPlugin?: ApiPluginConfig;
 }
 
@@ -69,7 +69,7 @@ export interface DailyReviewConfig {
   scheduleCronExpression: string;
 }
 
-export interface TaskCaptureApiConfig {
+export interface CaptureApiConfig {
   enabled: boolean;
   port: number;
   apiKey: string | null;
@@ -143,7 +143,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   dailyReview: {
     scheduleCronExpression: "30 6 * * *",
   },
-  taskCaptureApi: {
+  captureApi: {
     enabled: false,
     port: 3002,
     apiKey: null,
@@ -268,12 +268,12 @@ export function loadConfig(): AppConfig {
     scheduleCronExpression: parseString(getEnvVar('DAILY_REVIEW_SCHEDULE_CRON'), DEFAULT_CONFIG.dailyReview?.scheduleCronExpression || "30 6 * * *"),
   };
 
-  currentConfig.taskCaptureApi = {
-    enabled: parseBoolean(getEnvVar('PLUGIN_TASKCAPTURE_API_ENABLED'), DEFAULT_CONFIG.taskCaptureApi?.enabled || false),
-    port: parseNumber(getEnvVar('PLUGIN_TASKCAPTURE_API_PORT'), DEFAULT_CONFIG.taskCaptureApi?.port || 3002),
-    apiKey: parseNullableString(getEnvVar('PLUGIN_TASKCAPTURE_API_KEY'), DEFAULT_CONFIG.taskCaptureApi?.apiKey || null),
-    ipWhitelistEnabled: parseBoolean(getEnvVar('PLUGIN_TASKCAPTURE_API_WHITELIST_ENABLED'), DEFAULT_CONFIG.taskCaptureApi?.ipWhitelistEnabled || false),
-    allowedIps: (getEnvVar('PLUGIN_TASKCAPTURE_API_ALLOWED_IPS')?.split(',').map(ip => ip.trim()).filter(ip => ip) || DEFAULT_CONFIG.taskCaptureApi?.allowedIps || []),
+  currentConfig.captureApi = {
+    enabled: parseBoolean(getEnvVar('PLUGIN_CAPTURE_API_ENABLED'), DEFAULT_CONFIG.captureApi?.enabled || false),
+    port: parseNumber(getEnvVar('PLUGIN_CAPTURE_API_PORT'), DEFAULT_CONFIG.captureApi?.port || 3002),
+    apiKey: parseNullableString(getEnvVar('PLUGIN_CAPTURE_API_KEY'), DEFAULT_CONFIG.captureApi?.apiKey || null),
+    ipWhitelistEnabled: parseBoolean(getEnvVar('PLUGIN_CAPTURE_API_WHITELIST_ENABLED'), DEFAULT_CONFIG.captureApi?.ipWhitelistEnabled || false),
+    allowedIps: (getEnvVar('PLUGIN_CAPTURE_API_ALLOWED_IPS')?.split(',').map(ip => ip.trim()).filter(ip => ip) || DEFAULT_CONFIG.captureApi?.allowedIps || []),
   };
 
   currentConfig.apiPlugin = {

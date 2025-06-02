@@ -32,10 +32,10 @@ This guide explains how to use the Apple Shortcuts app on your iPhone to interac
 
 5.  **Add Action: "URL"**
     *   Search for "URL" and add it.
-    *   In the URL field, type: `http://<YOUR_MAC_LOCAL_IP>:<YOUR_API_PORT>/api/v1/tasks`
+    *   In the URL field, type: `http://<YOUR_MAC_LOCAL_IP>:<YOUR_API_PORT>/api/v1/capture`
         *   **Replace `<YOUR_MAC_LOCAL_IP>`** with the actual local IP address of your computer running Wooster (e.g., `192.168.1.100`).
         *   **Replace `<YOUR_API_PORT>`** with the port your Wooster `ApiPlugin` is using (e.g., `3000`).
-        *   *Example:* `http://192.168.1.100:3000/api/v1/tasks`
+        *   *Example:* `http://192.168.1.100:3000/api/v1/capture`
 
 6.  **Add Action: "Get Contents of URL"**
     *   Search for "Get Contents of URL" and add it.
@@ -110,9 +110,9 @@ Instead of just showing the raw JSON in the notification, you can parse it:
 *   **`{"error":"Unauthorized"}`:**
     *   Double-check your `PLUGIN_API_KEY` in your Wooster `.env` file.
     *   Ensure the `Authorization: Bearer <key>` header in your Shortcut *exactly* matches this key.
-*   **`{"error":"Task capture feature is currently unavailable."}`:**
-    *   Ensure `PLUGIN_TASKCAPTURE_ENABLED=true` in your Wooster `.env` file.
-    *   Check Wooster logs to ensure the `TaskCapturePlugin` initialized correctly and registered its service.
+*   **`{"error":"Capture feature is currently unavailable."}`:**
+    *   Ensure `PLUGIN_CAPTURE_ENABLED=true` in your Wooster `.env` file.
+    *   Check Wooster logs to ensure the `CapturePlugin` initialized correctly and registered its service.
 *   **Other Errors:** Check the Wooster terminal logs for more detailed error messages from the `ApiPlugin` or other plugins.
 
 This should give you a good starting point for interacting with Wooster from your iPhone! 
