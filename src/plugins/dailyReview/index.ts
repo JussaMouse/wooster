@@ -386,8 +386,13 @@ Configuration is managed by editing the JSON configuration file and setting rele
 
 **Primary Configuration File:** \`config/dailyReview.json\`
 
-This file is created automatically with default values when the plugin first runs or if it's missing.
-You can edit this file directly to customize your Daily Review.
+This file stores your personal settings for the Daily Review. It is not included in Git and will be created with default values if it doesn't exist.
+
+**Initial Setup:**
+To get started, or if you want to reset to a standard configuration, you can use the example file provided:
+1. Copy the example configuration: \`cp config/dailyReview.example.json config/dailyReview.json\`
+2. Customize \`config/dailyReview.json\` to your preferences.
+   The \`config/dailyReview.example.json\` file serves as a template.
 
 **Key Settings in \`config/dailyReview.json\`:**
 

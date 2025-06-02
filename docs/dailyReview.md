@@ -10,11 +10,12 @@ The Daily Review email is styled by Wooster with a touch of personality and "cut
 
 ### a. Today's Calendar Events
    - Lists events scheduled for the current day.
-   - Fetched from your primary Google Calendar.
+   - Fetched from your primary Google Calendar (requires Calendar plugin).
 
 ### b. Next Actions List
    - Highlights tasks from your active projects.
-   - Compiled from `actions.txt` files. The list prioritizes actions as follows:
+   - Compiled from `actions.txt` files (requires Next Actions service).
+   - The list prioritizes actions as follows:
      1.  **Always Included:** Actions from `projects/home/actions.txt` (if the file exists and contains actions).
      2.  **Additional Actions:** Actions from the `actions.txt` files of the **3 most recently modified project directories**.
    - Project directories are expected to be under the `projects/` folder (e.g., `projects/my_novel/`).
@@ -23,20 +24,15 @@ The Daily Review email is styled by Wooster with a touch of personality and "cut
    - Actions in the email will be clearly associated with their respective project names.
 
 ### c. Weather Forecast
-   - Provides the current weather for your configured city.
+   - Provides the current weather for your configured city (requires Weather plugin).
    - Includes:
      - Temperature (in Celsius and Fahrenheit).
      - Current weather conditions (e.g., "clear sky", "light rain").
      - The day's chance of rain percentage (derived from OpenWeatherMap's 5-day/3-hour forecast data, representing the probability of precipitation).
 
-### d. Daily Review Schedule (Optional)
-   - **Environment Variable:** `DAILY_REVIEW_SCHEDULE_CRON`
-   - **Description:** Allows you to customize the cron schedule for when the Daily Review email is sent. If not set, it defaults to 6:30 AM daily (`"30 6 * * *"`).
-   - **Example:** `DAILY_REVIEW_SCHEDULE_CRON="0 7 * * MON-FRI"` (to send at 7:00 AM on weekdays)
-
-### e. Project `actions.txt` Files
-   - **Location:** Create an `actions.txt` file in the root directory of any project for which you want to track actions (e.g., `projects/your_project_name/actions.txt`).
-   - **Format:** List one action item per line.
+### d. Latest Fitness Log
+   - Summarizes your most recent workout entry from the Personal Health plugin (requires Personal Health plugin).
+   - Includes the date and content of the workout.
 
 ## 3. Email Format & Style
 
@@ -47,49 +43,76 @@ The Daily Review email is styled by Wooster with a touch of personality and "cut
 
 To enable and correctly receive the Daily Review, ensure the following are configured:
 
-### a. Recipient Email Address
-   - **Environment Variable:** `TOOLS_EMAIL_USER_PERSONAL_EMAIL_ADDRESS` (from the Email Tool configuration)
-   - **Description:** The email address where Wooster will send your Daily Review. This is the same variable used by the Email Tool for the `SELF_EMAIL_RECIPIENT` placeholder.
-   - **Example:** `TOOLS_EMAIL_USER_PERSONAL_EMAIL_ADDRESS="your_personal_email@example.com"`
+### a. User Preferences File (`config/dailyReview.json`)
 
-### b. Email Sending Capabilities
+This file, located at `config/dailyReview.json` in your Wooster project root, stores your personal settings for the Daily Review. This includes:
+*   Which content modules are active (e.g., calendar, weather, fitnessLog).
+*   Delivery channel preferences (e.g., email recipient, enabling/disabling email).
+*   The `scheduleCron` expression for when the review is generated and sent. The default schedule if not otherwise configured is **7:30 AM daily** (`"30 7 * * *"`).
+
+*   **Initial Setup:** Upon first use, or if you wish to reset your settings, you should copy the provided example configuration:
+    ```bash
+    cp config/dailyReview.example.json config/dailyReview.json
+    ```
+    Then, edit the `config/dailyReview.json` file to customize your preferences. The `config/dailyReview.example.json` file serves as a template and is tracked by Git, while your `config/dailyReview.json` is ignored by Git to keep your personal settings local.
+*   **Automatic Creation:** If `config/dailyReview.json` does not exist when Wooster starts, the Daily Review plugin will automatically create it with default values. It may also auto-enable certain content modules (like Weather, Calendar, or Fitness Log) if their underlying services/plugins are detected, and set `hasCompletedInitialSetup` to `true`.
+*   **Key Settings:** Refer to the output of the "get_daily_review_help" agent tool for a detailed list of all configurable settings within this file and their current values.
+
+### b. Recipient Email Address (for Email Delivery)
+   - The primary way to set the recipient for email delivery is via the `recipient` field within the `email` channel settings in `config/dailyReview.json`.
+   - If this field is not set or is an empty string in `config/dailyReview.json`, the system defaults to using the value of the **`GMAIL_USER_PERSONAL_EMAIL_ADDRESS`** environment variable from your `.env` file.
+   - **Example `.env` entry:** `GMAIL_USER_PERSONAL_EMAIL_ADDRESS="your_personal_email@example.com"`
+
+### c. Email Sending Capabilities (for Email Delivery)
    - **Environment Variables:**
-     - `TOOLS_EMAIL_SENDER_EMAIL_ADDRESS` (Wooster's sending email, e.g., your Gmail address)
-     - `GMAIL_APP_PASSWORD` (If using Gmail, the app password for Wooster)
-   - **Description:** These are required for Wooster to send any emails, including the Daily Review. Refer to the main email tool configuration for details.
+     - `GMAIL_USER_EMAIL_ADDRESS` (Wooster's sending email, e.g., your Gmail address used by the Gmail Plugin)
+     - `GMAIL_APP_PASSWORD` (If using Gmail, the app password for Wooster, associated with `GMAIL_USER_EMAIL_ADDRESS`)
+   - **Description:** These are required for Wooster to send any emails, including the Daily Review. Refer to the Gmail Plugin or general email tool configuration for details.
 
-### c. Weather Tool Configuration
+### d. Weather Tool Configuration (for Weather Module)
    - **Environment Variables:**
      - `WEATHER_CITY`
      - `OPENWEATHERMAP_API_KEY`
-   - **Description:** Essential for fetching the weather forecast. Refer to the Weather Tool documentation for setup.
+   - **Description:** Essential for fetching the weather forecast if the weather module is enabled. Refer to the Weather Tool/Plugin documentation for setup.
 
-### d. Daily Review Schedule (Optional)
-   - **Environment Variable:** `DAILY_REVIEW_SCHEDULE_CRON`
-   - **Description:** Allows you to customize the cron schedule for when the Daily Review email is sent. If not set, it defaults to 6:30 AM daily (`"30 6 * * *"`).
-   - **Example:** `DAILY_REVIEW_SCHEDULE_CRON="0 7 * * MON-FRI"` (to send at 7:00 AM on weekdays)
+### e. Daily Review Schedule
+   - The schedule for when the Daily Review email is generated and sent is primarily configured via the `scheduleCron` setting within the `config/dailyReview.json` file.
+   - The default value used by the plugin when creating a new configuration is `"30 7 * * *"` (7:30 AM daily).
+   - You can customize this cron expression in `config/dailyReview.json` to change the timing.
+   - An environment variable `DAILY_REVIEW_SCHEDULE_CRON` or settings in the main `appConfig` (e.g., `appConfig.dailyReview.scheduleCronExpression`) might influence the *initial default value* that gets written into `config/dailyReview.json` if the file is being created for the first time and those `appConfig` values exist. However, once `config/dailyReview.json` exists, the `scheduleCron` value within it is the definitive source for the plugin's scheduling. Changes to this file are read by the plugin on startup or reload.
 
-### e. Project `actions.txt` Files
+### f. Project `actions.txt` Files (for Project Actions Module)
    - **Location:** Create an `actions.txt` file in the root directory of any project for which you want to track actions (e.g., `projects/your_project_name/actions.txt`).
    - **Format:** List one action item per line.
 
 ## 5. Triggering Mechanism
 
-- The Daily Review is primarily designed to be an **automated email sent once per day in the morning**.
-- It is managed by Wooster's `SchedulerService` as a `DIRECT_FUNCTION` task.
-  - **Task Key:** `system.dailyReview.sendEmail`
-  - **Default Schedule:** Typically configured to run daily at 6:30 AM (cron expression: `"30 6 * * *"`). This can be overridden by setting the `DAILY_REVIEW_SCHEDULE_CRON` environment variable. The schedule is seeded via logic in `src/index.ts`.
+- The Daily Review is primarily designed to be an **automated email sent once per day** according to the schedule in `config/dailyReview.json`.
+- It is managed by Wooster's `SchedulerService`.
+  - **Task Key:** `dailyReview.sendEmail` (as returned by the plugin's `getScheduledTaskSetups` method).
+  - **Schedule:** Defined by the `scheduleCron` setting in `config/dailyReview.json`.
   - **Execution Policy:** `RUN_ONCE_PER_PERIOD_CATCH_UP`. This policy ensures that:
-    - If Wooster is running at 6:30 AM, the review is sent.
-    - If Wooster is started *after* 6:30 AM on a given day, and the review has not yet been sent for that day, the `SchedulerService` will trigger it as part of its catch-up process.
-    - It aims to send the review exactly once per day.
-- (Future Enhancement) A REPL command (e.g., `send daily review`) may be added to trigger the Daily Review manually on demand.
+    - If Wooster is running at the scheduled time, the review is sent.
+    - If Wooster is started *after* the scheduled time on a given day, and the review has not yet been sent for that day, the `SchedulerService` will trigger it as part of its catch-up process.
+    - It aims to send the review exactly once per scheduled period.
+- (Future Enhancement) A REPL command or agent tool could be added to trigger the Daily Review manually on demand.
 
 ## 6. Dependencies
 
-This feature relies on:
-- Google Calendar integration (for calendar events).
-- The `get_weather_forecast` tool (for weather information).
-- Email sending functionality (via the email plugin/tool).
-- File system access (to find projects and read `actions.txt` files).
-- The `SchedulerService`, which handles the registration, scheduling, and execution of the Daily Review as a `DIRECT_FUNCTION` task based on its defined `task_key`, schedule expression, and execution policy. 
+This feature, depending on enabled content modules, relies on:
+- The `config/dailyReview.json` file for its core configuration.
+- **Email Delivery:**
+    - An Email Service (e.g., provided by the Gmail Plugin).
+    - Correctly configured email credentials in `.env`.
+- **Calendar Events:**
+    - A Calendar Service/Function (e.g., `getCalendarEventsFunction` provided by a Calendar Plugin).
+- **Weather Forecast:**
+    - A Weather Service/Function (e.g., `getWeatherForecastFunction` provided by a Weather Plugin).
+    - Correctly configured weather API key and city in `.env`.
+- **Next Actions List:**
+    - The `NextActionsService`.
+    - File system access to find projects and read `actions.txt` files.
+- **Latest Fitness Log:**
+    - The `PersonalHealthService` (provided by the Personal Health Plugin).
+- **Core System:**
+    - The `SchedulerService` for automated execution. 

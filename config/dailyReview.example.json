@@ -1,0 +1,19 @@
+{
+  "scheduleCron": "30 7 * * *",
+  "isDailyReviewEnabled": false,
+  "hasCompletedInitialSetup": false,
+  "deliveryChannels": {
+    "email": {
+      "enabled": false,
+      "recipient": "your_email@example.com"
+    }
+  },
+  "contentModules": {
+    "calendar": false,
+    "projectActions": true,
+    "weather": false,
+    "fitnessLog": false,
+    "inspirationalQuote": false,
+    "chineseWordOfTheDay": false
+  }
+} 
