@@ -1,6 +1,6 @@
 # Wooster: Personal Digital Assistant
 
-Wooster is an AI assistant designed to be extended and customized. He uses LLMs and a suite of tools to help with various tasks, from answering questions to managing your information and schedule.
+Wooster is an AI assistant designed to be extended and customized. He uses LLMs and a suite of tools to help with various tasks, from answering questions to managing your information and schedule. Wooster now emphasizes a **local-first, Markdown-driven philosophy** for core productivity tasks, allowing you to own and easily manage your data. For a detailed guide on these productivity systems, please see [Wooster for Personal Productivity: A Markdown-Driven Approach](docs/productivity_guide.md).
 
 ⚠️ This software is experimental and has no guarantee of working or being maintained.
 
@@ -45,10 +45,11 @@ Wooster is an AI assistant designed to be extended and customized. He uses LLMs 
 
 ## Core Design
 
-*   **AI Agent**: The intelligent core, built using Langchain.js. The agent is LLM-powered and designed to be model-agnostic. It is responsible for interpreting user requests, executing functions via Tools, querying the Project Memory and User Profile, and formulating the response.
-*   **Separation of Activities**: Activity is organized into knowledge work environments called Projects. Projects are zones for deep work. For general life assistance like managing your schedule, finances, meal prep, goals, contacts, etc., switch the active Project to Home.
-*   **Extensible Tooling & Plugin System**: Wooster's capabilities are expanded through a dynamic set of Tools that the agent can use. A plugin architecture (`src/plugins/`) allows for easy addition of new functionalities and integrations with external services.
-*   **Node.js & TypeScript Foundation**: The application is built on a modern Node.js runtime with TypeScript, ensuring a robust and maintainable codebase. 
+*   **AI Agent**: The intelligent core, built using Langchain.js. The agent is LLM-powered and designed to be model-agnostic. It is responsible for interpreting user requests, executing tool calls, searching its memory, and formulating responses. The agent may chain tool calls together in order to complete a task.
+*   **Separation of Activities**: Activity is organized into knowledge work environments called projects. Projects are zones for deep work where you can share files and collaborate on research with Wooster.
+*   **Markdown-First Data**: Wooster prioritizes storing key personal data (notes, tasks, health logs) in human-readable Markdown files within your local workspace. This ensures data longevity, easy backups, and interoperability. This is the source of truth that Wooster needs to optimize his capacity for assistance.
+*   **API-Driven Functionality**: Core features are exposed via a local API, enabling programmatic access and integration with external tools, scripts, and custom workflows (e.g., mobile shortcuts).
+*   **Extensible Tooling & Plugin System**: Wooster's capabilities are expanded through a dynamic set of Tools and a plugin architecture (`src/plugins/`). This allows for easy addition of new functionalities, including those that interact with local files and external services.
 
 
 ## System Design and Capabilities
@@ -74,28 +75,28 @@ Besides the Project RAG, Wooster has a separate "memory" (RAG) trained on user b
 - User Profile defaults to Off. (Don't turn it on with an openai model unless you want to share personal data with it!)
 - Wooster attempts to use the User Profile to learn about you so as to be more helpful. When set to On, it is active in all interactions.
 
-### Tools:
-Tools are functions for Wooster to use himself.
-- Wooster is designed to call on any active Tools at will.
-- He is designed to follow multi-step chains tool use in pursuit of a goal.
-- Tools are grouped into Plugins.
-- Community-made Tools are encouraged; Wooster is meant to be extensible.
+### Key Plugins & Capabilities:
+Wooster offers a range of functionalities through its plugin system:
 
-### Adding new Tools
-- To add your own Tool to Wooster, put the function in a `myTool.ts` file and add it to `tools/`.
-- Write a `plugins/myPlugin.ts` to control myTool and any other associated tools.
-- example: 
-```
-docs/plugins/myEmail.md
-docs/tools/mySendEmail.md
-docs/tools/mySaveDraft.md
-docs/tools/mySendAttachment.md
-plugins/myEmail.ts
-tools/mySendEmail.ts
-tools/mySaveDraft.ts
-tools/mySendAttachment.ts
-```
-- Always use `.env` for any settings for your Plugin or Tools
+*   **Universal Capture (`capture` plugin)**: Quickly capture notes, tasks, and ideas into a central `inbox.md` file in your workspace root.
+    *   Accessible via direct interaction or the `POST /api/v1/capture` API endpoint (expects `{"text": "..."}`).
+*   **Inbox Processing (`sortInbox` plugin)**: Systematically review and process items from your `inbox.md`.
+*   **Personal Health Logging (`personalHealth` plugin)**:
+    *   Log health-related events to `health_events.log.md`.
+    *   Accessible via direct interaction or the `POST /api/v1/health/events` API endpoint (expects `{"text": "..."}`).
+    *   Automatically generates a daily `health.md` summary report (configurable).
+*   **Daily Review (`dailyReview` plugin)**: Get a customizable daily briefing, which can include calendar events, project tasks, weather, and your previous day's health log summary.
+*   **API Access (`api` plugin)**: Provides a unified API for key operations, secured by API key and/or IP whitelist.
+*   **Web Search**: Utilizes Tavily Search API for up-to-date information from the internet.
+*   **Email Sending**: Send emails on your behalf via Gmail (requires configuration).
+*   **Google Calendar Integration (`gcal` plugin)**: Create, list, and manage calendar events (requires configuration).
+*   **Extensibility**: Add new tools and plugins to `src/plugins/` to expand Wooster's capabilities.
+
+### Adding new Tools/Plugins
+- To add your own functionality, create a new plugin within the `src/plugins/` directory.
+- A plugin typically consists of an `index.ts` file (defining the plugin's services and agent tools) and a `types.ts` file (for service interfaces and data structures).
+- Refer to existing plugins in `src/plugins/` for examples.
+- Always use `.env` for any sensitive settings or API keys for your Plugin or Tools.
 
 
 ### Built-in Tools:
