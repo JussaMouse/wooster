@@ -1,6 +1,6 @@
 export interface TaskItem {
-  id: string; // Unique identifier (e.g., generated from rawText hash or line number)
-  rawText: string; // The original full line text, e.g., "- [ ] @home Call mom +Family due:2024-07-10 (Captured: 2024-07-09 10:00:00)"
+  id: string; // Persistent, unique identifier (e.g., a UUID)
+  rawText: string; // The original full line text, e.g., "- [ ] @home Call mom +Family due:2024-07-10 (Captured: 2024-07-09 10:00:00) (id:uuid-goes-here)"
   description: string; // The core task description, e.g., "Call mom"
   isCompleted: boolean; // true if starts with "- [x]", false if "- [ ]"
   context?: string | null; // e.g., "@home", "@work"

@@ -8,26 +8,28 @@ export class TaskParser {
   // 2: The rest of the line after the checkbox.
   private static taskLineRegex = /^(?:-\s*\[\s*(x|\s)\]\s+)(.*)$/i;
 
-  // Regexes for specific metadata components that can appear anywhere in the task string (after checkbox)
+  // Regexes for specific metadata components
+  private static idRegex = /\(id:\s*([a-f0-9\-]+)\)/i; // Regex for (id: UUID)
   private static contextRegex = /(?:^|\s)(@\w+)/;
   private static projectRegex = /(?:^|\s)(\+\w+)/;
   private static dueDateRegex = /due:(\d{4}-\d{2}-\d{2})\b/i;
   // More specific capture for dates, e.g., YYYY-MM-DD HH:MM:SS or YYYY-MM-DD
   private static capturedDateRegex = /\(Captured:\s*([^)]+)\)/i;
   private static completedDateRegex = /\(Completed:\s*([^)]+)\)/i;
-  // Regex to find any other parenthesized metadata
-  private static additionalMetadataRegex = /\((?!Captured:|Completed:)([^)]+)\)/i;
+  // Adjusted additionalMetadataRegex to NOT match (id:...), (Captured:...), or (Completed:...)
+  private static additionalMetadataRegex = /\((?!id:|Captured:|Completed:)([^)]+)\)/i;
 
 
-  public static parse(rawText: string, defaultLineNumber?: number): TaskItem | null {
+  public static parse(rawText: string): TaskItem | null {
     const lineMatch = rawText.match(this.taskLineRegex);
     if (!lineMatch) {
       return null;
     }
 
     const isCompleted = lineMatch[1].toLowerCase() === 'x';
-    let descriptionContent = lineMatch[2].trim(); // This is the content after "- [ ] "
+    let descriptionContent = lineMatch[2].trim();
 
+    let id: string | null = null;
     let context: string | null = null;
     let project: string | null = null;
     let dueDate: string | null = null;
@@ -35,7 +37,14 @@ export class TaskParser {
     let completedDate: string | null = null;
     let additionalMetadata: string | null = null;
 
-    // Extract and remove known metadata from descriptionContent
+    // Attempt to extract a persistent ID first
+    const idMatch = descriptionContent.match(this.idRegex);
+    if (idMatch) {
+      id = idMatch[2]; // Group 2 is the UUID itself
+      descriptionContent = descriptionContent.replace(this.idRegex, '').trim();
+    }
+
+    // Extract other metadata (context, project, dates, etc.)
     const contextMatch = descriptionContent.match(this.contextRegex);
     if (contextMatch) {
       context = contextMatch[1];
@@ -72,12 +81,12 @@ export class TaskParser {
         descriptionContent = descriptionContent.replace(this.additionalMetadataRegex, '').trim();
     }
 
-    // Clean up multiple spaces that might be left after removals
     descriptionContent = descriptionContent.replace(/\s\s+/g, ' ').trim();
 
-    // Generate an ID. Using a hash of rawText for consistency if the line doesn't change.
-    // If line number is provided and unique, it could also be part of an ID scheme.
-    const id = defaultLineNumber ? `line-${defaultLineNumber}` : crypto.createHash('md5').update(rawText).digest('hex');
+    // If no ID was found in the string, generate a new one.
+    if (!id) {
+      id = crypto.randomUUID();
+    }
 
     return {
       id,
@@ -95,16 +104,9 @@ export class TaskParser {
 
   // TODO: Implement serialize method
   public static serialize(task: TaskItem): string {
-    // This will reconstruct the string from the TaskItem object, ensuring consistent formatting.
-    let parts: string[] = [];
-
-    // Start with checkbox and core description
     let line = `- [${task.isCompleted ? 'x' : ' '}] `;
-
     let description = task.description;
 
-    // Prepend context and project to the description if they exist, to ensure they are at the start
-    // This also helps if the original description didn't have them but they were added to the TaskItem
     if (task.project) {
       description = `${task.project} ${description}`;
     }
@@ -116,19 +118,20 @@ export class TaskParser {
     if (task.dueDate) {
       line += ` due:${task.dueDate}`;
     }
-
+    
+    // Add other metadata, ensuring ID is distinct and last to avoid being caught by general additionalMetadata regex if it also uses parens
     if (task.capturedDate) {
       line += ` (Captured: ${task.capturedDate})`;
     }
-
     if (task.completedDate) {
       line += ` (Completed: ${task.completedDate})`;
     }
-    
     if (task.additionalMetadata) {
-        line += ` (${task.additionalMetadata})`;
+        line += ` (${task.additionalMetadata})`; // General metadata first
     }
+    
+    line += ` (id: ${task.id})`; // Always add the persistent ID
 
-    return line.replace(/\s\s+/g, ' ').trim(); // Clean up any double spaces
+    return line.replace(/\s\s+/g, ' ').trim();
   }
 } 
