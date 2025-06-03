@@ -1,11 +1,12 @@
 import { WoosterPlugin, CoreServices, AppConfig } from '../../types/plugin';
 import { LogLevel } from '../../logger';
-import { DynamicTool } from '@langchain/core/tools';
+import { DynamicTool } from 'langchain/tools';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { execSync } from 'child_process';
 import { mainReplManager } from '../../index'; // Import mainReplManager
+import * as chrono from 'chrono-node'; // Added for date parsing
 
 let core: CoreServices;
 
@@ -42,8 +43,8 @@ interface CalendarService {
 
 class SortInboxPluginDefinition implements WoosterPlugin {
   readonly name = "sortInbox";
-  readonly version = "1.3.1"; // Version bump for updated default paths
-  readonly description = "Processes items from inbox.md with an interactive, detailed workflow, using configurable GTD paths with revised defaults.";
+  readonly version = "1.4.0"; // Version bump for calendar event creation
+  readonly description = "Processes items from inbox.md with an interactive, detailed workflow, including calendar event creation.";
 
   private workspaceRoot = '';
   private calendarService: CalendarService | undefined;
@@ -114,6 +115,14 @@ class SortInboxPluginDefinition implements WoosterPlugin {
       fs.mkdirSync(dirPath, { recursive: true });
       core.log(LogLevel.INFO, `SortInboxPlugin: Created directory ${dirPath}`);
     }
+  }
+
+  private prependContextIfNeeded(description: string): string {
+    const contextRegex = /^@\w+/;
+    if (!contextRegex.test(description)) {
+      return `@home ${description}`;
+    }
+    return description;
   }
 
   private getProjectList(): string[] {
@@ -273,7 +282,7 @@ Enter code: `;
 
       case 'n': // Next Action
         taskDetails = await this.ask(rl, "Optional: +project @context due:YYYY-MM-DD details for next action (or leave blank): ");
-        this.appendToMdFile(this.nextActionsFilePath, `- [ ] ${item.description}${taskDetails ? ' ' + taskDetails : ''} (Captured: ${item.timestamp || 'N/A'})`);
+        this.appendToMdFile(this.nextActionsFilePath, `- [ ] ${this.prependContextIfNeeded(item.description)}${taskDetails ? ' ' + taskDetails : ''} (Captured: ${item.timestamp || 'N/A'})`);
         this.archiveInboxItem(item);
         this.removeLineFromFile(this.inboxFilePath, item.rawText);
         console.log("Item added to Next Actions and archived.");
@@ -376,77 +385,107 @@ Enter code: `;
         break;
       
       case 'c': // Calendar
-        taskDetails = await this.ask(rl, "Schedule for YYYY-MM-DD HH:mm (start), and end time YYYY-MM-DD HH:mm or duration (e.g., '1 hour'). Task description (optional, defaults to item content): ");
+        const scheduleInput = await this.ask(rl, "When to schedule? (e.g., 'tomorrow 3pm for 1 hour', 'next Friday 10am to 11:30am', 'Dec 25th 9am-5pm'). Details for event (optional): ");
         
         if (this.calendarService) {
-          console.log(`CalendarService is available. Attempting to prepare event for: "${item.description}".`);
-          core.log(LogLevel.INFO, `SortInbox (Calendar): User input for scheduling: '${taskDetails}' for item '${item.description}'.`);
+          core.log(LogLevel.INFO, `SortInbox (Calendar): User input for scheduling: '${scheduleInput}' for item '${item.description}'.`);
 
-          // TODO: Implement robust date/time parsing for startDateTime and endDateTime from taskDetails
-          // For now, we'll use placeholder/dummy values if we were to actually call.
-          // The actual call is commented out until parsing is implemented.
-          const placeholderStartDateTime = "YYYY-MM-DDTHH:mm:ssZ"; // Replace with parsed value
-          const placeholderEndDateTime = "YYYY-MM-DDTHH:mm:ssZ";   // Replace with parsed value
-          const eventSummary = item.description;
-          // Extract description from taskDetails if possible, or use a generic one.
-          const eventDescription = `Inbox Item: ${item.description}\nDetails: ${taskDetails}`;
+          const now = new Date();
+          const parsedResults = chrono.parse(scheduleInput, now, { forwardDate: true });
 
-
-          console.log(`WOULD CREATE EVENT (if parsing was implemented):`);
-          console.log(`  Summary: ${eventSummary}`);
-          console.log(`  Start: ${placeholderStartDateTime} (from input: '${taskDetails}')`);
-          console.log(`  End: ${placeholderEndDateTime} (from input: '${taskDetails}')`);
-          console.log(`  Description: ${eventDescription}`);
-
-          /*
-          // ACTUAL SERVICE CALL (commented out until date parsing is ready)
-          try {
-            const result = await this.calendarService.createEvent({
-              summary: eventSummary,
-              startDateTime: placeholderStartDateTime, // Replace with parsed value
-              endDateTime: placeholderEndDateTime,     // Replace with parsed value
-              description: eventDescription,
-            });
-
-            if (typeof result === 'string') {
-              // Error string returned
-              core.log(LogLevel.ERROR, `SortInbox (Calendar): CalendarService reported an error: ${result}`);
-              console.log(`Failed to create calendar event: ${result}. Item NOT moved from Next Actions.`);
-              // Decide if we still append to next_actions.md or let user retry
-              this.appendToMdFile(this.nextActionsFilePath, `- [ ] ${item.description} (Schedule FAILED: ${taskDetails}) (Captured: ${item.timestamp || 'N/A'})`);
-
-            } else {
-              // Event object returned, success!
-              core.log(LogLevel.INFO, `SortInbox (Calendar): CalendarService success. Event Data:`, { result });
-              console.log("Calendar event created successfully (simulated).");
-              this.archiveInboxItem(item);
-              this.removeLineFromFile(this.inboxFilePath, item.rawText);
-              console.log("Item scheduled with CalendarService and archived.");
-              item.isProcessed = true;
-              break; // Break from switch as item is processed
-            }
-          } catch (e: any) {
-            core.log(LogLevel.ERROR, `SortInbox (Calendar): Error calling CalendarService.createEvent`, { message: e.message, stack: e.stack });
-            console.log("Error trying to schedule with CalendarService. Adding to Next Actions as fallback.");
-            this.appendToMdFile(this.nextActionsFilePath, `- [ ] ${item.description} (Schedule ERROR: ${taskDetails}) (Captured: ${item.timestamp || 'N/A'})`);
-          }
-          */
-          
-          // Fallback behavior since actual call is commented out
-          console.log("Actual calendar event creation is PENDING date/time parsing implementation. Adding to next_actions.md for now.");
-          this.appendToMdFile(this.nextActionsFilePath, `- [ ] CALENDAR: ${eventSummary} (Captured: ${item.timestamp || 'N/A'})`);
-          
-        } else {
-            core.log(LogLevel.WARN, "SortInbox (Calendar): CalendarService not found. Appending to next_actions.md.");
-            console.log("CalendarService not available. Adding to Next Actions as a reminder to schedule.");
-            this.appendToMdFile(this.nextActionsFilePath, `- [ ] SCHEDULE: ${item.description} (Captured: ${item.timestamp || 'N/A'})`);
-        }
-        // Common action whether service was called or not (unless successful call already archived)
-        // This ensures item is archived if service call fails or is not available, or if call is commented out
-        if (!item.isProcessed) { 
+          if (parsedResults.length === 0) {
+            console.log("Sorry, I couldn\'t understand the date/time. Please try a clearer format (e.g., 'tomorrow 3pm for 1 hour').");
+            this.appendToMdFile(this.nextActionsFilePath, `- [ ] SCHEDULE (failed parse): ${this.prependContextIfNeeded(item.description)} (Captured: ${item.timestamp || 'N/A'})`);
             this.archiveInboxItem(item);
             this.removeLineFromFile(this.inboxFilePath, item.rawText);
-            console.log("Item (added to Next Actions as fallback/pending) and archived.");
+            console.log("Item moved to Next Actions for manual scheduling and archived.");
+            item.isProcessed = true;
+            break;
+          }
+
+          const primaryResult = parsedResults[0];
+          let startDateTime: Date | null = null;
+          let endDateTime: Date | null = null;
+          let eventTitle = item.description; // Default title
+          
+          // Extract details from the part of scheduleInput NOT parsed as date/time
+          let eventDetailsFromInput = scheduleInput.replace(primaryResult.text, '').trim();
+
+          // If the remaining text (eventDetailsFromInput) is substantial, consider it for the title.
+          if (eventDetailsFromInput.length > 5 && eventDetailsFromInput.length > item.description.length / 2) { 
+            eventTitle = eventDetailsFromInput; 
+          }
+          // Ensure eventDescriptionContent has meaningful details
+          const eventDescriptionForCalendar = `Original Item: ${item.description}\nCaptured Timestamp: ${item.timestamp || 'N/A'}\nFull User Input: ${scheduleInput}${eventDetailsFromInput ? '\nUser Provided Details: ' + eventDetailsFromInput : ''}`;
+
+          if (primaryResult.start) {
+            startDateTime = primaryResult.start.date();
+          }
+
+          if (primaryResult.end) {
+            endDateTime = primaryResult.end.date();
+          } else if (startDateTime && (primaryResult.start as any).knownValues && (primaryResult.start as any).knownValues.hour != null && (primaryResult.start as any).knownValues.minute != null) {
+            // If only start time is known (hour and minute), default to a 1-hour duration
+            endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000);
+            console.log("No end time specified or parsed, defaulting to a 1-hour duration.");
+          }
+
+          if (startDateTime && endDateTime && startDateTime < endDateTime) {
+            const isoStartDateTime = startDateTime.toISOString();
+            const isoEndDateTime = endDateTime.toISOString();
+
+            console.log(`Attempting to create calendar event:`);
+            console.log(`  Title: ${eventTitle}`);
+            console.log(`  Start: ${isoStartDateTime}`);
+            console.log(`  End: ${isoEndDateTime}`);
+            console.log(`  Description: ${eventDescriptionForCalendar.split('\n')[0]}...`);
+
+            try {
+              const result = await this.calendarService.createEvent({
+                summary: eventTitle,
+                startDateTime: isoStartDateTime,
+                endDateTime: isoEndDateTime,
+                description: eventDescriptionForCalendar,
+              });
+
+              if (typeof result === 'string') { 
+                core.log(LogLevel.ERROR, `SortInbox (Calendar): CalendarService reported an error: ${result}`);
+                console.log(`Failed to create calendar event: ${result}.`);
+                this.appendToMdFile(this.nextActionsFilePath, `- [ ] SCHEDULE (API Error): ${this.prependContextIfNeeded(item.description)} - ${result} (Captured: ${item.timestamp || 'N/A'})`);
+                console.log("Item moved to Next Actions due to scheduling error.");
+              } else { 
+                core.log(LogLevel.INFO, `SortInbox (Calendar): CalendarService success. Event Data:`, { result });
+                console.log("Calendar event created successfully!");
+              }
+              this.archiveInboxItem(item);
+              this.removeLineFromFile(this.inboxFilePath, item.rawText);
+              console.log("Original item archived.");
+              item.isProcessed = true;
+
+            } catch (e: any) {
+              core.log(LogLevel.ERROR, `SortInbox (Calendar): Error calling CalendarService.createEvent`, { message: e.message, stack: e.stack });
+              console.log("Error trying to schedule with CalendarService. Adding to Next Actions as fallback.");
+              this.appendToMdFile(this.nextActionsFilePath, `- [ ] SCHEDULE (Exec Error): ${this.prependContextIfNeeded(item.description)} (Captured: ${item.timestamp || 'N/A'})`);
+              this.archiveInboxItem(item);
+              this.removeLineFromFile(this.inboxFilePath, item.rawText);
+              console.log("Original item archived.");
+              item.isProcessed = true;
+            }
+          } else {
+            console.log("Could not determine a valid start and end time for the event. Please be more specific.");
+            this.appendToMdFile(this.nextActionsFilePath, `- [ ] SCHEDULE (Parse Invalid): ${this.prependContextIfNeeded(item.description)} (Captured: ${item.timestamp || 'N/A'})`);
+            this.archiveInboxItem(item);
+            this.removeLineFromFile(this.inboxFilePath, item.rawText);
+            console.log("Item moved to Next Actions for manual scheduling and archived.");
+            item.isProcessed = true;
+          }
+        } else { 
+            core.log(LogLevel.WARN, `SortInbox (Calendar): CalendarService not found. Appending to next_actions.md.`);
+            console.log("CalendarService not available. Adding to Next Actions as a reminder to schedule.");
+            this.appendToMdFile(this.nextActionsFilePath, `- [ ] SCHEDULE (no service): ${this.prependContextIfNeeded(item.description)} (Captured: ${item.timestamp || 'N/A'})`);
+            this.archiveInboxItem(item);
+            this.removeLineFromFile(this.inboxFilePath, item.rawText);
+            console.log("Item added to Next Actions (to be scheduled) and archived.");
             item.isProcessed = true;
         }
         break;
