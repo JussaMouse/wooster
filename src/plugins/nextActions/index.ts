@@ -369,10 +369,45 @@ ${archivedTaskString}
   getAgentTools?(): DynamicTool[] {
     const viewNextActionsTool = new DynamicTool({
         name: "viewNextActions",
-        description: "Views the next actions list. Optional JSON input for filters (context, project, dueDate, status) and sortOptions (sortBy, sortOrder).",
+        description: "Views the next actions list. Optional JSON input for filters (context, project, dueDate, status) and sortOptions (sortBy, sortOrder). Returns a user-friendly list or a message if no actions are found.",
         func: async (jsonInput?: string) => {
-            // TODO: Parse jsonInput, call this.getTasks
-            return JSON.stringify(await this.getTasks());
+            let filters: NextActionFilters | undefined;
+            let sortOptions: NextActionSortOptions | undefined;
+
+            if (jsonInput) {
+                try {
+                    const parsedInput = JSON.parse(jsonInput);
+                    // Basic validation: ensure parsedInput is an object before trying to destructure
+                    if (typeof parsedInput === 'object' && parsedInput !== null) {
+                        filters = parsedInput.filters; // Assuming filters and sortOptions are top-level keys
+                        sortOptions = parsedInput.sortOptions;
+                    } else {
+                        core.log(LogLevel.WARN, "viewNextActionsTool: Invalid non-object JSON input provided.");
+                        // Potentially return an error message or proceed with defaults
+                    }
+                } catch (e) {
+                    core.log(LogLevel.WARN, `viewNextActionsTool: Invalid JSON input for parsing: ${jsonInput}`, { parseError: String(e) });
+                    return "Invalid JSON input for filtering/sorting next actions. Please provide valid JSON or no input for default view.";
+                }
+            }
+
+            const tasks = await this.getTasks(filters, sortOptions);
+
+            if (tasks.length === 0) {
+                if (filters && Object.keys(filters).length > 0) {
+                    return "No next actions match your criteria.";
+                }
+                return "You have no pending next actions.";
+            }
+
+            let responseLines = ["Here are your next actions:"];
+            tasks.forEach((task, index) => {
+                const taskString = TaskParser.serialize(task);
+                // Remove the ID part for display for a cleaner look
+                const displayString = taskString.replace(/\s*\(id: [a-f0-9\-]+\)/i, '').trim();
+                responseLines.push(`${index + 1}. ${displayString}`);
+            });
+            return responseLines.join('\n');
         },
     });
 
