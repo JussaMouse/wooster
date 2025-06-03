@@ -84,10 +84,17 @@ function createAndConfigureMainRl(): readline.Interface {
 export const mainReplManager = {
   pauseInput: () => {
     if (mainRl && !isMainRlPaused) {
-      mainRl.close(); // Close the existing readline interface
-      // Note: listeners are removed by close(), no need for mainRl.off() explicitly here
+      if (mainRlLineHandler) {
+        mainRl.off('line', mainRlLineHandler); 
+      }
+      if (mainRlCloseHandler) {
+        mainRl.off('close', mainRlCloseHandler); // CRITICAL: Detach this to prevent process.exit()
+      }
+      mainRl.close(); 
       isMainRlPaused = true;
-      log(LogLevel.DEBUG, "Main REPL input CLOSED and PAUSED for interactive tool.");
+      log(LogLevel.DEBUG, "Main REPL input CLOSED (listeners detached) and PAUSED for interactive tool.");
+    } else {
+      log(LogLevel.WARN, "Main REPL pauseInput called but mainRl is undefined or already paused.");
     }
   },
   resumeInput: () => {

@@ -25,18 +25,38 @@ interface InboxItem {
   isProcessed?: boolean; // Flag to mark if item has been handled in current session
 }
 
+// Define an interface for the expected CalendarService (optional but good practice)
+interface CalendarService {
+  createEvent: (eventDetails: {
+    summary: string;
+    startTime: string; // ISO 8601 format
+    endTime?: string;   // ISO 8601 format
+    description?: string;
+  }) => Promise<boolean>;
+}
+
 class SortInboxPluginDefinition implements WoosterPlugin {
   readonly name = "sortInbox";
-  readonly version = "1.1.0"; // Updated version
-  readonly description = "Processes items from inbox.md with an interactive, detailed workflow.";
+  readonly version = "1.2.0"; // Version bump for new features
+  readonly description = "Processes items from inbox.md with an interactive, detailed workflow, including terminal clearing and calendar service awareness.";
 
   private workspaceRoot = '';
+  private calendarService: CalendarService | undefined;
 
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
     core = services;
     this.workspaceRoot = process.cwd(); // Assuming Wooster runs from project root
     core.log(LogLevel.INFO, `SortInboxPlugin (v${this.version}): Initializing...`);
     this.ensureDirExists(this.getFullPath(ARCHIVE_DIR_PATH));
+
+    // Attempt to get CalendarService
+    this.calendarService = services.getService("CalendarService") as CalendarService | undefined;
+    if (this.calendarService && typeof this.calendarService.createEvent === 'function') {
+      core.log(LogLevel.INFO, "SortInboxPlugin: Successfully connected to CalendarService.");
+    } else {
+      this.calendarService = undefined; // Ensure it's undefined if not valid
+      core.log(LogLevel.WARN, "SortInboxPlugin: CalendarService not found or is invalid. Calendar creation will be limited to next_actions.md.");
+    }
   }
 
   async shutdown(): Promise<void> {
@@ -159,6 +179,9 @@ ${item.description}
   }
 
   private async processItem(item: InboxItem, rl: readline.Interface): Promise<boolean> { // Returns true if should quit
+    if (process.stdout.isTTY) {
+        console.clear(); // Clear terminal for each new item
+    }
     console.log('\n-----------------------------------------------------');
     console.log(`Item: "${item.description}" ${item.timestamp ? '(Captured: ' + item.timestamp + ')' : ''}`);
     console.log('-----------------------------------------------------');
@@ -171,7 +194,7 @@ ${item.description}
   (r)eference     - Add as reference material to a specific project's main notes file
   (s)omeday/Maybe - Add to Someday/Maybe list
   (w)aiting For   - Add to Waiting For list
-  (c)alendar      - Schedule it (add due date/reminder to Next Actions)
+  (c)alendar      - Schedule it (add due date/reminder)
   (e)dit          - Modify this item (opens in $EDITOR)
   (q)uit          - Exit inbox processing
 Enter code: `;
@@ -297,7 +320,19 @@ ${item.description}
         break;
       
       case 'c': // Calendar
-        taskDetails = await this.ask(rl, "Schedule for YYYY-MM-DD (or 'today', 'tomorrow', 'next week'). Task description (defaults to item content): ");
+        taskDetails = await this.ask(rl, "Schedule for YYYY-MM-DD HH:mm (or free-form like 'today 2pm', 'next Tuesday morning'). Task description (defaults to item content): ");
+        
+        if (this.calendarService) {
+          console.log(`CalendarService is available. Would attempt to parse: "${taskDetails}" for item "${item.description}".`);
+          // Placeholder for actual date parsing and service call
+          // For now, we will just log and still append to next_actions.md
+          // Example structure for a future call:
+          // const event = { summary: item.description, startTime: parsedStartTimeISO, description: taskDetails };
+          // await this.calendarService.createEvent(event);
+          core.log(LogLevel.INFO, `SortInbox (Calendar): CalendarService present. Input for parsing: '${taskDetails}' for item '${item.description}'. Actual parsing and event creation is not yet implemented.`);
+          console.log("Calendar event creation via service is NOT YET IMPLEMENTED. Adding to next_actions.md as a task.");
+        }
+
         this.appendToMdFile(NEXT_ACTIONS_FILE_PATH, `- [ ] ${item.description} (Scheduled: ${taskDetails}) (Captured: ${item.timestamp || 'N/A'})`);
         this.archiveInboxItem(item);
         this.removeLineFromFile(INBOX_FILE_PATH, item.rawText);
@@ -364,13 +399,16 @@ ${item.description}
     if (items.length === 0) {
       core.log(LogLevel.INFO, "SortInboxPlugin: Inbox is empty or contains no actionable items.");
       if (process.stdout.isTTY) {
+        console.clear(); // Clear if inbox is empty from the start
         console.log("Inbox is currently empty or all items are processed. 🎉");
       }
       return;
     }
 
     core.log(LogLevel.INFO, `SortInboxPlugin: Found ${items.length} items to process.`);
-    if (process.stdout.isTTY) {
+    if (process.stdout.isTTY && items.length > 0) { // Only log if there are items
+      // Initial clear before first item, processItem will clear for subsequent items
+      console.clear(); 
       console.log(`Found ${items.length} items in your inbox. Processing one by one...`);
     }
 
@@ -402,6 +440,9 @@ ${item.description}
       } finally {
         rl.close();
         const finalItems = await this.readInboxItems();
+        if (process.stdout.isTTY) {
+            console.clear(); // Final clear
+        }
         if (finalItems.length === 0 && process.stdout.isTTY) {
             console.log("\nInbox zero! 🎉");
         } else if (process.stdout.isTTY) {
