@@ -5,12 +5,13 @@ export interface ProjectActionItem {
 
 export interface DailyReviewData {
   greeting: string;
-  calendarEventsSummary: string;
-  projectActions: ProjectActionItem[];
-  weatherSummary: string;
-  fitnessLogSummary?: { date: string; content: string; };
-  // Add new optional fields later like quote, etc.
-  closing: string;
+  calendarEventsSummary?: string;
+  projectActions?: ProjectActionItem[];
+  weatherSummary?: string;
+  previousDayHealthLog?: string;
+  inspirationalQuote?: string;
+  chineseWordOfTheDay?: { char: string; pinyin: string; translation: string };
+  closing?: string;
 }
 
 // Types for the functions the daily review plugin expects for its dependencies.
@@ -38,7 +39,7 @@ export interface DailyReviewUserConfig {
     calendar: boolean;
     projectActions: boolean;
     weather: boolean;
-    fitnessLog: boolean;
+    healthLog: boolean;
     inspirationalQuote: boolean;
     chineseWordOfTheDay: boolean;
     // Add more as they become available

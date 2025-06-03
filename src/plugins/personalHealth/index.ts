@@ -1,157 +1,217 @@
-import { PersonalHealthService, HealthLogEntry, HealthEntryType } from './types';
-import { 
-    initializeDatabase as initDbSync,
-    addHealthEntryToDb,
-    getLatestHealthEntryFromDb,
-    getHealthEntriesFromDb,
-    upsertDailyWorkoutEntry
-} from './db';
-import { log, LogLevel } from '../../logger';
 import { WoosterPlugin, CoreServices, AppConfig } from '../../types/plugin';
-import { DynamicTool } from "@langchain/core/tools";
+import { DynamicTool } from '@langchain/core/tools';
+import { log, LogLevel } from '../../logger';
+import { PersonalHealthService, HealthSummaryOptions, GetHealthLogLinesOptions, HealthReportOptions } from './types';
+import { appendHealthEvent, getHealthLogLines, setWorkspacePath, writeHealthReport } from './fileManager';
+import { ScheduledTaskSetupOptions } from '../../types/scheduler';
+import path from 'path'; // Import path module
+// import * as chrono from 'chrono-node'; // Future: for natural language date parsing
 
-export class PersonalHealthPlugin implements WoosterPlugin, PersonalHealthService {
-    readonly name = 'PersonalHealthPlugin';
-    readonly version = '1.0.0';
-    readonly description = 'Manages personal health data, including workouts, meals, and other health-related events.';
-    dependencies: string[] = []; 
+const DEFAULT_SUMMARY_LINES = 5;
+const HUMAN_READABLE_REPORT_FILENAME = 'health.md';
 
-    private isInitialized = false;
-    private coreServices!: CoreServices;
+class PersonalHealthPluginDefinition implements WoosterPlugin, PersonalHealthService {
+  readonly name = "personalHealth";
+  readonly version = '2.0.3'; // Version increment for simplification
+  readonly description = 'Manages personal health data by logging events with current timestamp to health_events.log.md.';
+  
+  private coreServices!: CoreServices;
+  private appConfig!: AppConfig;
 
-    async initialize(config: AppConfig, services: CoreServices): Promise<void> {
-        this.coreServices = services;
-        log(LogLevel.INFO, `[PersonalHealthPlugin] Initializing PersonalHealthPlugin for agent.`);
-        this.ensureInitialized();
-        this.coreServices.registerService('personalHealthService', this);
+  async initialize(config: AppConfig, services: CoreServices): Promise<void> {
+    this.coreServices = services;
+    this.appConfig = config;
+    log(LogLevel.INFO, `[${this.name}] Initializing (v${this.version})...`);
+    const workspacePath = process.cwd();
+    setWorkspacePath(workspacePath);
+    log(LogLevel.INFO, `[${this.name}] Workspace path for health log file set to: ${workspacePath}`);
+    this.coreServices.registerService('PersonalHealthService', this);
+    log(LogLevel.INFO, `[${this.name}] Service 'PersonalHealthService' registered.`);
+  }
+
+  async logHealthEvent(text: string): Promise<void> {
+    if (!text || text.trim() === '') {
+      log(LogLevel.WARN, `[${this.name}] logHealthEvent called with empty text.`);
+      return Promise.resolve();
     }
 
-    private ensureInitialized(): void {
-        if (!this.isInitialized) {
-            initDbSync();
-            this.isInitialized = true;
-            log(LogLevel.INFO, '[PersonalHealthPlugin] Database Initialized.');
+    try {
+      await appendHealthEvent(text);
+      log(LogLevel.INFO, `[${this.name}] Health event logged: ${text}`);
+    } catch (error: any) {
+      log(LogLevel.ERROR, `[${this.name}] Error logging health event: ${text}`, { error: error.message });
+      throw error;
+    }
+  }
+
+  async getHealthEvents(options?: GetHealthLogLinesOptions): Promise<string[]> {
+    log(LogLevel.DEBUG, `[${this.name}] getHealthEvents called`, { options });
+    try {
+      const effectiveOptions = { sort: 'desc' as 'desc' | 'asc', ...options }; 
+      return await getHealthLogLines(effectiveOptions);
+    } catch (error: any) {
+      log(LogLevel.ERROR, `[${this.name}] Error in getHealthEvents`, { error: error.message });
+      return [];
+    }
+  }
+
+  async getLatestHealthSummaryForReview(options?: HealthSummaryOptions): Promise<string | null> {
+    log(LogLevel.DEBUG, `[${this.name}] getLatestHealthSummaryForReview called`, { options });
+    const linesToFetch = options?.numberOfLines || DEFAULT_SUMMARY_LINES;
+    const filterText = options?.containsText;
+    const sortOrder = options?.sort || 'desc'; 
+
+    try {
+      const relevantLines = await getHealthLogLines({
+        limit: linesToFetch,
+        containsText: filterText,
+        sort: sortOrder,
+      });
+
+      if (relevantLines.length === 0) {
+        if (filterText) {
+          return `No recent health entries found containing "${filterText}".`;
         }
+        return "No recent health entries found.";
+      }
+      return relevantLines.join('\n'); 
+    } catch (error: any) {
+      log(LogLevel.ERROR, `[${this.name}] Error in getLatestHealthSummaryForReview`, { error: error.message });
+      return "Error retrieving health summary.";
     }
+  }
 
-    addWorkoutEntry(date: string, description: string): HealthLogEntry {
-        this.ensureInitialized();
-        log(LogLevel.INFO, `[PersonalHealthPlugin] Adding workout entry for date: ${date}`);
-        const entryData: Omit<HealthLogEntry, 'id' | 'createdAt'> = {
-            date,
-            entryType: 'workout',
-            content: description,
-        };
-        try {
-            const newEntry = addHealthEntryToDb(entryData);
-            log(LogLevel.INFO, `[PersonalHealthPlugin] Workout entry added successfully for date: ${date}`, { id: newEntry.id });
-            return newEntry;
-        } catch (error) {
-            log(LogLevel.ERROR, `[PersonalHealthPlugin] Error adding workout entry for date: ${date}`, { error });
-            throw error;
+  async generateHealthReport(options?: HealthReportOptions): Promise<string> {
+    log(LogLevel.INFO, `[${this.name}] Generating health report...`, { options });
+    try {
+      const allEvents = await getHealthLogLines({ sort: 'asc' });
+
+      const reportFilePath = path.join(process.cwd(), HUMAN_READABLE_REPORT_FILENAME); // Use process.cwd()
+
+      if (allEvents.length === 0) {
+        // Use template literal for multi-line string
+        await writeHealthReport(`# Personal Health Log\n\nNo health events recorded yet.`, reportFilePath);
+        log(LogLevel.INFO, `[${this.name}] No health events to report. Empty report generated at ${reportFilePath}`);
+        return `Health report generated. No events. Report at: ${reportFilePath}`;
+      }
+
+      const eventsByDate: Record<string, string[]> = {};
+      allEvents.forEach(eventLine => {
+        const dateKey = eventLine.substring(0, 10); 
+        const timeAndText = eventLine.substring(11); 
+        if (!eventsByDate[dateKey]) {
+          eventsByDate[dateKey] = [];
         }
-    }
+        eventsByDate[dateKey].push(timeAndText);
+      });
 
-    addGenericEntry(entry: Omit<HealthLogEntry, 'id' | 'createdAt'>): HealthLogEntry {
-        this.ensureInitialized();
-        log(LogLevel.INFO, `[PersonalHealthPlugin] Adding generic health entry of type: ${entry.entryType}`);
-        try {
-            const newEntry = addHealthEntryToDb(entry);
-            log(LogLevel.INFO, `[PersonalHealthPlugin] Generic entry added successfully`, { id: newEntry.id, type: newEntry.entryType });
-            return newEntry;
-        } catch (error) {
-            log(LogLevel.ERROR, `[PersonalHealthPlugin] Error adding generic entry`, { error, entryType: entry.entryType });
-            throw error;
-        }
-    }
-
-    getEntries(options: {
-        date?: string;
-        startDate?: string;
-        endDate?: string;
-        entryType?: HealthEntryType;
-        limit?: number;
-    }): HealthLogEntry[] {
-        this.ensureInitialized();
-        log(LogLevel.INFO, '[PersonalHealthPlugin] Getting health entries', { options });
-        try {
-            return getHealthEntriesFromDb(options);
-        } catch (error) {
-            log(LogLevel.ERROR, '[PersonalHealthPlugin] Error getting health entries', { error, options });
-            throw error;
-        }
-    }
-
-    getLatestEntry(entryType?: HealthEntryType): HealthLogEntry | null {
-        this.ensureInitialized();
-        log(LogLevel.INFO, `[PersonalHealthPlugin] Getting latest health entry${entryType ? ' of type: ' + entryType : ''}`);
-        try {
-            return getLatestHealthEntryFromDb(entryType);
-        } catch (error) {
-            log(LogLevel.ERROR, `[PersonalHealthPlugin] Error getting latest health entry${entryType ? ' of type: ' + entryType : ''}`, { error });
-            throw error;
-        }
-    }
-
-    getLatestWorkoutSummaryForReview(): { date: string; content: string; } | null {
-        this.ensureInitialized();
-        log(LogLevel.INFO, '[PersonalHealthPlugin] Getting latest workout summary for review.');
-        try {
-            const latestWorkout = getLatestHealthEntryFromDb('workout');
-            if (latestWorkout && latestWorkout.date && latestWorkout.content) {
-                log(LogLevel.INFO, '[PersonalHealthPlugin] Found latest workout for review.', { id: latestWorkout.id, date: latestWorkout.date });
-                return { date: latestWorkout.date, content: latestWorkout.content };
-            } else {
-                log(LogLevel.INFO, '[PersonalHealthPlugin] No workout entries found or entry is incomplete for review.');
-                return null;
-            }
-        } catch (error) {
-            log(LogLevel.ERROR, '[PersonalHealthPlugin] Error getting latest workout summary for review', { error });
-            throw error;
-        }
-    }
-
-    upsertDailyWorkoutEntry(date: string, exerciseDetail: string): HealthLogEntry {
-        this.ensureInitialized();
-        log(LogLevel.INFO, `[PersonalHealthPlugin] Upserting daily workout entry for date: ${date}, detail: ${exerciseDetail}`);
-        try {
-            const entry = upsertDailyWorkoutEntry(date, exerciseDetail);
-            log(LogLevel.INFO, `[PersonalHealthPlugin] Daily workout entry upserted successfully for date: ${date}`, { id: entry.id });
-            return entry;
-        } catch (error) {
-            log(LogLevel.ERROR, `[PersonalHealthPlugin] Error upserting daily workout entry for date: ${date}`, { error, exerciseDetail });
-            throw error;
-        }
-    }
-
-    getAgentTools?(): DynamicTool[] {
-        const logExerciseTool = new DynamicTool({
-            name: "logExerciseToDailyFitnessLog",
-            description: "Adds a specific exercise or activity to the current day's fitness log. For example, 'log pushups 10 reps' or 'log 30 minute run'. Use this to incrementally build up the day's workout log.",
-            func: async (input: string): Promise<string> => {
-                this.ensureInitialized();
-                
-                // Get current local date in YYYY-MM-DD format
-                const currentDate = new Date();
-                const year = currentDate.getFullYear();
-                const month = (currentDate.getMonth() + 1).toString().padStart(2, '0'); // JavaScript months are 0-indexed
-                const day = currentDate.getDate().toString().padStart(2, '0');
-                const localToday = `${year}-${month}-${day}`;
-
-                try {
-                    const entry = this.upsertDailyWorkoutEntry(localToday, input);
-                    const message = `Logged "${input}" to today's (${localToday}) fitness log. Current log: ${entry.content}`;
-                    return Promise.resolve(message);
-                } catch (error: any) {
-                    log(LogLevel.ERROR, `[PersonalHealthPlugin] Error in logExerciseTool for input: "${input}"`, { error: error.message });
-                    const errorMessage = `Error logging exercise: ${error.message}`;
-                    return Promise.resolve(errorMessage);
-                }
-            },
+      // Use template literals for multi-line string construction
+      let reportContent = `# Personal Health Log\n\n`;
+      const sortedDates = Object.keys(eventsByDate).sort().reverse(); 
+      
+      for (const date of sortedDates) {
+        reportContent += `## ${date}\n`;
+        eventsByDate[date].forEach(entry => {
+          reportContent += `- ${entry}\n`;
         });
-        return [logExerciseTool];
+        reportContent += `\n`; // Add an extra newline after each day's entries
+      }
+      
+      // const reportPath = `${this.appConfig.fileSystem.basePath}/${HUMAN_READABLE_REPORT_FILENAME}`; // Old way
+      await writeHealthReport(reportContent.trim(), reportFilePath); // trim potential trailing newline from content
+      log(LogLevel.INFO, `[${this.name}] Health report successfully generated at ${reportFilePath}`);
+      return `Health report generated successfully. Report at: ${reportFilePath}`;
+
+    } catch (error: any) {
+      log(LogLevel.ERROR, `[${this.name}] Error generating health report`, { error: error.message });
+      throw new Error(`Failed to generate health report: ${error.message}`);
     }
+  }
+
+  getAgentTools?(): DynamicTool[] {
+    const logHealthTool = new DynamicTool({
+      name: "logHealthEvent",
+      description: "Logs a health-related event (e.g., 'ran 3 miles', 'slept 8 hours', 'mood: energetic'). The entry will be timestamped with the current local time.",
+      func: async (input: string): Promise<string> => {
+        try {
+          await this.logHealthEvent(input);
+          return `Health event "${input}" logged successfully.`;
+        } catch (error: any) {
+          return `Error logging health event: ${error.message || 'Unknown error'}`;
+        }
+      },
+    });
+
+    const generateReportTool = new DynamicTool({
+      name: "generateHealthReport",
+      description: "Generates a human-readable health report (health.md) by processing the raw health event logs. The report groups entries by date.",
+      func: async (): Promise<string> => {
+        try {
+          // We can pass options here in the future if needed based on user input
+          return await this.generateHealthReport();
+        } catch (error: any) {
+          return `Error generating health report: ${error.message || 'Unknown error'}`;
+        }
+      },
+    });
+
+    return [logHealthTool, generateReportTool];
+  }
+
+  getScheduledTaskSetups?(): ScheduledTaskSetupOptions | ScheduledTaskSetupOptions[] | undefined {
+    const envVarToggle = process.env.PLUGIN_PERSONALHEALTH_DAILY_MARKDOWN_ENABLED;
+    let isEnabled = true;
+    let configSource = "Plugin Default (Enabled)";
+
+    if (envVarToggle && envVarToggle.toLowerCase() === 'false') {
+      log(LogLevel.INFO, `[${this.name}] Scheduled daily report generation is DISABLED via PLUGIN_PERSONALHEALTH_DAILY_MARKDOWN_ENABLED environment variable.`);
+      // We still return the definition so it can be listed in the manifest as "Defined but Disabled"
+      isEnabled = false;
+      configSource = "Env: PLUGIN_PERSONALHEALTH_DAILY_MARKDOWN_ENABLED=false";
+    } else if (envVarToggle && envVarToggle.toLowerCase() === 'true') {
+      log(LogLevel.INFO, `[${this.name}] Scheduled daily report generation is ENABLED via PLUGIN_PERSONALHEALTH_DAILY_MARKDOWN_ENABLED environment variable.`);
+      configSource = "Env: PLUGIN_PERSONALHEALTH_DAILY_MARKDOWN_ENABLED=true";
+    } else {
+      log(LogLevel.INFO, `[${this.name}] Scheduled daily report generation is ENABLED (PLUGIN_PERSONALHEALTH_DAILY_MARKDOWN_ENABLED is not set, defaults to enabled).`);
+      // Default state, configSource remains "Plugin Default (Enabled)"
+    }
+
+    const defaultSchedule = "0 5 * * *";
+    let effectiveSchedule = defaultSchedule;
+    let scheduleSource = "Plugin Default";
+
+    const appConfigSchedule = (this.appConfig?.plugins?.personalHealth as any)?.dailyReportCron;
+    if (appConfigSchedule) {
+      effectiveSchedule = appConfigSchedule;
+      scheduleSource = "AppConfig: plugins.personalHealth.dailyReportCron";
+      if (configSource.startsWith("Env:")) { // Env var for enable/disable takes precedence for source clarity if it also influences schedule implicitly
+        configSource = `${configSource} (Schedule: ${scheduleSource})`;
+      } else {
+        configSource = scheduleSource; // If only schedule is from AppConfig
+      }
+    }
+
+    log(LogLevel.INFO, `[${this.name}] Setting up scheduled task for health report. Effective Cron: ${effectiveSchedule}, Enabled: ${isEnabled}, Source: ${configSource}`);
+
+    return {
+      taskKey: "personalHealth.generateDailyReport",
+      description: "Generates the daily health.md report from health_events.log.md.",
+      defaultScheduleExpression: defaultSchedule, // The plugin's hardcoded default
+      effectiveScheduleExpression: effectiveSchedule, // Calculated schedule
+      isEnabledByPlugin: isEnabled, // Calculated enabled status
+      scheduleConfigSource: configSource, // How schedule/enabled status was derived
+      functionToExecute: async (payload: any) => { 
+        try {
+          await this.generateHealthReport(); // Call original function, ignore string result
+        } catch (error: any) {
+          log(LogLevel.ERROR, `[${this.name}] Error during scheduled health report generation.`, { error: error.message });
+          // Optionally, rethrow or handle as per scheduler error policies
+        }
+      },
+      executionPolicy: "RUN_ONCE_PER_PERIOD_CATCH_UP",
+      initialPayload: {} 
+    };
+  }
 }
 
-const pluginInstance = new PersonalHealthPlugin();
-export default pluginInstance; 
+export default new PersonalHealthPluginDefinition(); 

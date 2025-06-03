@@ -6,7 +6,9 @@ import { log, LogLevel } from '../../logger';
 import { AppConfig } from '../../configLoader';
 import { WoosterPlugin, CoreServices, EmailService } from '../../types/plugin';
 import { ScheduledTaskSetupOptions } from '../../types/scheduler';
-import type { DailyReviewData, ProjectActionItem, GetWeatherForecastType, GetCalendarEventsType, DailyReviewUserConfig } from './types';
+import type { DailyReviewData, ProjectActionItem, GetWeatherForecastType, DailyReviewUserConfig } from './types';
+import type { ListCalendarEventsService } from '../gcal/types';
+import type { NextActionsService, NextActionItem } from '../nextActions/types';
 import type { GmailPluginEmailArgs } from '../gmail/types';
 import type { PersonalHealthService } from '../personalHealth/types';
 
@@ -54,7 +56,7 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
         calendar: false,
         projectActions: true,
         weather: false,
-        fitnessLog: false,
+        healthLog: false,
         inspirationalQuote: false,
         chineseWordOfTheDay: false,
       },
@@ -103,18 +105,18 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
             configModified = true;
         }
       }
-      if (this.coreServices?.getService("getCalendarEventsFunction")) {
+      if (this.coreServices?.getService("ListCalendarEventsService")) {
         if (this.userConfig.contentModules.calendar === false) { 
             this.logMsg(LogLevel.INFO, 'Calendar service detected. Auto-enabling calendar content module for new config.');
             this.userConfig.contentModules.calendar = true;
             configModified = true;
         }
       }
-      // Auto-enable fitnessLog if PersonalHealthService is available
-      if (this.coreServices?.getService("personalHealthService")) {
-        if (this.userConfig.contentModules.fitnessLog === false) { 
-            this.logMsg(LogLevel.INFO, 'PersonalHealthService detected. Auto-enabling fitnessLog content module for new config.');
-            this.userConfig.contentModules.fitnessLog = true;
+      // Auto-enable healthLog if PersonalHealthService is available
+      if (this.coreServices?.getService("PersonalHealthService")) {
+        if (this.userConfig.contentModules.healthLog === false) { 
+            this.logMsg(LogLevel.INFO, 'PersonalHealthService detected. Auto-enabling healthLog content module for new config.');
+            this.userConfig.contentModules.healthLog = true;
             configModified = true;
         }
       }
@@ -147,32 +149,48 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
   private async getDailyReviewContentInternal(): Promise<DailyReviewData> {
     if (!this.coreServices) {
       this.logMsg(LogLevel.ERROR, "DailyReviewPlugin Critical Error: Core services not available.");
-      return { greeting: "Error: Daily review content generation failed (core services missing).", calendarEventsSummary: "- Error -", projectActions: [], weatherSummary: "- Error -", fitnessLogSummary: undefined, closing: "" };
+      return { 
+        greeting: "Error: Daily review content generation failed (core services missing).", 
+        calendarEventsSummary: "- Error -", 
+        projectActions: [], 
+        weatherSummary: "- Error -", 
+        previousDayHealthLog: "- Error -",
+        inspirationalQuote: "- Error -",
+        chineseWordOfTheDay: undefined,
+        closing: "" 
+      };
     }
     this.logMsg(LogLevel.INFO, 'Generating daily review content structure...');
     const userCfg = this.userConfig || this.getDefaultUserConfig();
   
-    let calendarData = "- (Not enabled or service not available)";
+    let calendarData: string | undefined = "- (Not enabled or service not available)";
     if (userCfg.contentModules.calendar) {
-      const getCalendarEventsFunc = this.coreServices.getService("getCalendarEventsFunction") as GetCalendarEventsType | undefined;
+      const getCalendarEventsFunc = this.coreServices.getService("ListCalendarEventsService") as ListCalendarEventsService | undefined;
       if (getCalendarEventsFunc) {
         try {
-          calendarData = await getCalendarEventsFunc();
+          const eventsResult = await getCalendarEventsFunc();
+          if (typeof eventsResult === 'string') {
+            calendarData = eventsResult;
+          } else if (Array.isArray(eventsResult) && eventsResult.length > 0) {
+            calendarData = "Today's Events:\n" + eventsResult.map(event => `  - ${event.summary} (${new Date(event.start?.dateTime || event.start?.date || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`).join('\n');
+          } else {
+            calendarData = "No upcoming events found.";
+          }
         } catch (error: any) {
           this.logMsg(LogLevel.ERROR, "Error fetching calendar events.", { error: error.message });
           calendarData = "- Error fetching calendar events.";
         }
       } else {
-          this.logMsg(LogLevel.WARN, "getCalendarEventsFunction service not found.");
+          this.logMsg(LogLevel.WARN, "ListCalendarEventsService service not found.");
       }
     }
   
     let projActions: ProjectActionItem[] = [];
     if (userCfg.contentModules.projectActions) {
-        const nextActionsService = this.coreServices.NextActionsService;
+        const nextActionsService = this.coreServices.getService("NextActionsService") as NextActionsService | undefined;
         if (nextActionsService) {
             try {
-                const rawActions = await nextActionsService.getAggregatedActions(false); 
+                const rawActions: NextActionItem[] = await nextActionsService.getAggregatedActions(false);
                 const actionMap = new Map<string, string[]>();
                 rawActions.forEach(item => {
                     if (item.action.trim() !== '') {
@@ -214,23 +232,26 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
       }
     }
     
-    let fitnessLogSummaryData: { date: string; content: string; } | undefined = undefined;
-    if (userCfg.contentModules.fitnessLog) {
-        const healthService = this.coreServices.getService("personalHealthService") as PersonalHealthService | undefined;
+    let previousDayHealthLogData: string | undefined = "- (Not enabled or service not available)";
+    if (userCfg.contentModules.healthLog) {
+        const healthService = this.coreServices.getService("PersonalHealthService") as PersonalHealthService | undefined;
         if (healthService) {
             try {
-                const summaryObject = healthService.getLatestWorkoutSummaryForReview(); 
-                if (summaryObject) {
-                    fitnessLogSummaryData = summaryObject;
-                    this.logMsg(LogLevel.INFO, 'Fitness log summary fetched via PersonalHealthService.', { date: summaryObject.date });
+                const yesterdayStr = getYesterdayDateString();
+                const healthEvents = await healthService.getHealthEvents({ date: yesterdayStr, sort: 'asc' });
+                
+                if (healthEvents && healthEvents.length > 0) {
+                    previousDayHealthLogData = `Summary for ${yesterdayStr}:\n` + healthEvents.map((event: string) => `  - ${event.substring(11)}`).join('\n');
                 } else {
-                    this.logMsg(LogLevel.INFO, 'No fitness log entry found for today via PersonalHealthService.');
+                    previousDayHealthLogData = `No health events logged for ${yesterdayStr}.`;
                 }
+                this.logMsg(LogLevel.INFO, 'Previous day health log fetched via PersonalHealthService.', { date: yesterdayStr, count: healthEvents?.length || 0 });
             } catch (error: any) {
-                this.logMsg(LogLevel.ERROR, "Error fetching fitness log from PersonalHealthService.", { error: error.message });
+                this.logMsg(LogLevel.ERROR, "Error fetching health log from PersonalHealthService.", { error: error.message });
+                previousDayHealthLogData = "- Error fetching health log.";
             }
         } else {
-            this.logMsg(LogLevel.WARN, "PersonalHealthService not found. Cannot fetch fitness log.");
+            this.logMsg(LogLevel.WARN, "PersonalHealthService not found. Cannot fetch health log.");
         }
     }
 
@@ -239,55 +260,55 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
         calendarEventsSummary: calendarData,
         projectActions: projActions,
         weatherSummary: weatherData,
-        fitnessLogSummary: fitnessLogSummaryData,
+        previousDayHealthLog: previousDayHealthLogData,
+        inspirationalQuote: userCfg.contentModules.inspirationalQuote ? "Fetch quote here..." : undefined,
+        chineseWordOfTheDay: userCfg.contentModules.chineseWordOfTheDay ? { char: "字", pinyin: "zì", translation: "word" } : undefined,
         closing: "Have a productive day!"
     };
     this.logMsg(LogLevel.INFO, 'Daily review data structure generated.');
     return reviewData;
   }
 
-  private formatReviewDataToHtml(data: DailyReviewData): string {
-    const today = new Date().toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' });
-    let html = `
-      <html><head><style>
-      body { font-family: sans-serif; line-height: 1.6; margin: 20px; color: #333; }
-      h1 { color: #2c3e50; font-size: 24px; }
-      h2 { color: #34495e; font-size: 20px; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 30px; }
-      ul { list-style-type: none; padding-left: 0; }
-      li { margin-bottom: 8px; }
-      .project-actions strong { color: #2980b9; }
-      .weather { margin-top: 20px; padding: 10px; background-color: #f9f9f9; border-radius: 5px; }
-      .fitness-log { margin-top: 20px; padding: 10px; background-color: #e8f5e9; border-radius: 5px; }
-      .fitness-log .date-prefix { font-style: italic; color: #555; font-size: 0.9em; }
-      .footer { margin-top: 30px; font-size: 12px; color: #7f8c8d; }
-      </style></head><body>
-      <h1>Wooster's Daily Review</h1>
-      <p>${data.greeting.replace(/\n/g, "<br>")}</p>
-    `;
-    if (this.userConfig?.contentModules.calendar) {
-        html += `<h2>Today's Calendar Events</h2><div>${data.calendarEventsSummary.replace(/\n/g, "<br>")}</div>`;
+  private formatReviewDataToText(data: DailyReviewData): string {
+    let text = `${data.greeting}\n\n`;
+    if (data.calendarEventsSummary) text += `Calendar:\n${data.calendarEventsSummary}\n\n`;
+    if (data.projectActions && data.projectActions.length > 0) {
+      text += "Project Actions:\n";
+      data.projectActions.forEach(p => {
+        text += `  ${p.projectName}:\n`;
+        p.actions.forEach(a => text += `    - ${a}\n`);
+      });
+      text += "\n";
     }
-    if (this.userConfig?.contentModules.projectActions) {
-        html += `<h2>Next Actions</h2>`;
-        if (data.projectActions && data.projectActions.length > 0) {
-            data.projectActions.forEach(pa => {
-            html += `<div class="project-actions"><strong>${pa.projectName}:</strong><ul>`;
-            pa.actions.forEach(action => { html += `<li>- ${action}</li>`; });
-            html += `</ul></div>`;
-            });
-        } else {
-            html += "<p>No specific actions found.</p>";
-        }
+    if (data.weatherSummary) text += `Weather:\n${data.weatherSummary}\n\n`;
+    if (data.previousDayHealthLog) text += `Health Log:\n${data.previousDayHealthLog}\n\n`;
+    if (data.inspirationalQuote) text += `Quote of the Day:\n${data.inspirationalQuote}\n\n`;
+    if (data.chineseWordOfTheDay) {
+      text += `Chinese Word of the Day: ${data.chineseWordOfTheDay.char} (${data.chineseWordOfTheDay.pinyin}) - ${data.chineseWordOfTheDay.translation}\n\n`;
     }
-    if (this.userConfig?.contentModules.weather) {
-        html += `<div class="weather"><h2>Weather Forecast</h2><p>${data.weatherSummary.replace(/\n/g, "<br>")}</p></div>`;
-    }
+    text += data.closing;
+    return text;
+  }
 
-    if (this.userConfig?.contentModules.fitnessLog && data.fitnessLogSummary && data.fitnessLogSummary.content) {
-        html += `<div class="fitness-log"><h2>Latest Fitness Log</h2><p><span class="date-prefix">For ${data.fitnessLogSummary.date}:</span><br>${data.fitnessLogSummary.content.replace(/\n/g, "<br>")}</p></div>`;
+  private formatReviewDataToHtml(data: DailyReviewData): string {
+    let html = `<h2>${data.greeting}</h2>`;
+    if (data.calendarEventsSummary) html += `<h3>Calendar:</h3><p>${data.calendarEventsSummary.replace(/\n/g, "<br>")}</p>`;
+    if (data.projectActions && data.projectActions.length > 0) {
+      html += "<h3>Project Actions:</h3><ul>";
+      data.projectActions.forEach(p => {
+        html += `<li><b>${p.projectName}:</b><ul>`;
+        p.actions.forEach(a => html += `<li>${a}</li>`);
+        html += "</ul></li>";
+      });
+      html += "</ul>";
     }
-    
-    html += `<p class="footer">${data.closing.replace(/\n/g, "<br>")}</p></body></html>`;
+    if (data.weatherSummary) html += `<h3>Weather:</h3><p>${data.weatherSummary.replace(/\n/g, "<br>")}</p>`;
+    if (data.previousDayHealthLog) html += `<h3>Health Log:</h3><p>${data.previousDayHealthLog.replace(/\n/g, "<br>")}</p>`;
+    if (data.inspirationalQuote) html += `<h3>Quote of the Day:</h3><p><em>${data.inspirationalQuote}</em></p>`;
+    if (data.chineseWordOfTheDay) {
+      html += `<h3>Chinese Word of the Day:</h3><p>${data.chineseWordOfTheDay.char} (${data.chineseWordOfTheDay.pinyin}) - ${data.chineseWordOfTheDay.translation}</p>`;
+    }
+    html += `<p>${data.closing}</p>`;
     return html;
   }
 
@@ -408,12 +429,12 @@ To get started, or if you want to reset to a standard configuration, you can use
             case 'calendar': moduleDescription = "(Events from your primary calendar via Calendar plugin)"; break;
             case 'projectActions': moduleDescription = "(Next actions from actions.txt in 'home' and recent projects)"; break;
             case 'weather': moduleDescription = "(Forecast for your configured city via Weather plugin)"; break;
-            case 'fitnessLog': moduleDescription = "(Latest workout summary from the Personal Health plugin)"; break;
+            case 'healthLog': moduleDescription = "(Summary of yesterday\'s health events from the Personal Health plugin)"; break;
             case 'inspirationalQuote': moduleDescription = "(Daily wisdom - Coming Soon!)"; break;
             case 'chineseWordOfTheDay': moduleDescription = "(Learn a new word - Coming Soon!)"; break;
             default: moduleDescription = "(User-defined module)";
           }
-          helpText += `    *   **\`${moduleKey}\`**: \`${isEnabled}\` ${moduleDescription}\\n`;
+          helpText += `    *   **\`${moduleKey}\`**: \`${isEnabled}\` ${moduleDescription}\n`;
         }
 
         helpText += `
@@ -423,7 +444,7 @@ To get started, or if you want to reset to a standard configuration, you can use
 `;
 
         if (Object.keys(cfg.deliveryChannels).length === 0) {
-            helpText += "    *   No delivery channel services currently detected or configured.\\n";
+            helpText += "    *   No delivery channel services currently detected or configured.\n";
         }
 
         // Email Channel
@@ -486,26 +507,72 @@ For any issues or to reset to defaults, you can delete \`config/dailyReview.json
   }
 
   getScheduledTaskSetups?(): ScheduledTaskSetupOptions | ScheduledTaskSetupOptions[] | undefined {
-    if (!this.userConfig || !this.userConfig.isDailyReviewEnabled || !this.userConfig.deliveryChannels.email.enabled) {
-      this.logMsg(LogLevel.INFO, "Daily review email task not scheduled: disabled by user configuration or email channel disabled.");
-      return undefined; // Do not schedule if not enabled by user or email is off
+    let isEnabled = false;
+    let effectiveSchedule = this.getDefaultUserConfig().scheduleCron; // Fallback schedule
+    let scheduleSource = "Plugin Default";
+
+    if (this.userConfig) {
+      isEnabled = this.userConfig.isDailyReviewEnabled && 
+                  (this.userConfig.deliveryChannels.email?.enabled ?? false); // Ensure email channel is considered
+      
+      if (this.userConfig.isDailyReviewEnabled) {
+        scheduleSource = "User Config: dailyReview.json (isDailyReviewEnabled=true)";
+        if (this.userConfig.scheduleCron) {
+          effectiveSchedule = this.userConfig.scheduleCron;
+          // scheduleSource can be more specific if scheduleCron is from userConfig vs appConfig default
+        }
+      } else {
+        scheduleSource = "User Config: dailyReview.json (isDailyReviewEnabled=false)";
+      }
+      
+      if (!this.userConfig.deliveryChannels.email?.enabled && this.userConfig.isDailyReviewEnabled) {
+        scheduleSource += " (Email delivery disabled in dailyReview.json)";
+      }
+    } else {
+      // Should not happen if initialize ran correctly, but as a fallback:
+      scheduleSource = "Error: User config not loaded";
+      isEnabled = false;
+    }
+    
+    // AppConfig can also provide a cron schedule, which userConfig might override or fall back to
+    const appConfigDefaultCron = this.appConfig?.dailyReview?.scheduleCronExpression;
+    if (this.userConfig && !this.userConfig.scheduleCron && appConfigDefaultCron) {
+        // If userConfig exists but doesn't specify a cron, and appConfig has one
+        effectiveSchedule = appConfigDefaultCron;
+        if (scheduleSource === "User Config: dailyReview.json (isDailyReviewEnabled=true)") { // only if enabled by user
+            scheduleSource = "AppConfig: dailyReview.scheduleCronExpression (via User Config)";
+        }
     }
 
-    const schedule = this.userConfig.scheduleCron || 
-                     this.appConfig?.dailyReview?.scheduleCronExpression || 
-                     this.getDefaultUserConfig().scheduleCron; // Ultimate fallback
-    
-    this.logMsg(LogLevel.INFO, `Daily review email task will be scheduled with cron: ${schedule}`);
+    if (!isEnabled) {
+      this.logMsg(LogLevel.INFO, "Daily review email task not scheduled: disabled by user configuration or email channel disabled.");
+      // Return definition so it can be listed as defined but disabled
+    } else {
+      this.logMsg(LogLevel.INFO, `Daily review email task will be scheduled. Effective Cron: ${effectiveSchedule}, Source: ${scheduleSource}`);
+    }
+
     return {
       taskKey: "dailyReview.sendEmail",
       description: "Sends the Daily Review email based on user configuration.",
-      defaultScheduleExpression: schedule, 
-      // configKeyForSchedule is less relevant now as we read directly from userConfig
-      functionToExecute: this.sendDailyReviewEmail.bind(this), // Bind 'this' context
+      defaultScheduleExpression: this.getDefaultUserConfig().scheduleCron, // Plugin's ultimate fallback default
+      effectiveScheduleExpression: effectiveSchedule,
+      isEnabledByPlugin: isEnabled,
+      scheduleConfigSource: scheduleSource,
+      functionToExecute: this.sendDailyReviewEmail.bind(this), 
       executionPolicy: "RUN_ONCE_PER_PERIOD_CATCH_UP",
       initialPayload: {}
     };
   }
+}
+
+// Helper function for date
+function getYesterdayDateString(): string {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const year = yesterday.getFullYear();
+  const month = String(yesterday.getMonth() + 1).padStart(2, '0');
+  const day = String(yesterday.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 export default new DailyReviewPluginDefinition(); 

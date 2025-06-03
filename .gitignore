@@ -63,3 +63,5 @@ projects/
 prompts/
 
 inbox.md
+health_events.log.md # Raw health data log
+health.md # Generated health report
