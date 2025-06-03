@@ -3,7 +3,6 @@ import path from 'path'
 import { AppConfig, getConfig } from './configLoader'
 import { log, LogLevel } from './logger'
 import { WoosterPlugin, CoreServices, EmailService } from './types/plugin'
-import { Tool } from '@langchain/core/tools'
 import { ensureScheduleIsManaged } from './scheduler/schedulerService'
 import type { NextActionsService } from './plugins/nextActions/types'
 
