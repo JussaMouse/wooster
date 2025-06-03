@@ -32,7 +32,7 @@ const coreServicesInstance: CoreServices = {
   getService: (name: string): any | undefined => {
     const service = registeredServices.get(name)
     if (!service) {
-      log(LogLevel.WARN, `PluginManager: Service "${name}" requested but not found.`)
+      log(LogLevel.WARN, `PluginManager: Service "${name}" requested but not found. Current registered services: ${JSON.stringify(Array.from(registeredServices.keys()))}`)
     }
     return service
   },
