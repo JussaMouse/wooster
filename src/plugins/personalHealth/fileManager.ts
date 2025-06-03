@@ -3,25 +3,31 @@ import * as path from 'path';
 import { log, LogLevel } from '../../logger'; // Assuming logger is 2 levels up
 
 const HEALTH_LOG_FILENAME = 'health_events.log.md';
-let coreWorkspacePath: string | undefined = undefined; // To be set by the plugin
+let coreWorkspacePath: string | undefined = undefined;
+let configuredHealthBaseDir: string = '.'; // Default to current directory relative to workspace path
 
 /**
- * Sets the workspace path from the core services.
- * This is a bit of a workaround as fileManager doesn't have direct access to CoreServices.
- * The plugin's initialize method should call this.
+ * Sets the workspace path and the base directory for health files.
+ * The plugin\'s initialize method should call this.
  */
-export function setWorkspacePath(workspacePath: string): void {
+export function setPaths(workspacePath: string, healthBaseDir?: string | null): void {
     coreWorkspacePath = workspacePath;
+    if (healthBaseDir && healthBaseDir.trim() !== '') {
+        configuredHealthBaseDir = healthBaseDir;
+        log(LogLevel.INFO, `[PersonalHealthFileManager] Health base directory set to: ${healthBaseDir}`);
+    } else {
+        // Keep default '.' or explicitly set a plugin-level default if desired
+        log(LogLevel.INFO, `[PersonalHealthFileManager] Health base directory using default relative to workspace: ${configuredHealthBaseDir}`);
+    }
 }
 
 function getHealthLogPath(): string {
     if (!coreWorkspacePath) {
-        // Fallback to process.cwd() if not set, though this might not be ideal
-        // depending on how Wooster is run.
-        log(LogLevel.WARN, `[PersonalHealthFileManager] Workspace path not set, defaulting to process.cwd() for ${HEALTH_LOG_FILENAME}. This might be incorrect.`);
-        return path.join(process.cwd(), HEALTH_LOG_FILENAME);
+        log(LogLevel.WARN, `[PersonalHealthFileManager] Workspace path not set, defaulting to process.cwd() for health log. This might be incorrect.`);
+        // Fallback to process.cwd() + configuredHealthBaseDir might be process.cwd()/./filename or process.cwd()/health/filename
+        return path.join(process.cwd(), configuredHealthBaseDir, HEALTH_LOG_FILENAME);
     }
-    return path.join(coreWorkspacePath, HEALTH_LOG_FILENAME);
+    return path.join(coreWorkspacePath, configuredHealthBaseDir, HEALTH_LOG_FILENAME);
 }
 
 /**

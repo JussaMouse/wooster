@@ -20,6 +20,22 @@ export interface LoggingConfig {
   consoleQuietMode: boolean;
 }
 
+// Define an interface for GTD specific configurations
+export interface GtdConfig {
+  basePath?: string | null;
+  projectsDir?: string | null;
+  archiveDir?: string | null;
+  inboxPath?: string | null;
+  nextActionsPath?: string | null;
+  somedayMaybePath?: string | null;
+  waitingForPath?: string | null;
+}
+
+// Define an interface for PersonalHealth plugin specific configurations
+export interface PersonalHealthConfig {
+  healthDir?: string | null;
+}
+
 // Define an interface for the overall application configuration
 export interface AppConfig {
   env: string;
@@ -32,11 +48,13 @@ export interface AppConfig {
   userProfile: UserProfileConfig;
   plugins: Record<string, boolean>;
   projects: ProjectConfig;
+  gtd?: GtdConfig; // For sortInbox paths
   gmail?: GmailConfig;
   weather?: WeatherConfig;
   dailyReview?: DailyReviewConfig;
   captureApi?: CaptureApiConfig;
   apiPlugin?: ApiPluginConfig;
+  personalHealth?: PersonalHealthConfig; // Added PersonalHealth config
 }
 
 export interface GmailConfig {
@@ -130,6 +148,15 @@ export const DEFAULT_CONFIG: AppConfig = {
   },
   plugins: {},
   projects: {}, // Kept simple
+  gtd: {
+    basePath: undefined,
+    projectsDir: undefined,
+    archiveDir: undefined,
+    inboxPath: undefined,
+    nextActionsPath: undefined,
+    somedayMaybePath: undefined,
+    waitingForPath: undefined,
+  },
   gmail: {
     senderEmailAddress: null,
     userPersonalEmailAddress: null,
@@ -156,7 +183,10 @@ export const DEFAULT_CONFIG: AppConfig = {
     apiKey: null,
     globalIpWhitelistEnabled: false,
     globalAllowedIps: [],
-  }
+  },
+  personalHealth: { // Added default PersonalHealth config
+    healthDir: undefined, // Plugin will use its internal default e.g. \'./health/\'
+  },
 };
 
 // Holder for the current configuration
@@ -302,6 +332,21 @@ export function loadConfig(): AppConfig {
     // console.error('Error loading plugin configurations:', error);
     log(LogLevel.ERROR, 'Error processing plugin configurations in configLoader', { error });
   }
+
+  currentConfig.gtd = {
+    basePath: parseNullableString(getEnvVar('GTD_BASE_PATH'), DEFAULT_CONFIG.gtd?.basePath ?? null),
+    projectsDir: parseNullableString(getEnvVar('GTD_PROJECTS_DIR'), DEFAULT_CONFIG.gtd?.projectsDir ?? null),
+    archiveDir: parseNullableString(getEnvVar('GTD_ARCHIVE_DIR'), DEFAULT_CONFIG.gtd?.archiveDir ?? null),
+    inboxPath: parseNullableString(getEnvVar('GTD_INBOX_PATH'), DEFAULT_CONFIG.gtd?.inboxPath ?? null),
+    nextActionsPath: parseNullableString(getEnvVar('GTD_NEXT_ACTIONS_PATH'), DEFAULT_CONFIG.gtd?.nextActionsPath ?? null),
+    somedayMaybePath: parseNullableString(getEnvVar('GTD_SOMEDAY_MAYBE_PATH'), DEFAULT_CONFIG.gtd?.somedayMaybePath ?? null),
+    waitingForPath: parseNullableString(getEnvVar('GTD_WAITING_FOR_PATH'), DEFAULT_CONFIG.gtd?.waitingForPath ?? null),
+  };
+
+  currentConfig.personalHealth = {
+    healthDir: parseNullableString(getEnvVar('PERSONAL_HEALTH_DIR'), DEFAULT_CONFIG.personalHealth?.healthDir ?? null),
+  };
+
   return currentConfig;
 }
 

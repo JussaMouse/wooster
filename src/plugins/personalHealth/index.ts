@@ -2,31 +2,58 @@ import { WoosterPlugin, CoreServices, AppConfig } from '../../types/plugin';
 import { DynamicTool } from '@langchain/core/tools';
 import { log, LogLevel } from '../../logger';
 import { PersonalHealthService, HealthSummaryOptions, GetHealthLogLinesOptions, HealthReportOptions } from './types';
-import { appendHealthEvent, getHealthLogLines, setWorkspacePath, writeHealthReport } from './fileManager';
+import { appendHealthEvent, getHealthLogLines, setPaths, writeHealthReport } from './fileManager';
 import { ScheduledTaskSetupOptions } from '../../types/scheduler';
 import path from 'path'; // Import path module
+import * as fs from 'fs'; // Import fs for ensureDirExists
 // import * as chrono from 'chrono-node'; // Future: for natural language date parsing
 
 const DEFAULT_SUMMARY_LINES = 5;
 const HUMAN_READABLE_REPORT_FILENAME = 'health.md';
+const DEFAULT_HEALTH_DIR = './health/'; // Default directory for health files
 
 class PersonalHealthPluginDefinition implements WoosterPlugin, PersonalHealthService {
   readonly name = "personalHealth";
-  readonly version = '2.0.3'; // Version increment for simplification
-  readonly description = 'Manages personal health data by logging events with current timestamp to health_events.log.md.';
+  readonly version = '2.1.0'; // Version increment for configurable health directory
+  readonly description = 'Manages personal health data by logging events to a configurable health directory.';
   
   private coreServices!: CoreServices;
   private appConfig!: AppConfig;
+  private workspaceRoot!: string;
+  private healthDir!: string;
 
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
     this.coreServices = services;
     this.appConfig = config;
+    this.workspaceRoot = process.cwd();
     log(LogLevel.INFO, `[${this.name}] Initializing (v${this.version})...`);
-    const workspacePath = process.cwd();
-    setWorkspacePath(workspacePath);
-    log(LogLevel.INFO, `[${this.name}] Workspace path for health log file set to: ${workspacePath}`);
+
+    this.healthDir = config.personalHealth?.healthDir ?? DEFAULT_HEALTH_DIR;
+    log(LogLevel.INFO, `[${this.name}] Using health directory: ${this.healthDir}`);
+
+    setPaths(this.workspaceRoot, this.healthDir); // Pass both workspace and specific health dir
+    log(LogLevel.INFO, `[${this.name}] Paths for health log file manager configured.`);
+
+    this.ensureDirExists(this.getFullPath(this.healthDir));
+
     this.coreServices.registerService('PersonalHealthService', this);
     log(LogLevel.INFO, `[${this.name}] Service 'PersonalHealthService' registered.`);
+  }
+
+  private getFullPath(relativePath: string): string {
+    if (path.isAbsolute(relativePath)) {
+        return relativePath;
+    }
+    return path.join(this.workspaceRoot, relativePath);
+  }
+
+  private ensureDirExists(dirPath: string): void {
+    // dirPath here is expected to be an absolute path or resolvable from cwd by getFullPath if called with relative.
+    // However, ensureDirExists is called with getFullPath(this.healthDir), which is already absolute.
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+      log(LogLevel.INFO, `[${this.name}] Created directory ${dirPath}`);
+    }
   }
 
   async logHealthEvent(text: string): Promise<void> {
@@ -86,7 +113,7 @@ class PersonalHealthPluginDefinition implements WoosterPlugin, PersonalHealthSer
     try {
       const allEvents = await getHealthLogLines({ sort: 'asc' });
 
-      const reportFilePath = path.join(process.cwd(), HUMAN_READABLE_REPORT_FILENAME); // Use process.cwd()
+      const reportFilePath = this.getFullPath(path.join(this.healthDir, HUMAN_READABLE_REPORT_FILENAME));
 
       if (allEvents.length === 0) {
         // Use template literal for multi-line string

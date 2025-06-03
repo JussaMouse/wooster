@@ -63,6 +63,6 @@ projects/
 # User-specific SystemPrompts
 prompts/
 
-inbox.md
-health_events.log.md # Raw health data log
-health.md # Generated health report
+gtd/
+
+health/
