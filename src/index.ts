@@ -28,24 +28,74 @@ if (!fs.existsSync(userProfilePath)) {
 let mainRl: readline.Interface | undefined;
 let isMainRlPaused = false;
 let mainRlLineHandler: ((line: string) => Promise<void>) | undefined;
+let mainRlCloseHandler: (() => void) | undefined;
+let chatHistory: Array<{ role: string; content: string }> = []; 
+let defaultProjectNameGlobal = 'home'; // To be used by handleMainReplLine
 
-// Manager for controlling the main REPL's input
+// Define the main REPL line handler as a named function
+async function handleMainReplLineInternal(line: string): Promise<void> {
+  if (mainReplManager.isPaused()) { // Safeguard, though close() should prevent this call
+    log(LogLevel.WARN, "Main REPL line handler called while PAUSED. Input ignored.");
+    return; 
+  }
+
+  const input = line.trim();
+  if (input.toLowerCase() === 'exit') {
+    if (mainRl) mainRl.close(); // This will trigger the mainRlCloseHandler
+    return; 
+  }
+  if (input) {
+    const response = await agentRespond(input, chatHistory, defaultProjectNameGlobal);
+    console.log(`Wooster: ${response}`);
+    chatHistory.push({ role: 'user', content: input });
+    chatHistory.push({ role: 'assistant', content: response });
+    if (chatHistory.length > 20) { 
+      chatHistory = chatHistory.slice(-20);
+    }
+  }
+
+  if (!mainReplManager.isPaused() && mainRl) {
+    mainRl.prompt();
+  }
+}
+
+// Define the main REPL close handler
+function handleMainRlCloseInternal(): void {
+  log(LogLevel.INFO, 'Exiting Wooster. Goodbye!');
+  process.exit(0);
+}
+
+function createAndConfigureMainRl(): readline.Interface {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: '> '
+  });
+
+  // Ensure handlers are defined before attaching
+  if (!mainRlLineHandler) mainRlLineHandler = handleMainReplLineInternal;
+  if (!mainRlCloseHandler) mainRlCloseHandler = handleMainRlCloseInternal;
+
+  rl.on('line', mainRlLineHandler);
+  rl.on('close', mainRlCloseHandler);
+  return rl;
+}
+
 export const mainReplManager = {
   pauseInput: () => {
-    if (mainRl && !isMainRlPaused && mainRlLineHandler) {
-      mainRl.pause();
-      mainRl.off('line', mainRlLineHandler); // Detach the handler
+    if (mainRl && !isMainRlPaused) {
+      mainRl.close(); // Close the existing readline interface
+      // Note: listeners are removed by close(), no need for mainRl.off() explicitly here
       isMainRlPaused = true;
-      log(LogLevel.DEBUG, "Main REPL input PAUSED and listener detached.");
+      log(LogLevel.DEBUG, "Main REPL input CLOSED and PAUSED for interactive tool.");
     }
   },
   resumeInput: () => {
-    if (mainRl && isMainRlPaused && mainRlLineHandler) {
-      // Re-attach the handler first, then resume, then prompt
-      mainRl.on('line', mainRlLineHandler);
-      mainRl.resume();
+    if (isMainRlPaused) { // Only resume if it was paused
+      mainRl = createAndConfigureMainRl(); // Recreate and reconfigure
       isMainRlPaused = false;
-      log(LogLevel.DEBUG, "Main REPL input RESUMED and listener re-attached.");
+      log(LogLevel.DEBUG, "Main REPL input RECREATED and RESUMED after interactive tool.");
+      console.log("Wooster is ready for your next command."); // Friendly message
       mainRl.prompt(); 
     }
   },
@@ -155,39 +205,6 @@ async function schedulerAgentCallback(taskPayload: string): Promise<void> {
   }
 }
 
-// Define the main REPL line handler as a named function
-async function handleMainReplLine(line: string): Promise<void> {
-  // This check should ideally not be needed if off/on logic is perfect,
-  // but as a safeguard, especially during development/debugging.
-  if (mainReplManager.isPaused()) {
-    log(LogLevel.WARN, "Main REPL line handler called while supposedly PAUSED. Input ignored.");
-    return; 
-  }
-
-  const input = line.trim();
-  if (input.toLowerCase() === 'exit') {
-    if (mainRl) mainRl.close();
-    return; 
-  }
-  if (input) {
-    const currentProjectName = 'home'; // This should ideally be dynamic if projects are switchable
-    // Assuming chatHistory is accessible here (it was in the original main scope)
-    const response = await agentRespond(input, chatHistory, currentProjectName);
-    console.log(`Wooster: ${response}`);
-    chatHistory.push({ role: 'user', content: input });
-    chatHistory.push({ role: 'assistant', content: response });
-    if (chatHistory.length > 20) { 
-      chatHistory = chatHistory.slice(-20);
-    }
-  }
-
-  if (!mainReplManager.isPaused() && mainRl) {
-    mainRl.prompt();
-  }
-}
-
-let chatHistory: Array<{ role: string; content: string }> = []; // Moved chatHistory to a scope accessible by handleMainReplLine
-
 async function main() {
   bootstrapLogger();
   loadConfig();
@@ -205,7 +222,8 @@ async function main() {
   log(LogLevel.INFO, "Scheduler database initialized.");
   setAgentConfig(appConfig);
   const embeddings = new OpenAIEmbeddings({ openAIApiKey: appConfig.openai.apiKey });
-  const defaultProjectNameGlobal = 'home'; 
+  
+  // defaultProjectNameGlobal is already defined at the top level
   const projectDir = path.join(projectBasePath, defaultProjectNameGlobal);
   if (!fs.existsSync(projectDir)) {
     fs.mkdirSync(projectDir, { recursive: true });
@@ -220,24 +238,14 @@ async function main() {
   await processCatchUpTasks();
   log(LogLevel.INFO, "Catch-up tasks processed.");
 
-  mainRl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    prompt: '> '
-  });
+  // Initial creation of mainRl
+  mainRl = createAndConfigureMainRl();
 
   console.log("Wooster is ready. Type 'exit' to quit, or enter your command.");
-  
-  // Assign the named handler
-  mainRlLineHandler = handleMainReplLine; 
-  mainRl.on('line', mainRlLineHandler);
-
   mainRl.prompt();
-
-  mainRl.on('close', () => {
-    log(LogLevel.INFO, 'Exiting Wooster. Goodbye!');
-    process.exit(0);
-  });
+  
+  // The mainRl.on('close') handler is now set inside createAndConfigureMainRl
+  // The mainRl.on('line') handler is also set inside createAndConfigureMainRl
 }
 
 main().catch(error => {
@@ -246,10 +254,7 @@ main().catch(error => {
     stack: (error instanceof Error ? error.stack : undefined),
     name: (error instanceof Error ? error.name : undefined),
   });
-  // Check if 'cause' exists on the error object before logging it
   if (error instanceof Error && 'cause' in error) {
-    // Type 'error' as 'any' here to access 'cause' if the type guard passes,
-    // as TS might still complain based on the default Error type.
     log(LogLevel.ERROR, 'Error Cause:', { cause: (error as any).cause });
   }
   console.error('[CRITICAL FALLBACK] Error in main:', error);
