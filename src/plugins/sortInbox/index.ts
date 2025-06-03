@@ -333,8 +333,14 @@ ${item.description}
             console.log("No changes detected.");
           }
         } catch (error) {
-          core.log(LogLevel.ERROR, "SortInboxPlugin: Failed to open or process $EDITOR modification.", error);
-          console.log("Failed to edit item. Please edit manually if needed.");
+          let meta: object | undefined;
+          if (error instanceof Error) {
+            meta = { message: error.message, stack: error.stack, details: "Failed to open or process $EDITOR modification for item: " + item.description };
+          } else {
+            meta = { error: String(error), details: "Unknown error during $EDITOR modification for item: " + item.description };
+          }
+          core.log(LogLevel.ERROR, "SortInboxPlugin: $EDITOR error", meta);
+          console.log("Failed to edit item. Please ensure $EDITOR is set and working, or edit the item manually in inbox.md.");
         }
         // Do not mark as processed, loop back to re-evaluate the (potentially modified) item.
         return false; // Don't quit, re-process this item
