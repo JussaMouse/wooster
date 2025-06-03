@@ -100,9 +100,9 @@ class ApiPluginDefinition implements WoosterPlugin {
     // Define the handler function INSIDE initialize, where core and apiConfig are in scope
     const handleCaptureRequest = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
       try {
-        const { description } = req.body;
-        if (typeof description !== 'string' || description.trim() === '') {
-          res.status(400).json({ error: 'Item description is required and must be a non-empty string.' });
+        const { text } = req.body;
+        if (typeof text !== 'string' || text.trim() === '') {
+          res.status(400).json({ error: 'Item text is required and must be a non-empty string.' });
           return;
         }
 
@@ -113,18 +113,18 @@ class ApiPluginDefinition implements WoosterPlugin {
           return;
         }
 
-        const newItem = captureService.captureItem(description);
+        const newItem = captureService.captureItem(text);
 
         if (newItem) {
           res.status(201).json({
             message: "Item captured successfully.",
             itemId: newItem.id,
-            description: newItem.description
+            capturedText: newItem.text
           });
           return;
         } else {
-          core.log(LogLevel.WARN, `ApiPlugin: captureService.captureItem returned null for description: "${description}"`);
-          res.status(400).json({ error: 'Failed to capture item. Invalid description or system error.' });
+          core.log(LogLevel.WARN, `ApiPlugin: captureService.captureItem returned null for text: "${text}"`);
+          res.status(400).json({ error: 'Failed to capture item. Invalid text or system error.' });
           return;
         }
       } catch (error: any) {
