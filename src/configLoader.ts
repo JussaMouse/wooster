@@ -61,6 +61,9 @@ export interface GmailConfig {
   senderEmailAddress: string | null;
   userPersonalEmailAddress: string | null;
   emailAppPassword: string | null;
+  personalHealth: { // Added default PersonalHealth config
+    healthDir: undefined, // Plugin will use its internal default e.g. './health/'
+  },
 }
 
 export interface UserProfileConfig {
@@ -161,6 +164,9 @@ export const DEFAULT_CONFIG: AppConfig = {
     senderEmailAddress: null,
     userPersonalEmailAddress: null,
     emailAppPassword: null,
+    personalHealth: { // Added default PersonalHealth config
+      healthDir: undefined, // Plugin will use its internal default e.g. './health/'
+    },
   },
   weather: {
     city: null,
@@ -185,7 +191,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     globalAllowedIps: [],
   },
   personalHealth: { // Added default PersonalHealth config
-    healthDir: undefined, // Plugin will use its internal default e.g. \'./health/\'
+    healthDir: undefined, // Plugin will use its internal default e.g. './health/'
   },
 };
 
@@ -277,6 +283,9 @@ export function loadConfig(): AppConfig {
     senderEmailAddress: parseNullableString(getEnvVar('GMAIL_SENDER_EMAIL_ADDRESS'), DEFAULT_CONFIG.gmail?.senderEmailAddress || null),
     userPersonalEmailAddress: parseNullableString(getEnvVar('GMAIL_USER_PERSONAL_EMAIL_ADDRESS'), DEFAULT_CONFIG.gmail?.userPersonalEmailAddress || null),
     emailAppPassword: parseNullableString(getEnvVar('GMAIL_APP_PASSWORD'), DEFAULT_CONFIG.gmail?.emailAppPassword || null),
+    personalHealth: { // Added default PersonalHealth config
+      healthDir: parseNullableString(getEnvVar('PERSONAL_HEALTH_DIR'), DEFAULT_CONFIG.personalHealth?.healthDir ?? null),
+    },
   };
 
   currentConfig.google = {
@@ -320,8 +329,8 @@ export function loadConfig(): AppConfig {
 
   currentConfig.plugins = {};
   try {
-    const pluginFiles = getPluginFileNames(); 
-    pluginFiles.forEach((fileName: string) => { // fileName is a directory name e.g. "timeManagement"
+    const pluginFileNames = getPluginFileNames(); 
+    pluginFileNames.forEach((fileName: string) => { // fileName is a directory name e.g. "timeManagement"
       const pluginName = fileName; // No need for path.basename if getPluginFileNames returns dir names
       const envVarName = 'PLUGIN_' + pluginName.toUpperCase() + '_ENABLED'; 
       // Default to false if the environment variable is not set or if not in DEFAULT_CONFIG.plugins
