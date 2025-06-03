@@ -27,22 +27,26 @@ if (!fs.existsSync(userProfilePath)) {
 // Global reference for the main readline interface and its state
 let mainRl: readline.Interface | undefined;
 let isMainRlPaused = false;
+let mainRlLineHandler: ((line: string) => Promise<void>) | undefined;
 
 // Manager for controlling the main REPL's input
 export const mainReplManager = {
   pauseInput: () => {
-    if (mainRl && !isMainRlPaused) {
+    if (mainRl && !isMainRlPaused && mainRlLineHandler) {
       mainRl.pause();
+      mainRl.off('line', mainRlLineHandler); // Detach the handler
       isMainRlPaused = true;
-      log(LogLevel.DEBUG, "Main REPL input PAUSED for interactive tool.");
+      log(LogLevel.DEBUG, "Main REPL input PAUSED and listener detached.");
     }
   },
   resumeInput: () => {
-    if (mainRl && isMainRlPaused) {
+    if (mainRl && isMainRlPaused && mainRlLineHandler) {
+      // Re-attach the handler first, then resume, then prompt
+      mainRl.on('line', mainRlLineHandler);
       mainRl.resume();
       isMainRlPaused = false;
-      log(LogLevel.DEBUG, "Main REPL input RESUMED after interactive tool.");
-      mainRl.prompt(); // Re-show the prompt only after resuming
+      log(LogLevel.DEBUG, "Main REPL input RESUMED and listener re-attached.");
+      mainRl.prompt(); 
     }
   },
   isPaused: () => isMainRlPaused,
@@ -151,12 +155,44 @@ async function schedulerAgentCallback(taskPayload: string): Promise<void> {
   }
 }
 
-async function main() {
-  bootstrapLogger(); // Initial, minimal logger
-  loadConfig(); // Load configuration from .env and potentially config files
-  const appConfig = getConfig();
-  applyLoggerConfig(appConfig.logging); // Apply full logging configuration
+// Define the main REPL line handler as a named function
+async function handleMainReplLine(line: string): Promise<void> {
+  // This check should ideally not be needed if off/on logic is perfect,
+  // but as a safeguard, especially during development/debugging.
+  if (mainReplManager.isPaused()) {
+    log(LogLevel.WARN, "Main REPL line handler called while supposedly PAUSED. Input ignored.");
+    return; 
+  }
 
+  const input = line.trim();
+  if (input.toLowerCase() === 'exit') {
+    if (mainRl) mainRl.close();
+    return; 
+  }
+  if (input) {
+    const currentProjectName = 'home'; // This should ideally be dynamic if projects are switchable
+    // Assuming chatHistory is accessible here (it was in the original main scope)
+    const response = await agentRespond(input, chatHistory, currentProjectName);
+    console.log(`Wooster: ${response}`);
+    chatHistory.push({ role: 'user', content: input });
+    chatHistory.push({ role: 'assistant', content: response });
+    if (chatHistory.length > 20) { 
+      chatHistory = chatHistory.slice(-20);
+    }
+  }
+
+  if (!mainReplManager.isPaused() && mainRl) {
+    mainRl.prompt();
+  }
+}
+
+let chatHistory: Array<{ role: string; content: string }> = []; // Moved chatHistory to a scope accessible by handleMainReplLine
+
+async function main() {
+  bootstrapLogger();
+  loadConfig();
+  const appConfig = getConfig();
+  applyLoggerConfig(appConfig.logging);
   log(LogLevel.INFO, `Wooster starting up... v${appConfig.version}`);
   log(LogLevel.DEBUG, 'Application Config:', { appConfig });
 
@@ -165,58 +201,25 @@ async function main() {
     process.exit(1); 
   }
 
-  // Initialize databases
   initSchedulerDB();
   log(LogLevel.INFO, "Scheduler database initialized.");
-
-  // Initialize main services
-  // Agent config needs to be set early as other services might use it via getConfig()
   setAgentConfig(appConfig);
-
-  // Initialize vector stores (example for a default project and user profile)
-  // This is a simplified setup; a real app would manage projects dynamically.
   const embeddings = new OpenAIEmbeddings({ openAIApiKey: appConfig.openai.apiKey });
-  
-  const defaultProjectName = 'home'; // Or load from config/determine dynamically
-  const projectDir = path.join(projectBasePath, defaultProjectName);
+  const defaultProjectNameGlobal = 'home'; 
+  const projectDir = path.join(projectBasePath, defaultProjectNameGlobal);
   if (!fs.existsSync(projectDir)) {
     fs.mkdirSync(projectDir, { recursive: true });
   }
-  // const projectVectorStorePath = path.join(projectDir, 'vectorStore'); // No longer needed here like this
-  
-  // Replace the old vector store loading/creation block with a call to the new function
-  const projectVectorStore = await initializeProjectVectorStore(defaultProjectName, projectDir, embeddings, appConfig);
-
-  // Remove or comment out the old diagnostic log here, as the new function logs counts.
-  // if (projectVectorStore && projectVectorStore.docstore && (projectVectorStore.docstore as any)._docs) {
-  //   log(LogLevel.DEBUG, `DIAGNOSTIC_VECTOR_STORE: Loaded store document count: ${(projectVectorStore.docstore as any)._docs.size}`);
-  // } else {
-  //   log(LogLevel.DEBUG, `DIAGNOSTIC_VECTOR_STORE: Could not determine loaded store document count (docstore or _docs missing).`);
-  // }
-  
+  const projectVectorStore = await initializeProjectVectorStore(defaultProjectNameGlobal, projectDir, embeddings, appConfig);
   await initializeAgentExecutorService(projectVectorStore);
   log(LogLevel.INFO, "AgentExecutorService initialized.");
-
-  // Initialize scheduler
-  // Pass the agentRespond function as the callback for scheduled agent tasks
   await initSchedulerService(schedulerAgentCallback);
   log(LogLevel.INFO, "SchedulerService initialized.");
-
-  // Load plugins - this needs to happen after core services that plugins might depend on are ready
-  // (like scheduler, config, logger).
-  // It also needs to happen before agent executor tools are finalized if plugins provide tools.
-  // And before scheduler catch-up tasks if plugins provide scheduled functions.
   await loadPlugins();
   log(LogLevel.INFO, "Plugins loaded.");
-  
-  // Process any tasks that were missed while the application was offline
-  // This should happen AFTER plugins are loaded, in case plugins define scheduled tasks
   await processCatchUpTasks();
   log(LogLevel.INFO, "Catch-up tasks processed.");
 
-
-  // Start interactive REPL
-  // Assign to the global mainRl variable
   mainRl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -224,42 +227,14 @@ async function main() {
   });
 
   console.log("Wooster is ready. Type 'exit' to quit, or enter your command.");
+  
+  // Assign the named handler
+  mainRlLineHandler = handleMainReplLine; 
+  mainRl.on('line', mainRlLineHandler);
+
   mainRl.prompt();
 
-  let chatHistory: Array<{ role: string; content: string }> = [];
-
-  mainRl.on('line', async (line) => {
-    if (mainReplManager.isPaused()) {
-      // If the main REPL is paused, this event should ideally not fire.
-      // If it does, it means an interactive tool might not be consuming input exclusively.
-      // For now, we'll log and ignore it to prevent interference.
-      log(LogLevel.WARN, "Main REPL received input while PAUSED. Input ignored. This might indicate an issue with input handling.");
-      // We might need to ensure the prompt isn't re-shown if it was already paused.
-      return; 
-    }
-
-    const input = line.trim();
-    if (input.toLowerCase() === 'exit') {
-      if (mainRl) mainRl.close(); // Ensure mainRl is defined before closing
-    return; 
-  }
-    if (input) {
-      // agentRespond will be modified later to call pause/resume if needed
-      const response = await agentRespond(input, chatHistory, defaultProjectName);
-      console.log(`Wooster: ${response}`);
-      chatHistory.push({ role: 'user', content: input });
-      chatHistory.push({ role: 'assistant', content: response });
-      // Optional: Trim history to keep it manageable
-      if (chatHistory.length > 20) { 
-        chatHistory = chatHistory.slice(-20);
-      }
-    }
-    // Only prompt if the main REPL is not supposed to be paused.
-    // The resumeInput function will handle prompting when an interactive session ends.
-    if (!mainReplManager.isPaused() && mainRl) {
-      mainRl.prompt();
-    }
-  }).on('close', () => {
+  mainRl.on('close', () => {
     log(LogLevel.INFO, 'Exiting Wooster. Goodbye!');
     process.exit(0);
   });
@@ -267,12 +242,16 @@ async function main() {
 
 main().catch(error => {
   log(LogLevel.ERROR, 'Critical error in main function:', { 
-    message: error.message, 
-    stack: error.stack,
-    name: error.name,
-    cause: error.cause 
+    message: (error instanceof Error ? error.message : String(error)), 
+    stack: (error instanceof Error ? error.stack : undefined),
+    name: (error instanceof Error ? error.name : undefined),
   });
-  // Use console.error as logger might be part of the issue or not fully set up
+  // Check if 'cause' exists on the error object before logging it
+  if (error instanceof Error && 'cause' in error) {
+    // Type 'error' as 'any' here to access 'cause' if the type guard passes,
+    // as TS might still complain based on the default Error type.
+    log(LogLevel.ERROR, 'Error Cause:', { cause: (error as any).cause });
+  }
   console.error('[CRITICAL FALLBACK] Error in main:', error);
   process.exit(1);
 });
