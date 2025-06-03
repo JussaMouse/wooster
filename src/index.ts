@@ -24,6 +24,30 @@ if (!fs.existsSync(userProfilePath)) {
   fs.mkdirSync(userProfilePath, { recursive: true });
 }
 
+// Global reference for the main readline interface and its state
+let mainRl: readline.Interface | undefined;
+let isMainRlPaused = false;
+
+// Manager for controlling the main REPL's input
+export const mainReplManager = {
+  pauseInput: () => {
+    if (mainRl && !isMainRlPaused) {
+      mainRl.pause();
+      isMainRlPaused = true;
+      log(LogLevel.DEBUG, "Main REPL input PAUSED for interactive tool.");
+    }
+  },
+  resumeInput: () => {
+    if (mainRl && isMainRlPaused) {
+      mainRl.resume();
+      isMainRlPaused = false;
+      log(LogLevel.DEBUG, "Main REPL input RESUMED after interactive tool.");
+      mainRl.prompt(); // Re-show the prompt only after resuming
+    }
+  },
+  isPaused: () => isMainRlPaused,
+};
+
 // New function to initialize/rebuild vector store for a project
 async function initializeProjectVectorStore(projectName: string, projectPath: string, embeddingsInstance: OpenAIEmbeddings, appConfig: AppConfig): Promise<FaissStore> {
   const storeDirPath = path.join(projectPath, 'vectorStore');
@@ -192,24 +216,35 @@ async function main() {
 
 
   // Start interactive REPL
-  const rl = readline.createInterface({
+  // Assign to the global mainRl variable
+  mainRl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
     prompt: '> '
   });
 
   console.log("Wooster is ready. Type 'exit' to quit, or enter your command.");
-  rl.prompt();
+  mainRl.prompt();
 
   let chatHistory: Array<{ role: string; content: string }> = [];
 
-  rl.on('line', async (line) => {
+  mainRl.on('line', async (line) => {
+    if (mainReplManager.isPaused()) {
+      // If the main REPL is paused, this event should ideally not fire.
+      // If it does, it means an interactive tool might not be consuming input exclusively.
+      // For now, we'll log and ignore it to prevent interference.
+      log(LogLevel.WARN, "Main REPL received input while PAUSED. Input ignored. This might indicate an issue with input handling.");
+      // We might need to ensure the prompt isn't re-shown if it was already paused.
+      return; 
+    }
+
     const input = line.trim();
     if (input.toLowerCase() === 'exit') {
-      rl.close();
+      if (mainRl) mainRl.close(); // Ensure mainRl is defined before closing
     return; 
   }
     if (input) {
+      // agentRespond will be modified later to call pause/resume if needed
       const response = await agentRespond(input, chatHistory, defaultProjectName);
       console.log(`Wooster: ${response}`);
       chatHistory.push({ role: 'user', content: input });
@@ -219,7 +254,11 @@ async function main() {
         chatHistory = chatHistory.slice(-20);
       }
     }
-    rl.prompt();
+    // Only prompt if the main REPL is not supposed to be paused.
+    // The resumeInput function will handle prompting when an interactive session ends.
+    if (!mainReplManager.isPaused() && mainRl) {
+      mainRl.prompt();
+    }
   }).on('close', () => {
     log(LogLevel.INFO, 'Exiting Wooster. Goodbye!');
     process.exit(0);

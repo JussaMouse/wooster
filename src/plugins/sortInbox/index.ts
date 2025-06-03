@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { execSync } from 'child_process';
+import { mainReplManager } from '../../index'; // Import mainReplManager
 
 let core: CoreServices;
 
@@ -378,60 +379,76 @@ ${item.description}
       output: process.stdout
     });
 
-    try {
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.isProcessed) continue; // Skip if already handled (e.g. after an edit)
+    return new Promise(async (resolvePromise) => {
+      try {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.isProcessed) continue;
 
-        const shouldQuit = await this.processItem(item, rl);
-        if (shouldQuit) break;
-
-        // If item was edited, it might have changed its position or content.
-        // Re-reading might be too complex for now, we assume successful processing removes it.
-        // If an item was edited but not subsequently actioned to remove it,
-        // it will be re-processed unless the edit flow itself handles it.
-        // The current edit flow re-prompts for action on the same item.
+          const shouldQuit = await this.processItem(item, rl);
+          if (shouldQuit) break;
+        }
+      } catch (error) {
+        let meta: object | undefined;
+        if (error instanceof Error) {
+            meta = { message: error.message, stack: error.stack };
+        } else {
+            meta = { error: String(error) };
+        }
+        core.log(LogLevel.ERROR, "SortInboxPlugin: Error during item processing loop.", meta);
+        if (process.stdout.isTTY) {
+            console.error("An error occurred during inbox processing. Please check logs.");
+        }
+      } finally {
+        rl.close();
+        const finalItems = await this.readInboxItems();
+        if (finalItems.length === 0 && process.stdout.isTTY) {
+            console.log("\nInbox zero! 🎉");
+        } else if (process.stdout.isTTY) {
+            console.log("\nFinished processing session.");
+            if (finalItems.length > 0) console.log(`${finalItems.length} item(s) remaining in inbox.`);
+        }
+        core.log(LogLevel.INFO, "SortInboxPlugin: Finished processing inbox items.");
+        resolvePromise();
       }
-    } finally {
-      rl.close();
-    }
-    
-    // Final check for items to refresh the count if any were skipped or edit-then-quit
-    items = await this.readInboxItems();
-    if (items.length === 0 && process.stdout.isTTY) {
-         console.log("\nInbox zero! 🎉");
-    } else if (process.stdout.isTTY) {
-        console.log("\nFinished processing session.");
-        if(items.length > 0) console.log(`${items.length} item(s) remaining in inbox.`);
-    }
-    core.log(LogLevel.INFO, "SortInboxPlugin: Finished processing inbox items.");
+    });
   }
 
   getAgentTools?(): DynamicTool[] {
     const sortInboxTool = new DynamicTool({
       name: "processInboxItems",
-      description: "Initiates an interactive command-line session to process items from inbox.md. Allows user to categorize, defer, delegate, or action each item.",
+      description: "Initiates an interactive command-line session to process items from inbox.md. Allows user to categorize, defer, delegate, or action each item. This tool is blocking and will wait for the session to complete.",
       func: async (): Promise<string> => {
-        core.log(LogLevel.DEBUG, 'AgentTool processInboxItems: called');
+        mainReplManager.pauseInput(); // Pause main REPL before starting
+        core.log(LogLevel.DEBUG, 'AgentTool processInboxItems: called, Main REPL paused.');
+        
         if (!process.stdin.isTTY) {
           const message = "ProcessInboxItems tool must be run in an interactive terminal session.";
           core.log(LogLevel.WARN, `AgentTool processInboxItems: ${message}`);
+          mainReplManager.resumeInput(); // Resume REPL if not TTY and returning early
           return message;
         }
-        // Run sortInbox and let it handle console interaction.
-        // This is a long-running interactive process.
-        // Avoid awaiting it here so agent can return quickly.
-        this.sortInbox().catch(err => {
+        
+        try {
+          await this.sortInbox(); 
+          return "Inbox processing session finished.";
+        } catch (err) {
             let meta: object | undefined;
             if (err instanceof Error) {
               meta = { message: err.message, stack: err.stack };
             } else {
-              meta = { error: String(err) }; // Ensure this is an object for the logger
+              meta = { error: String(err) }; 
             }
             core.log(LogLevel.ERROR, "Error during sortInbox execution triggered by agent", meta);
-        });
-        return "Inbox processing session started in your terminal. Please respond to the prompts there.";
+            return "Inbox processing session failed or was interrupted. Please check logs.";
+        } finally {
+          mainReplManager.resumeInput(); // Ensure REPL is resumed after session ends or errors
+          core.log(LogLevel.DEBUG, 'AgentTool processInboxItems: finished, Main REPL resumed.');
+        }
       },
+      metadata: { 
+        isInteractive: true 
+      }
     });
     return [sortInboxTool];
   }
