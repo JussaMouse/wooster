@@ -168,7 +168,10 @@ class GCalPluginDefinition implements WoosterPlugin {
     const initialized = await initializeInternalClient(config);
     if (initialized) {
         services.registerService("ListCalendarEventsService", listCalendarEventsServiceFunction);
-        services.registerService("CalendarService", createEventInternal);
+        const calendarServiceImpl = {
+            createEvent: createEventInternal
+        };
+        services.registerService("CalendarService", calendarServiceImpl);
         core.log(LogLevel.INFO, 'GCalPlugin: Calendar services (ListCalendarEventsService, CalendarService) registered.');
     } else {
         core.log(LogLevel.WARN, 'GCalPlugin: Client not initialized. Services not registered.');
