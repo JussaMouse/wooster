@@ -22,18 +22,18 @@ export interface LoggingConfig {
 
 // Define an interface for GTD specific configurations
 export interface GtdConfig {
-  basePath?: string | null;
-  projectsDir?: string | null;
-  archiveDir?: string | null;
-  inboxPath?: string | null;
-  nextActionsPath?: string | null;
-  somedayMaybePath?: string | null;
-  waitingForPath?: string | null;
+  basePath?: string;
+  projectsDir?: string;
+  archiveDir?: string;
+  inboxPath?: string;
+  nextActionsPath?: string;
+  somedayMaybePath?: string;
+  waitingForPath?: string;
 }
 
 // Define an interface for PersonalHealth plugin specific configurations
 export interface PersonalHealthConfig {
-  healthDir?: string | null;
+  healthDir?: string;
 }
 
 // Define an interface for the overall application configuration
@@ -61,9 +61,6 @@ export interface GmailConfig {
   senderEmailAddress: string | null;
   userPersonalEmailAddress: string | null;
   emailAppPassword: string | null;
-  personalHealth: { // Added default PersonalHealth config
-    healthDir: undefined, // Plugin will use its internal default e.g. './health/'
-  },
 }
 
 export interface UserProfileConfig {
@@ -164,9 +161,6 @@ export const DEFAULT_CONFIG: AppConfig = {
     senderEmailAddress: null,
     userPersonalEmailAddress: null,
     emailAppPassword: null,
-    personalHealth: { // Added default PersonalHealth config
-      healthDir: undefined, // Plugin will use its internal default e.g. './health/'
-    },
   },
   weather: {
     city: null,
@@ -190,8 +184,8 @@ export const DEFAULT_CONFIG: AppConfig = {
     globalIpWhitelistEnabled: false,
     globalAllowedIps: [],
   },
-  personalHealth: { // Added default PersonalHealth config
-    healthDir: undefined, // Plugin will use its internal default e.g. './health/'
+  personalHealth: { // Top-level default remains
+    healthDir: undefined,
   },
 };
 
@@ -283,9 +277,6 @@ export function loadConfig(): AppConfig {
     senderEmailAddress: parseNullableString(getEnvVar('GMAIL_SENDER_EMAIL_ADDRESS'), DEFAULT_CONFIG.gmail?.senderEmailAddress || null),
     userPersonalEmailAddress: parseNullableString(getEnvVar('GMAIL_USER_PERSONAL_EMAIL_ADDRESS'), DEFAULT_CONFIG.gmail?.userPersonalEmailAddress || null),
     emailAppPassword: parseNullableString(getEnvVar('GMAIL_APP_PASSWORD'), DEFAULT_CONFIG.gmail?.emailAppPassword || null),
-    personalHealth: { // Added default PersonalHealth config
-      healthDir: parseNullableString(getEnvVar('PERSONAL_HEALTH_DIR'), DEFAULT_CONFIG.personalHealth?.healthDir ?? null),
-    },
   };
 
   currentConfig.google = {
@@ -342,18 +333,34 @@ export function loadConfig(): AppConfig {
     log(LogLevel.ERROR, 'Error processing plugin configurations in configLoader', { error });
   }
 
+  const gtdBasePathEnv = getEnvVar('GTD_BASE_PATH');
+  const gtdProjectsDirEnv = getEnvVar('GTD_PROJECTS_DIR');
+  const gtdArchiveDirEnv = getEnvVar('GTD_ARCHIVE_DIR');
+  const gtdInboxPathEnv = getEnvVar('GTD_INBOX_PATH');
+  const gtdNextActionsPathEnv = getEnvVar('GTD_NEXT_ACTIONS_PATH');
+  const gtdSomedayMaybePathEnv = getEnvVar('GTD_SOMEDAY_MAYBE_PATH');
+  const gtdWaitingForPathEnv = getEnvVar('GTD_WAITING_FOR_PATH');
+
   currentConfig.gtd = {
-    basePath: parseNullableString(getEnvVar('GTD_BASE_PATH'), DEFAULT_CONFIG.gtd?.basePath ?? null),
-    projectsDir: parseNullableString(getEnvVar('GTD_PROJECTS_DIR'), DEFAULT_CONFIG.gtd?.projectsDir ?? null),
-    archiveDir: parseNullableString(getEnvVar('GTD_ARCHIVE_DIR'), DEFAULT_CONFIG.gtd?.archiveDir ?? null),
-    inboxPath: parseNullableString(getEnvVar('GTD_INBOX_PATH'), DEFAULT_CONFIG.gtd?.inboxPath ?? null),
-    nextActionsPath: parseNullableString(getEnvVar('GTD_NEXT_ACTIONS_PATH'), DEFAULT_CONFIG.gtd?.nextActionsPath ?? null),
-    somedayMaybePath: parseNullableString(getEnvVar('GTD_SOMEDAY_MAYBE_PATH'), DEFAULT_CONFIG.gtd?.somedayMaybePath ?? null),
-    waitingForPath: parseNullableString(getEnvVar('GTD_WAITING_FOR_PATH'), DEFAULT_CONFIG.gtd?.waitingForPath ?? null),
+    basePath: (gtdBasePathEnv && gtdBasePathEnv !== '') ? gtdBasePathEnv : DEFAULT_CONFIG.gtd?.basePath,
+    projectsDir: (gtdProjectsDirEnv && gtdProjectsDirEnv !== '') ? gtdProjectsDirEnv : DEFAULT_CONFIG.gtd?.projectsDir,
+    archiveDir: (gtdArchiveDirEnv && gtdArchiveDirEnv !== '') ? gtdArchiveDirEnv : DEFAULT_CONFIG.gtd?.archiveDir,
+    inboxPath: (gtdInboxPathEnv && gtdInboxPathEnv !== '') ? gtdInboxPathEnv : DEFAULT_CONFIG.gtd?.inboxPath,
+    nextActionsPath: (gtdNextActionsPathEnv && gtdNextActionsPathEnv !== '') ? gtdNextActionsPathEnv : DEFAULT_CONFIG.gtd?.nextActionsPath,
+    somedayMaybePath: (gtdSomedayMaybePathEnv && gtdSomedayMaybePathEnv !== '') ? gtdSomedayMaybePathEnv : DEFAULT_CONFIG.gtd?.somedayMaybePath,
+    waitingForPath: (gtdWaitingForPathEnv && gtdWaitingForPathEnv !== '') ? gtdWaitingForPathEnv : DEFAULT_CONFIG.gtd?.waitingForPath,
   };
 
+  // For personalHealth section:
+  const personalHealthDirFromEnv = getEnvVar('PERSONAL_HEALTH_DIR');
+  let determinedPersonalHealthDir: string | undefined;
+  if (personalHealthDirFromEnv && personalHealthDirFromEnv !== '') {
+    determinedPersonalHealthDir = personalHealthDirFromEnv;
+  } else {
+    determinedPersonalHealthDir = DEFAULT_CONFIG.personalHealth?.healthDir;
+  }
   currentConfig.personalHealth = {
-    healthDir: parseNullableString(getEnvVar('PERSONAL_HEALTH_DIR'), DEFAULT_CONFIG.personalHealth?.healthDir ?? null),
+    healthDir: determinedPersonalHealthDir
   };
 
   return currentConfig;
