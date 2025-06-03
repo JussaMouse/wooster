@@ -1,4 +1,4 @@
-import { DynamicTool } from '@langchain/core/tools';
+import { DynamicTool } from 'langchain/tools';
 import { google, calendar_v3 } from 'googleapis';
 import { AppConfig } from '../../configLoader';
 import { WoosterPlugin, CoreServices } from '../../types/plugin';
