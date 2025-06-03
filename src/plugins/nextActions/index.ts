@@ -369,7 +369,7 @@ ${archivedTaskString}
   getAgentTools?(): DynamicTool[] {
     const viewNextActionsTool = new DynamicTool({
         name: "viewNextActions",
-        description: "Views the next actions list. Optional JSON input for filters (context, project, dueDate, status) and sortOptions (sortBy, sortOrder). Returns a user-friendly list or a message if no actions are found.",
+        description: "Displays the current list of tasks from your 'next_actions.md' file. Use this to see your upcoming tasks. This is different from sorting the inbox. Supports filtering and sorting via optional JSON input.",
         func: async (jsonInput?: string) => {
             let filters: NextActionFilters | undefined;
             let sortOptions: NextActionSortOptions | undefined;
