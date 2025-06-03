@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { TaskItem } from '../../types/task';
-import { TaskParser } from '../../utils/taskParser';
+import { TaskParser } from '../../taskParser';
 import { mainReplManager } from '../../index'; // For interactive mode pausing
 import crypto from 'crypto';
 
@@ -107,8 +107,85 @@ class NextActionsPluginDefinition implements WoosterPlugin {
   // --- Core Logic Methods (to be implemented more fully) ---
   public async getTasks(filters?: NextActionFilters, sortOptions?: NextActionSortOptions): Promise<TaskItem[]> {
     let tasks = await this.readNextActionsFromFile();
-    // TODO: Apply filtering
-    // TODO: Apply sorting
+
+    // Apply Filtering
+    if (filters) {
+      if (filters.context) {
+        const lc = filters.context.toLowerCase();
+        tasks = tasks.filter(t => t.context && t.context.toLowerCase() === lc);
+      }
+      if (filters.project) {
+        const lp = filters.project.toLowerCase();
+        tasks = tasks.filter(t => t.project && t.project.toLowerCase() === lp);
+      }
+      if (filters.status) {
+        if (filters.status === 'open') {
+          tasks = tasks.filter(t => !t.isCompleted);
+        } else if (filters.status === 'completed') {
+          // readNextActionsFromFile currently only reads open tasks.
+          // To support this, we'd need to read all tasks or have a separate completed tasks source.
+          // For now, if 'completed' is requested, it will return an empty list from open tasks.
+          tasks = tasks.filter(t => t.isCompleted); 
+        }
+        // 'all' status implies no filtering by completion status, which is default if not specified
+      }
+      if (filters.dueDate) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(today.getDate() + 1);
+
+        if (filters.dueDate.toLowerCase() === 'today') {
+          tasks = tasks.filter(t => {
+            if (!t.dueDate) return false;
+            const taskDueDate = new Date(t.dueDate);
+            return taskDueDate.getTime() === today.getTime();
+          });
+        } else if (filters.dueDate.toLowerCase() === 'tomorrow') {
+          tasks = tasks.filter(t => {
+            if (!t.dueDate) return false;
+            const taskDueDate = new Date(t.dueDate);
+            return taskDueDate.getTime() === tomorrow.getTime();
+          });
+        } else { // Specific date YYYY-MM-DD
+          tasks = tasks.filter(t => t.dueDate === filters.dueDate);
+        }
+      }
+    }
+
+    // Apply Sorting
+    if (sortOptions && sortOptions.sortBy && sortOptions.sortBy !== 'fileOrder') {
+      tasks.sort((a, b) => {
+        let valA: any, valB: any;
+        switch (sortOptions.sortBy) {
+          case 'dueDate':
+            // Handle cases where dueDate might be null or undefined for robust sorting
+            valA = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+            valB = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+            break;
+          case 'project':
+            valA = a.project?.toLowerCase() || '';
+            valB = b.project?.toLowerCase() || '';
+            break;
+          case 'context':
+            valA = a.context?.toLowerCase() || '';
+            valB = b.context?.toLowerCase() || '';
+            break;
+          default:
+            return 0; // Should not happen if sortBy is validated
+        }
+
+        if (valA < valB) {
+          return sortOptions.sortOrder === 'desc' ? 1 : -1;
+        }
+        if (valA > valB) {
+          return sortOptions.sortOrder === 'desc' ? -1 : 1;
+        }
+        return 0;
+      });
+    }
+    // Default sort is 'fileOrder' (original order from file), which is already the case.
+
     return tasks;
   }
 
@@ -199,14 +276,14 @@ class NextActionsPluginDefinition implements WoosterPlugin {
       await this.writeNextActionsToFile(tasks);
       return taskToComplete;
     }
-    return null;
-  }
+        return null;
+    }
 
   public async editTask(identifier: string | number, updates: Partial<TaskItem>): Promise<TaskItem | null> {
     // TODO: Implement edit logic
     // Find task, apply updates, re-serialize, write to file
-    return null;
-  }
+            return null;
+        }
 
   private async archiveTask(task: TaskItem): Promise<void> {
     this.ensureDirExists(this.archiveDirPath);
@@ -277,7 +354,7 @@ ${archivedTaskString}
     // TODO: Implement readline interface loop for (l)ist, (a)dd, (d)one, (e)dit, (q)uit
     console.log("Interactive mode for Next Actions not yet implemented.");
     // Remember to call mainReplManager.pauseInput() / resumeInput()
-  }
+    }
 }
 
 export default new NextActionsPluginDefinition(); 

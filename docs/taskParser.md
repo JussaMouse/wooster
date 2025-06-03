@@ -1,0 +1,66 @@
+# TaskParser Utility
+
+The `TaskParser` utility (`src/taskParser.ts`) is a crucial component in the Wooster plugin system for handling tasks consistently across different plugins. It works in tandem with the `TaskItem` interface (`src/types/task.ts`).
+
+## Purpose
+
+The primary purpose of `TaskParser` is to provide a standardized way to:
+1.  **Parse** raw text lines from task files (e.g., `next_actions.md`) into structured `TaskItem` objects.
+2.  **Serialize** `TaskItem` objects back into formatted text lines for writing to files.
+
+This ensures that all plugins that read or write tasks do so in a consistent format, preventing errors and improving interoperability.
+
+## Core Components
+
+### `TaskItem` Interface (`src/types/task.ts`)
+
+This interface defines the structured representation of a task in memory. Key fields include:
+
+*   `id: string`: A unique identifier for the task.
+*   `rawText: string`: The original, full text of the task line.
+*   `description: string`: The core actionable text of the task.
+*   `isCompleted: boolean`: Whether the task is marked as done (`- [x]`).
+*   `context?: string | null`: The context (e.g., `@home`, `@work`).
+*   `project?: string | null`: The associated project (e.g., `+ProjectAlpha`).
+*   `dueDate?: string | null`: The due date in `YYYY-MM-DD` format.
+*   `capturedDate?: string | null`: The date the task was captured.
+*   `completedDate?: string | null`: The date the task was completed.
+*   `additionalMetadata?: string | null`: Any other information in parentheses not fitting standard fields.
+
+### `TaskParser` Class (`src/taskParser.ts`)
+
+This class contains static methods for parsing and serializing tasks.
+
+#### `public static parse(rawText: string, defaultLineNumber?: number): TaskItem | null`
+
+*   **Input**:
+    *   `rawText: string`: A single line of text from a task file.
+    *   `defaultLineNumber?: number` (optional): A line number that can be used to generate a simpler ID if the raw text might not be unique enough or for easier debugging.
+*   **Functionality**:
+    *   Uses a series of regular expressions to identify and extract the checkbox status (`- [ ]` or `- [x]`), context, project, due date, captured date, completed date, and any other parenthesized metadata.
+    *   The remaining text is considered the core `description`.
+    *   Generates an `id` for the task (either based on `defaultLineNumber` or an MD5 hash of the `rawText` for consistency).
+*   **Output**: A `TaskItem` object populated with the extracted data, or `null` if the line does not conform to the expected task format.
+
+#### `public static serialize(task: TaskItem): string`
+
+*   **Input**: A `TaskItem` object.
+*   **Functionality**:
+    *   Reconstructs a standardized string representation of the task.
+    *   It ensures that components like the checkbox, context, project, description, due date, and other metadata are assembled in a consistent order and format.
+    *   For example, context and project are typically prepended to the description part.
+*   **Output**: A string formatted for writing to a `.md` task file (e.g., `- [ ] @home Review PR +Wooster due:2024-01-01 (Captured: 2023-12-31)`).
+
+## How Plugins Use `TaskParser`
+
+*   **Reading Tasks**: When a plugin (like `nextActions`) reads a task file, it iterates through each line and uses `TaskParser.parse()` to convert it into a `TaskItem`. This structured data is then used for internal logic (filtering, sorting, display).
+*   **Writing Tasks**: After modifying tasks (adding, completing, editing), plugins use `TaskParser.serialize()` on each `TaskItem` to get the correct string format before writing back to the file.
+*   **Creating New Tasks**: When new tasks are generated (e.g., by `sortInbox` sending an item to `next_actions.md`, or `nextActions` adding a new task), a `TaskItem` object should be created and then serialized using `TaskParser.serialize()` to ensure it's stored in the standard format.
+
+## Benefits
+
+*   **Consistency**: Ensures all task-related operations across plugins use the same data structure and file format.
+*   **Decoupling**: Centralizes task parsing/formatting logic, so individual plugins don't need to implement it themselves.
+*   **Robustness**: Reduces errors from inconsistent string manipulation.
+*   **Maintainability**: Simplifies updates to the task format; changes are mostly localized to `TaskParser`.
+*   **Extensibility**: New task attributes can be added to `TaskItem` and supported in `TaskParser` for system-wide use. 

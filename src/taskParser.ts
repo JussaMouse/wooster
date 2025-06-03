@@ -1,4 +1,4 @@
-import { TaskItem } from '../types/task';
+import { TaskItem } from './types/task'; // Adjusted path
 import crypto from 'crypto';
 
 export class TaskParser {
