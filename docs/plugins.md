@@ -255,4 +255,29 @@ Wooster will discover your new plugin. If `config.plugins["myWeather"]` is not e
 
 -   **Shared Types**: Place shared type definitions (interfaces, enums, etc.) that might be used by multiple plugins or the core system in the `src/types/` directory (e.g., `src/types/plugin.ts`, `src/types/scheduler.ts`). This promotes consistency and avoids circular dependencies.
 
+## 7. Troubleshooting Common Plugin Issues
+
+This section covers common issues encountered when developing or using plugins and how to resolve them.
+
+### a. Google Calendar `invalid_grant` Error (GCalPlugin)
+
+**Symptom:**
+Your logs show an error similar to:
+`GCalPlugin: Failed to list Google Calendar events: { error: 'invalid_grant' }`
+
+**Cause:**
+This error from Google indicates that the refresh token Wooster is using to access your Google Calendar is no longer valid. This can happen if:
+- The token was revoked from your Google account settings.
+- The token expired (rare for refresh tokens, but possible).
+- Your Google account password changed, and sessions were invalidated.
+- Too many refresh tokens were issued for the same client ID/user.
+
+**Solution: Obtain a New Refresh Token via OAuth 2.0 Playground**
+
+Full details and steps for resolving this are available in the GCal Plugin specific documentation: [`docs/plugins/PLUGIN_GCal.MD`](./plugins/PLUGIN_GCal.MD).
+
+A summary of the steps involves using the Google OAuth 2.0 Playground to generate a new refresh token using your existing Client ID and Secret, and then updating your Wooster `.env` configuration.
+
+// Add other common plugin issues here as they are identified.
+
 This revised documentation should provide a clearer and more comprehensive guide for developing various types of plugins for Wooster.

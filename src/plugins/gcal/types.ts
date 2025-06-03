@@ -28,4 +28,4 @@ export type GCalEventData = calendar_v3.Schema$Event;
 export type CreateCalendarEventService = (options: CreateEventOptions) => Promise<string | GCalEventData>;
 
 // Type for the function that lists calendar events, to be registered as a service
-export type ListCalendarEventsService = (options?: ListEventsOptions) => Promise<string | GCalEventData[] | string[]>; // Modified to reflect actual usage in GCalPlugin for getCalendarEventsFunction's string[] summary output 
+export type ListCalendarEventsService = (options?: ListEventsOptions) => Promise<string | GCalEventData[]>; 

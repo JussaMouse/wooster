@@ -1,72 +1,106 @@
-# Plugin: GCalPlugin
+# Wooster GCal Plugin (gcal)
 
-This document details the `GCalPlugin`, which integrates Google Calendar functionalities into Wooster.
+This document provides details about the GCal plugin for Wooster, which integrates with Google Calendar.
 
-## 1. Overview
+## 1. Purpose
 
-- **Plugin Name**: `gcal` (as defined in `GCalPluginDefinition`)
-- **Version**: `1.1.0` (as defined in the plugin file)
-- **Provider**: `src/plugins/gcal/index.ts`
-- **Purpose**: This plugin allows Wooster to interact with Google Calendar. It provides agent tools for creating and listing events, and it exposes services for other plugins to use these functionalities directly.
+The GCal plugin allows Wooster to:
+- Read events from your Google Calendar.
+- Create new events in your Google Calendar.
 
-## 2. Services Provided
+This functionality enables features like including calendar summaries in the Daily Review and allowing the agent to manage your schedule.
 
-The `GCalPlugin` registers the following services for use by other plugins:
+## 2. Provided Agent Tools
 
--   **`CreateCalendarEventService`**
-    -   **Description**: Creates a new event in Google Calendar.
-    -   **Input Type**: `CreateEventOptions` (from `src/plugins/gcal/types.ts`)
-    -   **Output Type**: `Promise<string | GCalEventData>` (Returns `GCalEventData` on success, or an error string on failure).
--   **`ListCalendarEventsService`**
-    -   **Description**: Lists events from Google Calendar based on specified options.
-    -   **Input Type**: `ListEventsOptions` (optional, from `src/plugins/gcal/types.ts`)
-    -   **Output Type**: `Promise<string | GCalEventData[]>` (Returns an array of `GCalEventData` on success, a string message if no events are found, or an error string on failure).
+The GCal plugin provides the following tools for the Wooster agent:
 
-## 3. Agent Tools Provided
-
-The `GCalPlugin` provides the following tool(s) to the agent if enabled and correctly configured:
+-   **`get_calendar_events`**
+    -   **Description**: Provides a summary of today's (or a specified range of) calendar events. Optional input: JSON string with ListEventsOptions (timeMin, timeMax, maxResults, q, etc.). Returns raw event data as JSON string.
+    -   **Usage**: The agent can use this to fetch upcoming appointments or check for conflicts.
 
 -   **`create_calendar_event`**
-    -   **Description**: Enables the agent to create new events in Google Calendar. Input is a JSON string with event options. Returns the created event data as a JSON string.
-    -   **Detailed Documentation**: See `docs/tools/TOOL_GoogleCalendar.MD` (Tool 1), if available, or refer to `CreateEventOptions` in `src/plugins/gcal/types.ts` for input structure.
--   **`get_calendar_events`** (Formerly `list_calendar_events` in some older docs)
-    -   **Description**: Enables the agent to list existing events from Google Calendar. Optional input is a JSON string with listing options. Returns event data as a JSON string.
-    -   **Detailed Documentation**: See `docs/tools/TOOL_GoogleCalendar.MD` (Tool 2), if available, or refer to `ListEventsOptions` in `src/plugins/gcal/types.ts` for input structure.
+    -   **Description**: Creates a new event in Google Calendar. Input must be a JSON string with CreateEventOptions (summary, startDateTime, endDateTime are required). Returns created event data as JSON string.
+    -   **Usage**: The agent can use this to schedule new meetings or reminders based on user requests.
 
-*(Note: A `create_calendar` tool mentioned in older documentation is not currently implemented in this plugin version.)*
+## 3. Configuration
 
-For input schemas, refer to `CreateEventOptions` and `ListEventsOptions` in `src/plugins/gcal/types.ts`.
+To use the GCal plugin, you need to configure Google OAuth 2.0 credentials. This typically involves:
 
-## 4. Configuration
+1.  Creating a project in the Google Cloud Platform Console.
+2.  Enabling the Google Calendar API for that project.
+3.  Setting up OAuth 2.0 consent screen information.
+4.  Creating OAuth 2.0 client ID and client secret credentials.
+5.  Authorizing your application to obtain an initial refresh token.
 
-For the `GCalPlugin` to function correctly and provide its services and tools, it needs to be configured via environment variables in your `.env` file:
+These credentials need to be added to your Wooster `.env` file:
 
-1.  **Plugin Activation**: 
-    -   `PLUGIN_GCAL_ENABLED`: This variable controls whether the `GCalPlugin` itself is loaded by Wooster.
-        -   Set to `true` to activate the plugin.
-        -   Set to `false` (or omit, as the default is `false`) to disable the plugin. If disabled, the calendar services and tools will not be available.
-        -   See main configuration documentation (e.g., `06 CONFIG.MD` or `README.md`) for general plugin management.
+```env
+# --- Google Plugin Settings (General, Calendar, Gmail) ---
+PLUGIN_GCAL_ENABLED=true
+# ... other Google general settings ...
 
-2.  **Google API Credentials**: 
-    -   The plugin requires Google OAuth credentials to interact with the Calendar API.
-    -   `GOOGLE_CLIENT_ID`: Your Google Cloud OAuth 2.0 Client ID.
-    -   `GOOGLE_CLIENT_SECRET`: Your Google Cloud OAuth 2.0 Client Secret.
-    -   `GOOGLE_CALENDAR_REFRESH_TOKEN`: OAuth 2.0 Refresh Token for Google Calendar access.
-    -   `GOOGLE_CALENDAR_ID` (Optional): The ID of the Google Calendar to manage (e.g., `primary`). Defaults to `primary`.
-    -   Refer to the main configuration documentation for details on obtaining these credentials.
+# --- Google Calendar Specific --- (Values from your Google Cloud Project)
+GOOGLE_CALENDAR_CLIENT_ID="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
+GOOGLE_CALENDAR_CLIENT_SECRET="YOUR_GOOGLE_CLIENT_SECRET"
+GOOGLE_CALENDAR_REFRESH_TOKEN="YOUR_INITIAL_GOOGLE_REFRESH_TOKEN"
+GOOGLE_CALENDAR_ID="primary" # Or the specific calendar ID you want Wooster to use
+```
 
-*(Note: The environment variable `TOOLS_GOOGLE_CALENDAR_ENABLED` mentioned in older documentation is no longer used by this plugin. Enablement is controlled by `PLUGIN_GCAL_ENABLED` and the presence of valid credentials.)*
+Refer to Google's official documentation for detailed steps on creating OAuth credentials.
 
-## 5. Initialization
+## 4. Troubleshooting
 
-- The `GCalPlugin` is discovered and loaded by the `PluginManager` (`src/pluginManager.ts`) during Wooster's startup if `PLUGIN_GCAL_ENABLED=true`.
-- Its `initialize` method is called with the global `AppConfig`. During this phase, it attempts to initialize the Google Calendar API client using the provided credentials.
-- If client initialization is successful, it registers the `CreateCalendarEventService` and `ListCalendarEventsService`.
-- If the plugin is active and the client initializes successfully, its `getAgentTools` method will return the `create_calendar_event` and `get_calendar_events` `DynamicTool` instances.
-- If client initialization fails (e.g., due to missing or invalid credentials), the services will not be registered, and tools will not be provided.
+### a. `invalid_grant` Error
 
-## 6. Dependencies
+**Symptom:**
+Your Wooster logs show an error similar to:
+`GCalPlugin: Failed to list Google Calendar events: { error: 'invalid_grant' }`
 
-- Uses the `googleapis` library for Google Calendar API interaction.
-- Defines its types in `src/plugins/gcal/types.ts`.
-- Depends on `AppConfig` (from `src/configLoader.ts`) for its configuration settings. 
+**Cause:**
+This error from Google indicates that the refresh token Wooster is using to access your Google Calendar is no longer valid. This can happen if:
+- The token was revoked from your Google account settings.
+- The token expired (rare for refresh tokens, but possible).
+- Your Google account password changed, and sessions were invalidated.
+- Too many refresh tokens were issued for the same client ID/user.
+
+**Solution: Obtain a New Refresh Token via OAuth 2.0 Playground**
+
+You can get a new refresh token without needing to change your OAuth Client ID or Secret.
+
+1.  **Go to OAuth 2.0 Playground:**
+    *   Open your web browser and navigate to: `https://developers.google.com/oauthplayground`
+
+2.  **Configure OAuth 2.0 (Step 1 on Playground - Gear Icon):
+    *   In the top right, click the gear icon (OAuth 2.0 configuration).
+    *   Select **"Use your own OAuth credentials"**.
+    *   Enter your existing **OAuth Client ID** and **OAuth Client Secret** (these are the same ones Wooster is currently configured with, likely found in your `.env` file under `GOOGLE_CALENDAR_CLIENT_ID` and `GOOGLE_CALENDAR_CLIENT_SECRET`).
+    *   Click "Close".
+
+3.  **Select & Authorize APIs (Step 1 on Playground - Main Area):
+    *   Scroll down the list of Google APIs.
+    *   Find and expand **"Calendar API v3"**.
+    *   Select the necessary scope(s). For Wooster's typical calendar operations, `https://www.googleapis.com/auth/calendar.events` (to read/write events) is usually sufficient. If you previously used `https://www.googleapis.com/auth/calendar`, you might stick with that to ensure all permissions are covered.
+    *   Click the blue **"Authorize APIs"** button.
+
+4.  **Google Sign-In & Consent:**
+    *   You'll be redirected to a Google sign-in page. Sign in with the Google account whose calendar Wooster needs to access.
+    *   Grant consent on the following screen.
+
+5.  **Exchange Authorization Code for Tokens (Step 2 on Playground):
+    *   After consent, you'll be redirected back to the OAuth Playground.
+    *   An "Authorization code" will be pre-filled.
+    *   Click the blue **"Exchange authorization code for tokens"** button.
+
+6.  **Get Your New Refresh Token:**
+    *   On the right side, a new **Refresh token** will be displayed (along with an Access token).
+    *   **Copy this new `Refresh token` value.**
+
+7.  **Update Your Wooster Configuration:**
+    *   Open your Wooster project's `.env` file.
+    *   Replace the old `GOOGLE_CALENDAR_REFRESH_TOKEN` value with the new one you just copied.
+    *   Save the file.
+
+8.  **Restart Wooster:**
+    *   Stop and restart your Wooster application to apply the change.
+
+Wooster should now be able to access your Google Calendar successfully. 

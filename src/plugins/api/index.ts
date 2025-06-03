@@ -3,6 +3,7 @@ import { LogLevel } from '../../logger';
 import express, { Express, Request, Response, NextFunction } from 'express';
 import http from 'http';
 import { CaptureService, CapturedItem } from '../capture/types';
+import type { PersonalHealthService } from '../personalHealth/types';
 
 let core: CoreServices;
 let apiConfig: AppConfig['apiPlugin'];
@@ -136,7 +137,36 @@ class ApiPluginDefinition implements WoosterPlugin {
     // Task Capture Endpoint
     app.post(`${API_BASE_PATH}/capture`, handleCaptureRequest);
 
-    // Example: app.post(`${API_BASE_PATH}/health/workouts`, handleWorkoutLog);
+    // --- New Health Event Logging Endpoint ---
+    const handleLogHealthEventRequest = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+      try {
+        const { text } = req.body;
+        if (typeof text !== 'string' || text.trim() === '') {
+          res.status(400).json({ error: 'Health event text is required and must be a non-empty string.' });
+          return;
+        }
+
+        const healthService = core.getService("PersonalHealthService") as PersonalHealthService | undefined;
+        if (!healthService) {
+          core.log(LogLevel.ERROR, "ApiPlugin: PersonalHealthService not found!");
+          res.status(503).json({ error: 'Health logging feature is currently unavailable.' });
+          return;
+        }
+
+        await healthService.logHealthEvent(text);
+
+        res.status(201).json({
+          message: "Health event logged successfully.",
+          eventText: text
+        });
+
+      } catch (error: any) {
+        core.log(LogLevel.ERROR, `ApiPlugin: Error in POST ${API_BASE_PATH}/health/events: ${error.message}`, { error });
+        next(error); // Pass to centralized error handler
+      }
+    };
+
+    app.post(`${API_BASE_PATH}/health/events`, handleLogHealthEventRequest);
 
     // --- Centralized Error Handler ---
     app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
@@ -150,8 +180,8 @@ class ApiPluginDefinition implements WoosterPlugin {
     const port = apiConfig.port || 3000;
     httpServer = app.listen(port, () => {
       core.log(LogLevel.INFO, `ApiPlugin: Unified API server listening on http://localhost:${port}`);
-      core.log(LogLevel.INFO, `ApiPlugin: Item endpoint (example): POST http://localhost:${port}${API_BASE_PATH}/capture`);
-      core.log(LogLevel.INFO, `ApiPlugin: Health workout endpoint (example): POST http://localhost:${port}${API_BASE_PATH}/health/workouts`);
+      core.log(LogLevel.INFO, `ApiPlugin: Item capture endpoint: POST http://localhost:${port}${API_BASE_PATH}/capture`);
+      core.log(LogLevel.INFO, `ApiPlugin: Health event logging endpoint: POST http://localhost:${port}${API_BASE_PATH}/health/events`);
     }).on('error', (err: Error & { code?: string }) => {
       if (err.code === 'EADDRINUSE') {
         core.log(LogLevel.ERROR, `ApiPlugin: API Port ${port} is already in use. API server will not start.`);
