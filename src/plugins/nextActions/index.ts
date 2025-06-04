@@ -382,31 +382,50 @@ ${archivedTaskString}
   getAgentTools?(): DynamicTool[] {
     const viewNextActionsTool = new DynamicTool({
       name: "viewNextActions",
-      description: "Views current next actions. Optional JSON input: { filters?: NextActionFilters, sortOptions?: NextActionSortOptions } " +
-                   "Filters include context, project, dueDate (\'today\', \'tomorrow\', \'YYYY-MM-DD\'), status (\'all\', \'open\', \'completed\'). " +
-                   "SortBy can be \'fileOrder\', \'dueDate\', \'project\', \'context\'. sortOrder can be \'asc\' or \'desc\'.",
+      description: "Views current next actions. This tool expects to be called with an object, which should contain a single key: 'input'. The value for the 'input' key must be a JSON string defining filters and/or sortOptions. To provide NO filters or sort options, the 'input' key's value should be an empty string (e.g., { input: '' }) or the 'input' key can be omitted entirely. The JSON string, if provided and not empty, should represent an object like: { filters?: NextActionFilters, sortOptions?: NextActionSortOptions }. Filters include context, project, dueDate ('today', 'tomorrow', 'YYYY-MM-DD'), status ('all', 'open', 'completed'). SortBy can be 'fileOrder', 'dueDate', 'project', 'context'. sortOrder can be 'asc' or 'desc'. Example for 'input' with filters: '{\"filters\": {\"context\": \"@work\"}}'. Example for 'input' with no options: ''",
       func: async (jsonInput?: string) => {
-        this.logMsg(LogLevel.DEBUG, "viewNextActionsTool executed", { jsonInput });
+        this.logMsg(LogLevel.DEBUG, "viewNextActionsTool executed", { receivedRawInput: jsonInput });
+
+        if (jsonInput !== undefined && typeof jsonInput !== 'string') {
+          this.logMsg(LogLevel.ERROR, "viewNextActionsTool received non-string input when a string or undefined was expected.", { receivedInput: jsonInput });
+          return "Error: Tool received invalid input type. Expected a JSON string or for the input to be undefined.";
+        }
+
         try {
             let filters: NextActionFilters | undefined;
             let sortOptions: NextActionSortOptions | undefined;
-            if (jsonInput) {
+            // Proceed to parse only if jsonInput is a non-empty string
+            if (typeof jsonInput === 'string' && jsonInput.trim() !== "") {
                 const input = JSON.parse(jsonInput);
                 filters = input.filters;
                 sortOptions = input.sortOptions;
             }
+            // If jsonInput is undefined or an empty string, filters and sortOptions will remain undefined, which is the correct behavior for no options.
+
             const tasks = await this.getTasks(filters, sortOptions);
             if (tasks.length === 0) return "No next actions found matching criteria.";
             const responseLines: string[] = ["Current Next Actions:"];
             tasks.forEach((task, index) => {
-                const taskString = TaskParser.serialize(task);
-                // Remove the ID part for display for a cleaner look
-                const displayString = taskString.replace(/\s*\(id: [a-f0-9\-]+\)/i, '').trim();
-                responseLines.push(`${index + 1}. ${displayString}`);
+                let line = `- [${task.isCompleted ? 'x' : ' '}] `;
+                if (task.project) {
+                    // Remove '+' from project name and add brackets
+                    line += `[${task.project.substring(1)}] `;
+                }
+                if (task.context) {
+                    line += `${task.context} `;
+                }
+                line += task.description;
+
+                if (task.dueDate) {
+                    line += ` due:${task.dueDate}`;
+                }
+                // Omitting (Captured: ...) and (id: ...) for this display output
+
+                responseLines.push(`${index + 1}. ${line.trim()}`);
             });
             return responseLines.join('\n');
         } catch (e: any) {
-            this.logMsg(LogLevel.ERROR, "Error in viewNextActionsTool", { error: e.message, jsonInput });
+            this.logMsg(LogLevel.ERROR, "Error in viewNextActionsTool", { error: e.message, receivedRawInput: jsonInput });
             return `Error processing request: ${e.message}`;
         }
       },
@@ -414,7 +433,7 @@ ${archivedTaskString}
 
     const addNextActionTool = new DynamicTool({
         name: "addNextAction",
-        description: "Adds a new next action. Input JSON: { description: string, context?: string, project?: string, dueDate?: string (YYYY-MM-DD) }",
+        description: "Adds a new next action. This tool expects to be called with an object containing a single key: 'input'. The value for the 'input' key must be a JSON string. This JSON string should represent an object with the following keys: 'description' (string, required), and optional 'context' (string), 'project' (string), 'dueDate' (string, YYYY-MM-DD). Example of the JSON string that should be the value of 'input': '{\"description\": \"My new task\", \"context\": \"@home\"}'",
         func: async (jsonInput: string) => {
             this.logMsg(LogLevel.DEBUG, "addNextActionTool executed", { jsonInput });
             try {

@@ -37,8 +37,10 @@ The `nextActions` plugin provides the following tools for the agent to interact 
 
 *   **`addNextAction`**:
     *   Adds a new next action.
-    *   Requires a JSON input with at least a `description`. Can also include `context`, `project`, and `dueDate` (YYYY-MM-DD).
-    *   Example: `addNextAction {"description": "Draft proposal for Q4", "project": "+WorkProject", "context": "@office", "dueDate": "2024-09-15"}`
+    *   This tool expects to be called with an object containing a single key: `'input'`. The value for the `'input'` key must be a JSON string.
+    *   This JSON string should represent an object with the following keys: `'description'` (string, required), and optional `'context'` (string), `'project'` (string), `'dueDate'` (string, YYYY-MM-DD).
+    *   Example of how the agent should call the tool, providing the structured object with the `input` key: `toolName({ input: '{"description": "My new task", "context": "@home", "dueDate": "2024-12-01"}' })`
+    *   The value of the `'input'` key (the JSON string itself) would look like: `'{"description": "My new task", "context": "@home", "dueDate": "2024-12-01"}'`
 
 *   **`completeNextAction`**:
     *   Completes a next action.
