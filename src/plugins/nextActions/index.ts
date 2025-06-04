@@ -205,15 +205,21 @@ class NextActionsPluginDefinition implements WoosterPlugin {
     const now = new Date().toISOString().replace(/T.*/, ''); // YYYY-MM-DD
 
     let effectiveProject = projectFromInput;
-    const effectiveContext = contextFromInput; // context isn't auto-populated by active project, so direct pass-through
+    let effectiveContext = contextFromInput;
+
+    // Default context to @home if not provided and not in description
+    const descriptionAlreadyHasContext = /(?:^|\s)@\w+/.test(description.trim());
+    if (!effectiveContext && !descriptionAlreadyHasContext) {
+      effectiveContext = '@home';
+      this.logMsg(LogLevel.DEBUG, `Defaulting context to @home for new next action.`);
+    }
 
     // Check if we should auto-append the active project
-    // Ensure getActiveProjectName exists on coreServices before calling it
     const activeProjectName = (this.coreServices && typeof this.coreServices.getActiveProjectName === 'function') 
                               ? this.coreServices.getActiveProjectName() 
                               : null;
                               
-    const descriptionAlreadyHasProject = /\s*\+\w+/.test(description);
+    const descriptionAlreadyHasProject = /(?:^|\s)\+\w+/.test(description.trim()); // Simpler check for existence, full parse handles multi-word
 
     if (
       !projectFromInput &&             // User did not provide a project in the JSON input
@@ -225,33 +231,20 @@ class NextActionsPluginDefinition implements WoosterPlugin {
       effectiveProject = `+${activeProjectName}`; 
     }
 
-    // Construct the initial task string parts. TaskParser will handle the final ordering.
+    // Construct the task string for TaskParser.parse
+    // Order: context, project, description
     let taskStringParts: string[] = [description.trim()];
-
     if (effectiveProject) {
-        // Avoid duplicating if already in description (e.g. user typed it and also provided in JSON)
-        // A simple includes check might be too broad if project name is a substring of the description
-        // However, TaskParser should ultimately handle normalization.
-        if (!description.trim().includes(effectiveProject)) {
-            taskStringParts.unshift(effectiveProject); // Prepend for TaskParser
-        } else if (!description.trim().startsWith(effectiveProject)) {
-             // If it includes it but doesn't start with it, TaskParser might misinterpret.
-             // To be safe, if a project is effective, ensure it's at a parsable position if not already.
-             // This part is tricky; relying on TaskParser's robustness is key.
-             // For now, if it's included, we assume TaskParser will find it.
-        }
+        taskStringParts.unshift(effectiveProject); // e.g., ["+ProjectName", "description"]
     }
-    if (effectiveContext) {
-        // Avoid duplicating
-        if (!description.trim().includes(effectiveContext)) {
-            taskStringParts.unshift(effectiveContext); // Prepend for TaskParser
-        }
+    if (effectiveContext) { 
+        taskStringParts.unshift(effectiveContext); // e.g., ["@context", "+ProjectName", "description"]
     }
     
-    let combinedDescription = taskStringParts.join(' ');
+    let combinedDescriptionForParser = taskStringParts.join(' ');
 
     // Add due date and captured date for parsing
-    let rawTaskForParser = `- [ ] ${combinedDescription}`;
+    let rawTaskForParser = `- [ ] ${combinedDescriptionForParser}`;
     if (dueDate) {
       rawTaskForParser += ` due:${dueDate}`;
     }
@@ -443,11 +436,11 @@ ${archivedTaskString}
             const responseLines: string[] = ["Current Next Actions:"];
             tasks.forEach((task, index) => {
                 let prefix = "";
-                if (task.project) {
-                    prefix += `[${task.project.substring(1)}] `;
-                }
-                if (task.context) {
+                if (task.context) { // Context first in display
                     prefix += `${task.context} `;
+                }
+                if (task.project) { // Project second in display
+                    prefix += `[${task.project.substring(1)}] `;
                 }
 
                 let taskLine = `- [${task.isCompleted ? 'x' : ' '}] `;
