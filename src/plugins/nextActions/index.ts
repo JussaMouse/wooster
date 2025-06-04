@@ -68,7 +68,11 @@ class NextActionsPluginDefinition implements WoosterPlugin {
     this.logMsg(LogLevel.INFO, `Using Next Actions Archive directory: ${this.archiveDirPath}`);
 
     this.ensureDirExists(this.getFullPath(path.dirname(this.nextActionsFilePath)));
-    this.ensureDirExists(this.getFullPath(this.archiveDirPath)); // This will now be the dedicated next actions archive
+    const fullArchiveDirPath = this.getFullPath(this.archiveDirPath);
+    if (!fs.existsSync(fullArchiveDirPath)) {
+      fs.mkdirSync(fullArchiveDirPath, { recursive: true });
+      this.logMsg(LogLevel.INFO, `Created directory ${fullArchiveDirPath}`);
+    }
   }
 
   async shutdown(): Promise<void> {
@@ -377,42 +381,64 @@ class NextActionsPluginDefinition implements WoosterPlugin {
   }
 
   public async completeTask(identifier: string | number): Promise<TaskItem | null> {
-    const tasks = await this.readNextActionsFromFile();
-    let taskToComplete: TaskItem | undefined;
-    let taskIndex = -1;
+    let taskToCompleteId: string | undefined;
+    // tasksCurrentlyInFile should represent the current state of open tasks in the persisted file.
+    const tasksCurrentlyInFile = await this.readNextActionsFromFile(); 
 
     if (typeof identifier === 'number') {
-      // We need to decide if line number identification is still desired or if we exclusively use IDs.
-      // For now, keeping it, but it might be less reliable if tasks are frequently reordered without re-reading.
-      // Preferring ID-based lookup for robustness.
-      const tasks = await this.readNextActionsFromFile(); // Re-read to get current numbering if identifier is number
-      if (identifier > 0 && identifier <= tasks.length) {
-        taskIndex = identifier - 1;
-        taskToComplete = tasks[taskIndex];
+      if (this.S_currentListedTasks && this.S_currentListedTasks.length > 0 && identifier > 0 && identifier <= this.S_currentListedTasks.length) {
+        // Identifier is a 1-based index from the last 'viewNextActions' call
+        const targetTaskFromView = this.S_currentListedTasks[identifier - 1];
+        if (targetTaskFromView) {
+          taskToCompleteId = targetTaskFromView.id;
+        } else {
+           this.logMsg(LogLevel.WARN, `Numeric identifier ${identifier} resulted in an undefined task from recently viewed list.`);
+           return null;
+        }
+      } else {
+        this.logMsg(LogLevel.WARN, `Cannot complete by number: No recently viewed tasks list available, or number ${identifier} is out of bounds for ${this.S_currentListedTasks?.length || 0} tasks.`);
+        return null;
       }
-    } else {
-      // ID or description fragment based search
-      const tasks = await this.readNextActionsFromFile(); // Ensure we have IDs for all tasks
-      taskIndex = tasks.findIndex(t => t.id === identifier || t.description.toLowerCase().includes(identifier.toLowerCase()));
-      if (taskIndex !== -1) {
-        taskToComplete = tasks[taskIndex];
-      }
+    } else { // identifier is string (ID or description fragment)
+      taskToCompleteId = identifier; // Assume it's an ID or a description to be searched
     }
 
-    if (taskToComplete && taskIndex !== -1) {
-      taskToComplete.isCompleted = true;
-      taskToComplete.completedDate = new Date().toISOString().replace(/T.*/, ''); // YYYY-MM-DD
-      // Archive it
-      await this.archiveTask(taskToComplete);
-      // Remove from active list
-      tasks.splice(taskIndex, 1);
-      await this.writeNextActionsToFile(tasks);
-      this.logMsg(LogLevel.INFO, "Task completed and archived", { taskId: taskToComplete.id });
-      return taskToComplete;
-    }
-    this.logMsg(LogLevel.WARN, "Task not found or already completed for completion.", { identifier });
+    if (!taskToCompleteId) {
+        this.logMsg(LogLevel.WARN, "No valid task identifier derived for completion.");
         return null;
     }
+
+    // Find the task in the current list of open tasks from the file
+    // If identifier was a number, taskToCompleteId is now the ID from S_currentListedTasks.
+    // If identifier was a string, taskToCompleteId is that string (either ID or description fragment).
+    const taskIndex = tasksCurrentlyInFile.findIndex(t => 
+        t.id === taskToCompleteId || 
+        (typeof identifier === 'string' && t.description.toLowerCase().includes(identifier.toLowerCase())) // Only use description match if original identifier was string
+    );
+
+    if (taskIndex !== -1) {
+      const taskToComplete = tasksCurrentlyInFile[taskIndex];
+
+      // Mark as completed and set completedDate
+      taskToComplete.isCompleted = true;
+      taskToComplete.completedDate = new Date().toISOString().replace(/T.*/, ''); // YYYY-MM-DD
+
+      // Archive it
+      await this.archiveTask(taskToComplete);
+      
+      // Remove from active list (tasksCurrentlyInFile)
+      tasksCurrentlyInFile.splice(taskIndex, 1);
+      await this.writeNextActionsToFile(tasksCurrentlyInFile); // Write back the modified list of open tasks
+      
+      this.logMsg(LogLevel.INFO, "Task completed and archived", { taskId: taskToComplete.id, description: taskToComplete.description });
+      return taskToComplete;
+    }
+    
+    // If the task was identified by ID from S_currentListedTasks but not found in tasksCurrentlyInFile,
+    // it might have been completed by another process or it wasn't an open task to begin with.
+    this.logMsg(LogLevel.WARN, "Task not found in the current open tasks list, or it might have been already completed/archived.", { originalIdentifier: identifier, derivedId: taskToCompleteId });
+    return null;
+  }
 
   public async editTask(identifier: string, updates: Partial<TaskItem>): Promise<TaskItem | null> {
     const tasks = await this.readNextActionsFromFile();
@@ -519,6 +545,7 @@ ${archivedTaskString}
             // If jsonInput is undefined or an empty string, filters and sortOptions will remain undefined, which is the correct behavior for no options.
 
             const tasks = await this.getTasks(filters, sortOptions);
+            this.S_currentListedTasks = tasks; // Store the fetched tasks
             const totalTasks = tasks.length;
 
             if (totalTasks === 0) {
