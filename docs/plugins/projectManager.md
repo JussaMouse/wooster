@@ -100,7 +100,7 @@ The plugin relies on the `projects` base directory (typically `projects/` relati
 
 *   **Name:** `listFilesInActiveProject`
 *   **Description:** Lists files and directories in the currently active project. Ignores common system files (like `.DS_Store`) and the project's vector store directory (`vectorStore`, `faiss.index`, `docstore.json`).
-*   **Input:** This tool requires no functional parameters. The agent might call it with an empty input object (e.g., `{ "input": {} }` or `{ "input": "" }`), which is ignored by the tool.
+*   **Input:** This tool requires no functional parameters. If the agent MUST provide an input object, it should use `{"input": ""}`; this input will be ignored by the tool.
 *   **Functionality:**
     *   Retrieves the path of the currently active project using `CoreServices.getActiveProjectPath()`.
     *   If no project is active, it returns a message indicating so.
