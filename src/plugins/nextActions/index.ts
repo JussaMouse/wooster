@@ -74,11 +74,11 @@ class NextActionsPluginDefinition implements WoosterPlugin {
     return path.join(this.workspaceRoot, relativePath);
   }
 
-  private ensureDirExists(dirPath: string): void {
-    const fullPath = this.getFullPath(dirPath);
-    if (!fs.existsSync(fullPath)) {
-      fs.mkdirSync(fullPath, { recursive: true });
-      this.logMsg(LogLevel.INFO, `Created directory ${fullPath}`);
+  private ensureDirExists(this: NextActionsPluginDefinition, fullPath: string): void {
+    const dir = path.dirname(fullPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+      this.logMsg(LogLevel.INFO, `Created directory ${dir}`);
     }
   }
 
@@ -200,64 +200,100 @@ class NextActionsPluginDefinition implements WoosterPlugin {
     return tasks;
   }
 
-  public async addTask(description: string, context?: string | null, project?: string | null, dueDate?: string | null): Promise<TaskItem> {
+  public async addTask(description: string, contextFromInput?: string | null, projectFromInput?: string | null, dueDate?: string | null): Promise<TaskItem> {
     const tasks = await this.readNextActionsFromFile();
-    const now = new Date().toISOString().replace(/T.*/, ''); // YYYY-MM-DD for consistency with due date
+    const now = new Date().toISOString().replace(/T.*/, ''); // YYYY-MM-DD
 
-    const processedDescription = this.prependContextIfNeeded(description, context);
+    let effectiveProject = projectFromInput;
+    const effectiveContext = contextFromInput; // context isn't auto-populated by active project, so direct pass-through
+
+    // Check if we should auto-append the active project
+    // Ensure getActiveProjectName exists on coreServices before calling it
+    const activeProjectName = (this.coreServices && typeof this.coreServices.getActiveProjectName === 'function') 
+                              ? this.coreServices.getActiveProjectName() 
+                              : null;
+                              
+    const descriptionAlreadyHasProject = /\s*\+\w+/.test(description);
+
+    if (
+      !projectFromInput &&             // User did not provide a project in the JSON input
+      !descriptionAlreadyHasProject &&   // User did not type +project in the description
+      activeProjectName &&               // Active project name exists
+      activeProjectName.toLowerCase() !== 'home' // Active project is not 'home' (case-insensitive)
+    ) {
+      this.logMsg(LogLevel.DEBUG, `Auto-prepending active project '+${activeProjectName}' to new next action.`);
+      effectiveProject = `+${activeProjectName}`; 
+    }
+
+    // Construct the initial task string parts. TaskParser will handle the final ordering.
+    let taskStringParts: string[] = [description.trim()];
+
+    if (effectiveProject) {
+        // Avoid duplicating if already in description (e.g. user typed it and also provided in JSON)
+        // A simple includes check might be too broad if project name is a substring of the description
+        // However, TaskParser should ultimately handle normalization.
+        if (!description.trim().includes(effectiveProject)) {
+            taskStringParts.unshift(effectiveProject); // Prepend for TaskParser
+        } else if (!description.trim().startsWith(effectiveProject)) {
+             // If it includes it but doesn't start with it, TaskParser might misinterpret.
+             // To be safe, if a project is effective, ensure it's at a parsable position if not already.
+             // This part is tricky; relying on TaskParser's robustness is key.
+             // For now, if it's included, we assume TaskParser will find it.
+        }
+    }
+    if (effectiveContext) {
+        // Avoid duplicating
+        if (!description.trim().includes(effectiveContext)) {
+            taskStringParts.unshift(effectiveContext); // Prepend for TaskParser
+        }
+    }
     
-    const newTaskItem: Partial<TaskItem> = {
-        description: processedDescription, // Description will be the part after context/project
-        isCompleted: false,
-        capturedDate: now,
-    };
+    let combinedDescription = taskStringParts.join(' ');
 
-    // Temporarily remove context/project from description if they were handled by prependContextIfNeeded
-    let coreDesc = description;
-    if (context) {
-      const tempContextRegex = new RegExp(`^${context.replace('@', '@')}\s*`);
-      coreDesc = coreDesc.replace(tempContextRegex, '').trim();
+    // Add due date and captured date for parsing
+    let rawTaskForParser = `- [ ] ${combinedDescription}`;
+    if (dueDate) {
+      rawTaskForParser += ` due:${dueDate}`;
     }
-    const projectOnlyInMeta = project && !coreDesc.includes(project);
-    const contextOnlyInMeta = context && !coreDesc.includes(context);
+    rawTaskForParser += ` (Captured: ${now})`;
 
-    if (contextOnlyInMeta && context) newTaskItem.context = context;
-    if (projectOnlyInMeta && project) newTaskItem.project = project;
-    if (dueDate) newTaskItem.dueDate = dueDate;
-
-    // Rebuild the primary description part for the TaskItem, ensuring context/project are there if provided
-    let finalDescription = description;
-    if (project && !finalDescription.startsWith(project) && !finalDescription.includes(project)) {
-        finalDescription = project + ' ' + finalDescription;
+    const parsedTask = TaskParser.parse(rawTaskForParser);
+    if (!parsedTask) {
+      this.logMsg(LogLevel.ERROR, "Failed to parse the constructed task string in addTask.", { rawTaskForParser });
+      // Fallback: add with minimal parsing if primary parsing fails
+      const fallbackDescription = description.trim() + 
+                                (projectFromInput ? ` ${projectFromInput}` : '') +
+                                (contextFromInput ? ` ${contextFromInput}` : '') +
+                                (dueDate ? ` due:${dueDate}` : '');
+      const fallbackTask: TaskItem = {
+          id: crypto.randomUUID(),
+          rawText: `- [ ] ${fallbackDescription} (Captured: ${now})`,
+          description: fallbackDescription,
+          isCompleted: false,
+          capturedDate: now,
+      };
+      tasks.push(fallbackTask);
+      await this.writeNextActionsToFile(tasks);
+      this.logMsg(LogLevel.WARN, "Task added with fallback parsing due to initial parsing error.", { taskId: fallbackTask.id });
+      return fallbackTask;
     }
-    if (context && !finalDescription.startsWith(context) && !finalDescription.includes(context)) {
-        finalDescription = context + ' ' + finalDescription;
-    }
-    
-    // The TaskParser.serialize will handle the final ordering of context/project in the string.
-    // We need to ensure the TaskItem.description is just the core text part.
-    // Let's parse the combined string once to get the core description correctly.
-    let tempRawTask = `- [ ] ${finalDescription}`;
-    if(dueDate) tempRawTask += ` due:${dueDate}`;
-    tempRawTask += ` (Captured: ${now})`;
 
-    const parsedForDesc = TaskParser.parse(tempRawTask);
-    if (!parsedForDesc) throw new Error("Failed to create a valid task structure for parsing description.");
-
+    // Create the TaskItem using values from the successfully parsed task
     const taskToAdd: TaskItem = {
-      id: parsedForDesc.id, // Use ID from the parsed structure (which will be a new UUID for new tasks)
-      rawText: '', // Will be generated by serialize
-      description: parsedForDesc.description,
+      id: parsedTask.id, 
+      rawText: '', 
+      description: parsedTask.description, 
       isCompleted: false,
-      context: parsedForDesc.context,
-      project: parsedForDesc.project,
-      dueDate: parsedForDesc.dueDate,
-      capturedDate: now,
+      context: parsedTask.context,
+      project: parsedTask.project,
+      dueDate: parsedTask.dueDate,
+      capturedDate: parsedTask.capturedDate || now,
     };
     
     tasks.push(taskToAdd);
     await this.writeNextActionsToFile(tasks);
-    return taskToAdd; // Should return the fully formed TaskItem after serialization and re-parsing if needed for ID
+    this.logMsg(LogLevel.INFO, "Task added successfully via addTask method", { taskId: taskToAdd.id, description: taskToAdd.description, project: taskToAdd.project, context: taskToAdd.context });
+    return taskToAdd;
   }
 
   public async completeTask(identifier: string | number): Promise<TaskItem | null> {

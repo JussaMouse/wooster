@@ -7,7 +7,8 @@ import { ensureScheduleIsManaged } from './scheduler/schedulerService'
 import type { NextActionsService } from './plugins/nextActions/types'
 import { 
   setActiveProject as coreSetActiveProject,
-  getActiveProjectPath as coreGetActiveProjectPath
+  getActiveProjectPath as coreGetActiveProjectPath,
+  getCurrentActiveProjectName as coreGetActiveProjectName
 } from './agentExecutorService'
 
 const loadedPlugins: WoosterPlugin[] = []
@@ -41,7 +42,8 @@ const coreServicesInstance: CoreServices = {
     return service
   },
   setActiveProject: coreSetActiveProject,
-  getActiveProjectPath: coreGetActiveProjectPath, // Added service accessor
+  getActiveProjectPath: coreGetActiveProjectPath,
+  getActiveProjectName: coreGetActiveProjectName,
   // emailService and NextActionsService are examples; actual access is via getService
 }
 
