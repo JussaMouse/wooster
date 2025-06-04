@@ -32,32 +32,24 @@ export async function setActiveProjectInCore(
   const trimmedProjectName = projectName.trim();
 
   try {
-    // Check if the setActiveProject method exists on the services object
-    if (typeof (services as any).setActiveProject === 'function') {
-      await (services as any).setActiveProject(trimmedProjectName);
-      const successMsg = `Project '${trimmedProjectName}' is now the active project.`;
-      log(LogLevel.INFO, `setActiveProjectInCore: Successfully set active project to "${trimmedProjectName}".`);
-      return {
-        success: true,
-        messageForLog: `Successfully set active project to "${trimmedProjectName}".`,
-        messageForUser: successMsg,
-      };
-    } else {
-      const notAvailableMsg = `setActiveProject method not found on core services. Cannot set '${trimmedProjectName}' as active programmatically.`;
-      log(LogLevel.WARN, `setActiveProjectInCore: ${notAvailableMsg}`);
-      return {
-        success: false,
-        messageForLog: notAvailableMsg,
-        messageForUser: `Project '${trimmedProjectName}' processed, but could not be set as active (feature not available).`,
-      };
-    }
+    // Directly call setActiveProject, as it's now a defined part of CoreServices
+    await services.setActiveProject(trimmedProjectName);
+    const successMsg = `Project '${trimmedProjectName}' is now the active project.`;
+    log(LogLevel.INFO, `setActiveProjectInCore: Successfully set active project to "${trimmedProjectName}".`);
+    return {
+      success: true,
+      messageForLog: `Successfully set active project to "${trimmedProjectName}".`,
+      messageForUser: successMsg,
+    };
   } catch (error: any) {
+    // This will catch errors thrown by services.setActiveProject (e.g., project not found)
     const errorMsg = `Error attempting to set active project to "${trimmedProjectName}": ${error.message}`;
-    log(LogLevel.ERROR, `setActiveProjectInCore: ${errorMsg}`, { error });
+    log(LogLevel.ERROR, `setActiveProjectInCore: ${errorMsg}`, { name: error.name, stack: error.stack, details: error });
     return {
       success: false,
       messageForLog: errorMsg,
-      messageForUser: `Error setting '${trimmedProjectName}' as active project.`,
+      messageForUser: error.message || `Error setting '${trimmedProjectName}' as active project.`,
+      // It might be useful to pass a more specific user message if the error is known, e.g., project not found.
     };
   }
 } 

@@ -30,6 +30,8 @@ export interface CoreServices {
   registerService: (serviceName: string, serviceInstance: any) => void;
   /** Allows a plugin to retrieve a named service registered by another plugin. */
   getService: (serviceName: string) => any | undefined;
+  /** Allows a plugin or the core to set the active project context. */
+  setActiveProject: (projectName: string) => Promise<void>;
 
   // Specific, commonly used services can be explicitly typed for convenience
   emailService?: EmailService; // This will be populated by pluginManager if an email service is registered

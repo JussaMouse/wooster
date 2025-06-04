@@ -1,4 +1,4 @@
-import { ChatOpenAI } from "@langchain/openai";
+import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
 import { Tool, DynamicTool } from "@langchain/core/tools";
 import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents";
 import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
@@ -18,6 +18,7 @@ import { getPluginAgentTools } from "./pluginManager";
 import { ChatDebugFileCallbackHandler } from "./chatDebugFileCallbackHandler";
 import { scheduleAgentTaskTool } from "./schedulerTool";
 import { createFileTool, readFileTool } from './fileSystemTool';
+import { initializeProjectVectorStore } from './projectStoreManager';
 
 let userProfileStoreInstance: FaissStore | null = null;
 let projectVectorStoreInstance: FaissStore | null = null;
@@ -25,6 +26,13 @@ let tools: any[] = [];
 let agentExecutorInstance: AgentExecutor | null = null;
 let appConfig: AppConfig;
 let agentLlm: ChatOpenAI;
+
+// New module-level variables for active project management
+let currentActiveProjectName: string = 'home'; // Default
+let currentActiveProjectPath: string = ''; 
+let embeddingsInstance: OpenAIEmbeddings | null = null;
+let projectStoreAppConfig: AppConfig | null = null; // To be used by initializeProjectVectorStore
+const projectBasePath = path.join(process.cwd(), 'projects');
 
 const historyAwarePrompt = ChatPromptTemplate.fromMessages([
     new MessagesPlaceholder("chat_history"),
@@ -178,11 +186,11 @@ async function getAgentExecutor(): Promise<AgentExecutor> {
   
   const finalSystemPrompt = baseSystemPromptText + 
     appendedPromptsText +
-    "\n\nYour current active project is '{current_project_name}'. For tools requiring a project name, like 'create_file', you should use this active project name by default. " +
-    "If the user explicitly specifies a different project for a particular action (e.g., 'save this note in project X'), then you should use the project name specified by the user for that action's tool call. " +
-    "If you are unsure which project to use for an operation that requires one, and the user has not specified one, you should ask for clarification or use the active project '{current_project_name}'. " +
+    `\n\nYour current active project is '${currentActiveProjectName}'. For tools requiring a project name, like 'create_file', you should use this active project name by default. ` +
+    "If the user explicitly specifies a different project for a particular action (e.g., 'save this note in project X'), then you should use the project name specified by the user for that action\'s tool call. " +
+    `If you are unsure which project to use for an operation that requires one, and the user has not specified one, you should ask for clarification or use the active project '${currentActiveProjectName}'. ` +
     "Do not change the active project context itself without explicit instruction." +
-    "\n\nTo add content to an existing file (e.g., add an entry to a log file), you should first use the 'read_file_content' tool to get the current content. Then, append your new content to the existing content in your internal thought process. Finally, use the 'create_file' tool to save the entire new combined content back to the same file. This ensures you don't overwrite existing data unintentionally when the user asks to add something." +
+    "\n\nTo add content to an existing file (e.g., add an entry to a log file), you should first use the 'read_file_content' tool to get the current content. Then, append your new content to the existing content in your internal thought process. Finally, use the 'create_file' tool to save the entire new combined content back to the same file. This ensures you don\'t overwrite existing data unintentionally when the user asks to add something." +
     "\n\nCurrent date and time: {current_date_time}";
 
   const prompt = ChatPromptTemplate.fromMessages([
@@ -220,12 +228,58 @@ async function getAgentExecutor(): Promise<AgentExecutor> {
 }
 
 export async function initializeAgentExecutorService(
-  projectStore?: FaissStore
+  initialProjectName: string,
+  initialProjectPath: string,
+  initialProjectStore: FaissStore,
+  initialEmbeddings: OpenAIEmbeddings,
+  configForProjectStore: AppConfig
 ): Promise<void> {
-  appConfig = await getConfig();
-  if (projectStore) {
-    projectVectorStoreInstance = projectStore;
-    log(LogLevel.INFO, "AgentExecutorService: Project Vector Store initialized with FaissStore.");
+  currentActiveProjectName = initialProjectName;
+  currentActiveProjectPath = initialProjectPath;
+  projectVectorStoreInstance = initialProjectStore;
+  embeddingsInstance = initialEmbeddings; // Store the embeddings instance
+  projectStoreAppConfig = configForProjectStore; // Store the appConfig for project store use
+
+  // appConfig for agent tools and LLM is still loaded via getConfig() in initializeTools if needed
+  // Or, if configForProjectStore is the same appConfig, we can assign it to the module 'appConfig' here too.
+  // For now, let's assume initializeTools will fetch its own appConfig as it does currently.
+
+  log(LogLevel.INFO, `AgentExecutorService: Initialized with project "${initialProjectName}". Vector Store ready.`);
+}
+
+export async function setActiveProject(newProjectName: string): Promise<void> {
+  if (!embeddingsInstance || !projectStoreAppConfig) {
+    log(LogLevel.ERROR, "AgentExecutorService.setActiveProject: Embeddings or AppConfig for project store not initialized.");
+    // This might happen if initializeAgentExecutorService was not called correctly.
+    // Or if this is called before Wooster main startup has set these.
+    // Consider throwing an error or specific handling if this state is critical.
+    return;
+  }
+
+  const newProjectPath = path.join(projectBasePath, newProjectName);
+
+  if (!fs.existsSync(newProjectPath) || !fs.statSync(newProjectPath).isDirectory()) {
+    log(LogLevel.ERROR, `AgentExecutorService.setActiveProject: Project directory not found at ${newProjectPath}`);
+    // Maybe throw an error to signal failure to the caller
+    throw new Error(`Project '${newProjectName}' not found at ${newProjectPath}.`);
+  }
+
+  log(LogLevel.INFO, `AgentExecutorService: Attempting to set active project to "${newProjectName}"`);
+  try {
+    projectVectorStoreInstance = await initializeProjectVectorStore(
+      newProjectName,
+      newProjectPath,
+      embeddingsInstance,
+      projectStoreAppConfig
+    );
+    currentActiveProjectName = newProjectName;
+    currentActiveProjectPath = newProjectPath;
+    agentExecutorInstance = null; // Force re-creation of agent with new project context in prompt
+    log(LogLevel.INFO, `AgentExecutorService: Active project successfully set to "${newProjectName}". Vector store updated.`);
+  } catch (error) {
+    log(LogLevel.ERROR, `AgentExecutorService: Failed to set active project to "${newProjectName}".`, { error });
+    // Re-throw or handle as appropriate. The project was not changed.
+    throw error; 
   }
 }
 
@@ -235,7 +289,7 @@ export async function executeAgent(
 ): Promise<string> {
   log(LogLevel.INFO, "AgentExecutorService: Executing agent", { userInput, chatHistoryLength: chatHistory.length });
   
-  const executor = await getAgentExecutor();
+  const executor = await getAgentExecutor(); // This will now build with currentActiveProjectName in prompt
   const currentDateTime = new Date().toLocaleString();
 
   try {
@@ -274,7 +328,7 @@ export async function executeAgent(
       input: userInput,
       chat_history: processedChatHistory,
       current_date_time: currentDateTime,
-      current_project_name: "home", // Hardcode for now
+      current_project_name: currentActiveProjectName, // Use dynamic project name
     });
 
     log(LogLevel.DEBUG, "AgentExecutorService: Raw execution result", { result });

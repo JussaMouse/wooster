@@ -7,12 +7,12 @@ import { initializeAgentExecutorService } from './agentExecutorService';
 import { setAgentConfig, agentRespond } from './agent';
 import { loadPlugins } from './pluginManager';
 import { initDatabase as initSchedulerDB } from './scheduler/reminderRepository';
-import { FaissStore } from "@langchain/community/vectorstores/faiss";
 import { OpenAIEmbeddings } from "@langchain/openai";
-import { Document } from "@langchain/core/documents";
-import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
+// import { Document } from "@langchain/core/documents";
+// import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import path from 'path';
 import fs from 'fs';
+import { initializeProjectVectorStore } from './projectStoreManager';
 
 // Ensure project and user profile directories exist
 const projectBasePath = path.join(process.cwd(), 'projects');
@@ -30,21 +30,22 @@ let isMainRlPaused = false;
 let mainRlLineHandler: ((line: string) => Promise<void>) | undefined;
 let mainRlCloseHandler: (() => void) | undefined;
 let chatHistory: Array<{ role: string; content: string }> = []; 
-let defaultProjectNameGlobal = 'home'; // To be used by handleMainReplLine
+let defaultProjectNameGlobal = 'home'; // Restore this for handleMainReplLineInternal
 
 // Define the main REPL line handler as a named function
 async function handleMainReplLineInternal(line: string): Promise<void> {
-  if (mainReplManager.isPaused()) { // Safeguard, though close() should prevent this call
+  if (mainReplManager.isPaused()) { 
     log(LogLevel.WARN, "Main REPL line handler called while PAUSED. Input ignored.");
     return; 
   }
 
   const input = line.trim();
   if (input.toLowerCase() === 'exit') {
-    if (mainRl) mainRl.close(); // This will trigger the mainRlCloseHandler
+    if (mainRl) mainRl.close();
     return; 
   }
   if (input) {
+    // Use defaultProjectNameGlobal here
     const response = await agentRespond(input, chatHistory, defaultProjectNameGlobal);
     console.log(`Wooster: ${response}`);
     chatHistory.push({ role: 'user', content: input });
@@ -109,85 +110,8 @@ export const mainReplManager = {
   isPaused: () => isMainRlPaused,
 };
 
-// New function to initialize/rebuild vector store for a project
-async function initializeProjectVectorStore(projectName: string, projectPath: string, embeddingsInstance: OpenAIEmbeddings, appConfig: AppConfig): Promise<FaissStore> {
-  const storeDirPath = path.join(projectPath, 'vectorStore');
-  log(LogLevel.INFO, `Initializing vector store for project "${projectName}" at ${storeDirPath}`);
-
-  if (fs.existsSync(storeDirPath)) {
-    log(LogLevel.INFO, `Clearing existing vector store at ${storeDirPath} to rebuild.`);
-    const indexFilePath = path.join(storeDirPath, 'faiss.index');
-    const docstoreFilePath = path.join(storeDirPath, 'docstore.json');
-    try {
-        if (fs.existsSync(indexFilePath)) {
-            fs.unlinkSync(indexFilePath);
-            log(LogLevel.DEBUG, `Deleted ${indexFilePath}`);
-        }
-        if (fs.existsSync(docstoreFilePath)) {
-            fs.unlinkSync(docstoreFilePath);
-            log(LogLevel.DEBUG, `Deleted ${docstoreFilePath}`);
-        }
-    } catch (err: any) {
-        log(LogLevel.WARN, `Could not fully delete old vector store contents from ${storeDirPath}: ${err.message}`);
-    }
-  } else {
-      fs.mkdirSync(storeDirPath, { recursive: true });
-  }
-
-  const documents: Document[] = [];
-  const splitter = new RecursiveCharacterTextSplitter({
-    // Aim for chunks that are well within typical context windows for embedding models
-    // text-embedding-3-small has 8192 tokens limit. Let's aim for smaller chunks.
-    chunkSize: 1000, // characters
-    chunkOverlap: 100, // characters
-  });
-
-  // projectPath is the root of the specific project, e.g., /path/to/wooster/projects/home
-  // We should read files directly from this projectPath
-  const filesToRead = fs.readdirSync(projectPath);
-
-  for (const file of filesToRead) {
-    const fileExtension = path.extname(file).toLowerCase();
-    // Only pick up .md and .txt files from the root of the project directory
-    if (fileExtension === '.md' || fileExtension === '.txt') {
-      const filePath = path.join(projectPath, file);
-      // Ensure it's a file and not a directory (like 'vectorStore' itself)
-      if (fs.statSync(filePath).isFile()) {
-        try {
-          const content = fs.readFileSync(filePath, 'utf-8');
-          const chunks = await splitter.splitText(content);
-          chunks.forEach((chunk, index) => {
-            documents.push(new Document({
-              pageContent: chunk,
-              metadata: {
-                source: file, // Original filename
-                project: projectName,
-                chunkNumber: index + 1,
-                totalChunks: chunks.length
-              }
-            }));
-          });
-          log(LogLevel.INFO, `Prepared document for indexing: ${file} (Project: ${projectName}, Chunks: ${chunks.length})`);
-        } catch (err: any) {
-          log(LogLevel.WARN, `Failed to read or prepare document ${filePath}: ${err.message}`);
-        }
-      }
-    }
-  }
-
-  let store: FaissStore;
-  if (documents.length > 0) {
-    store = await FaissStore.fromDocuments(documents, embeddingsInstance);
-    log(LogLevel.INFO, `Created vector store with ${documents.length} document(s) for project "${projectName}".`);
-  } else {
-    log(LogLevel.INFO, `No documents found to index for project "${projectName}". Creating an empty store with a dummy document.`);
-    store = await FaissStore.fromTexts([`No documents found in project ${projectName}. Project initialized.`], [{ project: projectName }], embeddingsInstance);
-  }
-  
-  await store.save(storeDirPath);
-  log(LogLevel.INFO, `Vector store for project "${projectName}" saved to ${storeDirPath}`);
-  return store;
-}
+// REMOVE THE OLD FUNCTION DEFINITION FROM HERE (approx. lines 111-190 in original)
+// async function initializeProjectVectorStore(projectName: string, projectPath: string, embeddingsInstance: OpenAIEmbeddings, appConfig: AppConfig): Promise<FaissStore> { ... }
 
 async function schedulerAgentCallback(taskPayload: string): Promise<void> {
   log(LogLevel.INFO, `Scheduler invoking agent with payload:`, { payload: taskPayload });
@@ -230,13 +154,20 @@ async function main() {
   setAgentConfig(appConfig);
   const embeddings = new OpenAIEmbeddings({ openAIApiKey: appConfig.openai.apiKey });
   
-  // defaultProjectNameGlobal is already defined at the top level
-  const projectDir = path.join(projectBasePath, defaultProjectNameGlobal);
+  const defaultProjectName = 'home'; // Local constant for clarity
+  const projectDir = path.join(projectBasePath, defaultProjectName);
   if (!fs.existsSync(projectDir)) {
     fs.mkdirSync(projectDir, { recursive: true });
   }
-  const projectVectorStore = await initializeProjectVectorStore(defaultProjectNameGlobal, projectDir, embeddings, appConfig);
-  await initializeAgentExecutorService(projectVectorStore);
+  const projectVectorStore = await initializeProjectVectorStore(defaultProjectName, projectDir, embeddings, appConfig);
+  
+  await initializeAgentExecutorService(
+    defaultProjectName,      // initialProjectName
+    projectDir,              // initialProjectPath
+    projectVectorStore,      // initialProjectStore
+    embeddings,              // initialEmbeddings
+    appConfig                // configForProjectStore
+  );
   log(LogLevel.INFO, "AgentExecutorService initialized.");
   await initSchedulerService(schedulerAgentCallback);
   log(LogLevel.INFO, "SchedulerService initialized.");

@@ -5,6 +5,7 @@ import { log, LogLevel } from './logger'
 import { WoosterPlugin, CoreServices, EmailService } from './types/plugin'
 import { ensureScheduleIsManaged } from './scheduler/schedulerService'
 import type { NextActionsService } from './plugins/nextActions/types'
+import { setActiveProject as coreSetActiveProject } from './agentExecutorService'
 
 const loadedPlugins: WoosterPlugin[] = []
 const pluginProvidedAgentTools: any[] = []
@@ -35,6 +36,7 @@ const coreServicesInstance: CoreServices = {
     }
     return service
   },
+  setActiveProject: coreSetActiveProject,
   // emailService and NextActionsService will be populated by registerService
 }
 
