@@ -432,6 +432,83 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
     await this.loadDailyReviewConfig();
     this.logMsg(LogLevel.INFO, "Plugin initialized.");
 
+    // Instantiate the tool for getting the daily review content
+    this.dailyReviewAgentToolInstance = new DynamicTool({
+      name: "get_daily_review",
+      description: "Generates and returns the current daily review content as a JSON string based on user's settings. If not configured, prompts to check help.",
+      func: async () => {
+        this.logMsg(LogLevel.DEBUG, "get_daily_review tool executed.");
+        const userCfg = this.userConfig || this.getDefaultUserConfig();
+        if (!userCfg.isDailyReviewEnabled && !userCfg.hasCompletedInitialSetup) {
+            return JSON.stringify({
+                message: "Your Daily Review is not yet enabled or fully configured. To get started, ask Wooster: 'help with daily review' or 'what is the daily review?'",
+                status: "not_configured"
+            });
+        }
+        const data = await this.getDailyReviewContentInternal();
+        return JSON.stringify(data);
+      }
+    });
+
+    // Instantiate the help tool
+    this.getDailyReviewHelpToolInstance = new DynamicTool({
+      name: "get_daily_review_help",
+      description: "Provides detailed help and current configuration status for the Daily Review plugin, including content modules, delivery channels, and scheduling.",
+      func: async () => {
+        this.logMsg(LogLevel.DEBUG, "get_daily_review_help tool executed.");
+        const cfg = this.userConfig || this.getDefaultUserConfig();
+
+        let helpText = `
+**Wooster Daily Review Configuration & Help**
+
+**Current Schedule:** \`${cfg.scheduleCron}\` (Enabled: ${cfg.isDailyReviewEnabled})
+**Initial Setup Completed:** ${cfg.hasCompletedInitialSetup}
+
+**Content Modules (what's in your review):**
+`;
+        for (const key of Object.keys(cfg.contentModules) as Array<keyof DailyReviewUserConfig['contentModules']>) {
+          let moduleDescription = "";
+          switch (key) {
+            case 'calendar': moduleDescription = "(Events from your primary calendar via Calendar plugin)"; break;
+            case 'nextActions': moduleDescription = "(Tasks from your main \`next_actions.md\` file)"; break;
+            case 'weather': moduleDescription = "(Forecast for your configured city via Weather plugin)"; break;
+            case 'healthLog': moduleDescription = "(Summary of yesterday's health events from the Personal Health plugin)"; break;
+            case 'inspirationalQuote': moduleDescription = "(A daily dose of inspiration)"; break;
+            case 'chineseWordOfTheDay': moduleDescription = "(Learn a new Chinese word)"; break;
+            default: moduleDescription = "(Unknown module)";
+          }
+          helpText += `  - ${key}: ${cfg.contentModules[key] ? '✅ Enabled' : '❌ Disabled'} ${moduleDescription}\n`;
+        }
+
+        helpText += `
+**Delivery Channels (how you get your review):**
+`;
+        if (cfg.deliveryChannels.email || this.coreServices?.getService("EmailService")) {
+          const emailCfg = cfg.deliveryChannels.email;
+          helpText += `  - Email: ${emailCfg.enabled ? '✅ Enabled' : '❌ Disabled'}\n`;
+          if (emailCfg.enabled) {
+            helpText += `    - Recipient: ${emailCfg.recipient || this.appConfig?.gmail?.userPersonalEmailAddress || '(Not Set - Defaults to GMAIL_USER_PERSONAL_EMAIL_ADDRESS env var)'}\n`;
+          }
+        }
+
+        if (cfg.deliveryChannels.discord || this.coreServices?.getService("DiscordService")) {
+            const discordCfg = (cfg.deliveryChannels as any).discord;
+            helpText += `
+  *   **Discord Delivery (\`discord\`):** (Requires a Discord Plugin/Service - Coming Soon!)
+      - Enabled: ${discordCfg?.enabled ? '✅' : '❌'}
+      - Channel ID: ${discordCfg?.channelId || '(Not Set)'}
+`;
+        }
+
+        helpText += `
+To configure, edit \`config/dailyReview.json\`. 
+Wooster automatically creates this file with defaults if it's missing. 
+It checks for available services (Calendar, Weather, etc.) on first setup to auto-enable relevant modules.
+`;
+        return helpText;
+      }
+    });
+
     // Example of checking for the GetOpenNextActionsService during initialization
     const nextActionsServiceCheck = this.coreServices.getService("GetOpenNextActionsService");
     if (!nextActionsServiceCheck && this.userConfig?.contentModules.nextActions) {
@@ -444,67 +521,14 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
   }
 
   getAgentTools?(): any[] {
-    if (!this.getDailyReviewHelpToolInstance) {
-      this.getDailyReviewHelpToolInstance = new DynamicTool({
-        name: "get_daily_review_help",
-        description: "Provides detailed help and current configuration status for the Daily Review plugin, including content modules, delivery channels, and scheduling.",
-        func: async () => {
-          this.logMsg(LogLevel.DEBUG, "get_daily_review_help tool executed.");
-          const cfg = this.userConfig || this.getDefaultUserConfig();
-
-          let helpText = `
-**Wooster Daily Review Configuration & Help**
-
-**Current Schedule:** \`${cfg.scheduleCron}\` (Enabled: ${cfg.isDailyReviewEnabled})
-**Initial Setup Completed:** ${cfg.hasCompletedInitialSetup}
-
-**Content Modules (what's in your review):**
-`;
-          for (const key of Object.keys(cfg.contentModules) as Array<keyof DailyReviewUserConfig['contentModules']>) {
-            let moduleDescription = "";
-            switch (key) {
-              case 'calendar': moduleDescription = "(Events from your primary calendar via Calendar plugin)"; break;
-              case 'nextActions': moduleDescription = "(Tasks from your main \`next_actions.md\` file)"; break; // Updated description
-              case 'weather': moduleDescription = "(Forecast for your configured city via Weather plugin)"; break;
-              case 'healthLog': moduleDescription = "(Summary of yesterday's health events from the Personal Health plugin)"; break;
-              case 'inspirationalQuote': moduleDescription = "(A daily dose of inspiration)"; break;
-              case 'chineseWordOfTheDay': moduleDescription = "(Learn a new Chinese word)"; break;
-              default: moduleDescription = "(Unknown module)";
-            }
-            helpText += `  - ${key}: ${cfg.contentModules[key] ? '✅ Enabled' : '❌ Disabled'} ${moduleDescription}\n`;
-          }
-
-          helpText += `
-**Delivery Channels (how you get your review):**
-`;
-          if (cfg.deliveryChannels.email || this.coreServices?.getService("EmailService")) {
-            const emailCfg = cfg.deliveryChannels.email;
-            helpText += `  - Email: ${emailCfg.enabled ? '✅ Enabled' : '❌ Disabled'}\n`;
-            if (emailCfg.enabled) {
-              helpText += `    - Recipient: ${emailCfg.recipient || this.appConfig?.gmail?.userPersonalEmailAddress || '(Not Set - Defaults to GMAIL_USER_PERSONAL_EMAIL_ADDRESS env var)'}\n`;
-            }
-          }
-
-          if (cfg.deliveryChannels.discord || this.coreServices?.getService("DiscordService")) {
-              const discordCfg = (cfg.deliveryChannels as any).discord; // Needs proper typing if Discord becomes official
-              helpText += `
-  *   **Discord Delivery (\`discord\`):** (Requires a Discord Plugin/Service - Coming Soon!)
-      - Enabled: ${discordCfg?.enabled ? '✅' : '❌'}
-      - Channel ID: ${discordCfg?.channelId || '(Not Set)'}
-`;
-          }
-
-          helpText += `
-To configure, edit \`config/dailyReview.json\`. 
-Wooster automatically creates this file with defaults if it's missing. 
-It checks for available services (Calendar, Weather, etc.) on first setup to auto-enable relevant modules.
-`;
-          return helpText;
-        },
-      });
+    const tools: any[] = [];
+    if (this.dailyReviewAgentToolInstance) {
+      tools.push(this.dailyReviewAgentToolInstance);
     }
-    // Add other tools like manual trigger if needed here
-    return [this.getDailyReviewHelpToolInstance];
+    if (this.getDailyReviewHelpToolInstance) {
+      tools.push(this.getDailyReviewHelpToolInstance);
+    }
+    return tools;
   }
 
   getScheduledTaskSetups?(): ScheduledTaskSetupOptions | ScheduledTaskSetupOptions[] | undefined {
