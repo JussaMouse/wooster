@@ -450,7 +450,7 @@ ${archivedTaskString}
     
     const completeNextActionTool = new DynamicTool({
         name: "completeNextAction",
-        description: "Completes a next action. Input JSON: { identifier: string | number } where identifier is a unique task ID, or a unique phrase from task description, or line number (if recently viewed via viewNextActions).",
+        description: "Completes a single next action. This tool MUST be called with an object containing a single key: 'input'. The value for this 'input' key MUST be a JSON string. This JSON string ITSELF MUST represent an object with a single key: 'identifier'. The value for 'identifier' (inside the JSON string) should be the unique task ID (string), a unique phrase from the task's description (string), or the task's line number (number, if recently viewed). For example, if completing task with ID '123', the agent must call the tool as: completeNextActionTool({ input: '{\"identifier\": \"123\"}' }). If completing task by line number 5, call as: completeNextActionTool({ input: '{\"identifier\": 5}' }). If by description 'Buy milk', call as: completeNextActionTool({ input: '{\"identifier\": \"Buy milk\"}' })",
         func: async (jsonInput: string) => {
             this.logMsg(LogLevel.DEBUG, "completeNextActionTool executed", { jsonInput });
             try {
@@ -468,8 +468,7 @@ ${archivedTaskString}
 
     const editNextActionTool = new DynamicTool({
       name: "editNextAction",
-      description: "Edits an existing next action. Input JSON: { identifier: string (must be task ID), updates: Partial<TaskItem> }. " +
-                   "Updates can include description, context, project, dueDate, isCompleted, etc. ID cannot be changed.",
+      description: "Edits an existing next action. This tool MUST be called with an object containing a single key: 'input'. The value for this 'input' key MUST be a JSON string. This JSON string ITSELF MUST represent an object containing two keys: 'identifier' (string, must be the task's unique ID) and 'updates' (an object with fields to change, e.g., description, context, project, dueDate, isCompleted). The task ID itself cannot be changed via the 'updates' object. Example agent call: editNextActionTool({ input: '{\"identifier\": \"task-uuid\", \"updates\": {\"description\": \"New description\", \"dueDate\": \"2025-01-01\"}}' })",
       func: async (jsonInput: string) => {
         this.logMsg(LogLevel.DEBUG, "editNextActionTool executed", { jsonInput });
         try {

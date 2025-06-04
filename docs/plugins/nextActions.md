@@ -49,14 +49,24 @@ The `nextActions` plugin provides the following tools for the agent to interact 
     *   The value of the `'input'` key (the JSON string itself) would look like: `'{"description": "My new task", "context": "@home", "dueDate": "2024-12-01"}'`
 
 *   **`completeNextAction`**:
-    *   Completes a next action.
-    *   Requires a JSON input with an `identifier` which can be the task's unique ID, a unique phrase from its description, or a line number (if recently viewed).
-    *   Example: `completeNextAction {"identifier": "uuid-of-task-to-complete"}` or `completeNextAction {"identifier": "Draft proposal"}`
+    *   Completes a single next action.
+    *   This tool **MUST** be called with an object containing a single key: `'input'`.
+    *   The value for this `'input'` key **MUST** be a JSON string.
+    *   This JSON string **ITSELF MUST** represent an object with a single key: `'identifier'`.
+    *   The value for `'identifier'` (inside the JSON string) should be the unique task ID (string), a unique phrase from the task's description (string), or the task's line number (number, if recently viewed).
+    *   **Example Agent Calls:**
+        *   To complete by task ID '123': `toolName({ input: '{"identifier": "123"}' })`
+        *   To complete by line number 5: `toolName({ input: '{"identifier": 5}' })` (Note: the number 5 is valid JSON for the value here)
+        *   To complete by description 'Buy milk': `toolName({ input: '{"identifier": "Buy milk"}' })`
 
 *   **`editNextAction`**:
     *   Edits an existing next action.
-    *   Requires a JSON input with an `identifier` (must be the task ID) and an `updates` object containing the fields to change (e.g., `description`, `context`, `project`, `dueDate`, `isCompleted`). The task ID itself cannot be changed.
-    *   Example: `editNextAction {"identifier": "uuid-of-task-to-edit", "updates": {"description": "Finalize and send Q4 proposal", "dueDate": "2024-09-20"}}`
+    *   This tool **MUST** be called with an object containing a single key: `'input'`.
+    *   The value for this `'input'` key **MUST** be a JSON string.
+    *   This JSON string **ITSELF MUST** represent an object containing two keys:
+        *   `'identifier'` (string, must be the task's unique ID).
+        *   `'updates'` (an object with fields to change, e.g., `description`, `context`, `project`, `dueDate`, `isCompleted`). The task ID itself cannot be changed via the `'updates'` object.
+    *   **Example Agent Call:** `toolName({ input: '{"identifier": "task-uuid", "updates": {"description": "New description", "dueDate": "2025-01-01"}}' })`
 
 ## Interaction with `TaskParser`
 
