@@ -4,7 +4,7 @@
 
 ## 1. Purpose
 
-The `ProjectManagerPlugin` provides tools for managing projects within Wooster. Its key capabilities include creating new projects, opening existing ones (automatically setting them as the active project), renaming projects, and listing files within the active project.
+The `ProjectManagerPlugin` provides tools for managing projects within Wooster. Its key capabilities include creating new projects (which includes a project journal file), opening existing ones (automatically setting them as the active project), renaming projects, and listing files within the active project.
 
 Future enhancements could include listing projects or other project-specific operations.
 
@@ -28,7 +28,7 @@ The plugin relies on the `projects` base directory (typically `projects/` relati
 *   **Functionality:**
     *   Takes the provided `projectName`.
     *   Uses the `createNewProject` utility (`src/plugins/projectManager/createNewProject.ts`) to perform the actual file system operations. This involves creating a new directory named `projectName` (e.g., `projects/MyNewProject/`).
-    *   It also creates a main Markdown file within this new directory (e.g., `projects/MyNewProject/MyNewProject.md`) populated with default headings.
+    *   It also creates a project journal file (e.g., `projects/MyNewProject/MyNewProject.md` with a heading like `# Journal: MyNewProject`) populated with default sections.
     *   **Crucially, it then attempts to set this newly created project as the active project within Wooster's core system.**
 *   **Output:**
     *   On success: Returns a message like `"Project '[projectName]' created successfully. Path: [path/to/projectName.md]. It is now the active project."` or a message indicating if activation was not possible (though this is less likely with recent core changes).
@@ -38,7 +38,7 @@ The plugin relies on the `projects` base directory (typically `projects/` relati
     User: create new project AlphaFoxtrot
     Agent: (Calls `createProject` tool with "AlphaFoxtrot")
     Tool Response: Project 'AlphaFoxtrot' created successfully. Path: projects/AlphaFoxtrot/AlphaFoxtrot.md. It is now the active project.
-    Agent: Okay, I've created the project "AlphaFoxtrot" for you, and it's now the active project. The main project file is at projects/AlphaFoxtrot/AlphaFoxtrot.md.
+    Agent: Okay, I've created the project "AlphaFoxtrot" for you, and it's now the active project. The project journal file is at projects/AlphaFoxtrot/AlphaFoxtrot.md.
     ```
     Or in case of an error:
     ```
@@ -85,7 +85,7 @@ The plugin relies on the `projects` base directory (typically `projects/` relati
 *   **Functionality:**
     *   Parses the JSON input to get `currentName` and `newName`.
     *   Performs validation on the names.
-    *   Calls the `performRenameProject` utility which handles the actual directory renaming and updates to the project's main markdown file if necessary.
+    *   Calls the `performRenameProject` utility which handles the actual directory renaming and updates to the project's journal file if necessary.
     *   If the renamed project was the active project, it attempts to update the active project context in Wooster's core.
 *   **Output:** A message indicating success or failure, e.g., `"Project 'old-name' renamed to 'new-name' successfully."` or an error message.
 *   **Example Agent Interaction:**

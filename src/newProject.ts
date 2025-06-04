@@ -11,7 +11,7 @@ interface CreateProjectResult {
 }
 
 /**
- * Creates a new project directory and a main project file.
+ * Creates a new project directory and a main project journal file.
  * @param projectName The name of the new project.
  * @param config The application configuration containing GTD_PROJECTS_DIR.
  * @returns A promise that resolves with an object indicating success or failure.
@@ -54,10 +54,10 @@ export async function createNewProject(
     fs.mkdirSync(newProjectDir, { recursive: true });
     log(LogLevel.INFO, `createNewProject: Project directory created at ${newProjectDir}`);
 
-    // Create the main project file with some initial content
-    const initialContent = `# Project: ${projectName}\n\n## Overview\n\n\n## Tasks\n\n\n## Notes\n\n\n## Reference Material\n\n`;
+    // Create the main project journal file with some initial content
+    const initialContent = `# Journal: ${projectName}\n\n## Overview\n\n\n## Tasks\n\n\n## Notes\n\n\n## Reference Material\n\n`;
     fs.writeFileSync(projectFilePath, initialContent);
-    log(LogLevel.INFO, `createNewProject: Project file created at ${projectFilePath}`);
+    log(LogLevel.INFO, `createNewProject: Project journal file created at ${projectFilePath}`);
 
     return {
       success: true,

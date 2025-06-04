@@ -40,7 +40,7 @@ function findMatchingProjectName(requestedName: string, actualProjectNames: stri
 export class ProjectManagerPlugin implements WoosterPlugin {
   static readonly pluginName = 'projectManager';
   static readonly version = '0.1.4'; // Incremented version due to new tool
-  static readonly description = 'Manages projects: creation, opening (with fuzzy matching), renaming, setting active project, and listing files in the active project.';
+  static readonly description = 'Manages projects: creating new projects (including a project journal), opening (with fuzzy matching), renaming, setting active project, and listing files in the active project.';
 
   readonly name = ProjectManagerPlugin.pluginName;
   readonly version = ProjectManagerPlugin.version;
@@ -77,7 +77,7 @@ export class ProjectManagerPlugin implements WoosterPlugin {
     
     const createProjectTool = new DynamicTool({
       name: 'createProject',
-      description: 'Creates a new project with the given name and attempts to set it as the active project. Usage: createProject project_name',
+      description: 'Creates a new project with the given name (which includes a project journal file) and attempts to set it as the active project. Usage: createProject project_name',
       func: async (projectName: string) => {
         if (!projectName || typeof projectName !== 'string' || projectName.trim() === '') {
           const errorMsg = 'Error: Project name must be a non-empty string.';

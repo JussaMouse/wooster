@@ -308,9 +308,9 @@ Enter code: `;
           if (newProjectName) {
             const newProjectDir = path.join(this.projectsDirPath, newProjectName);
             this.ensureDirExists(this.getFullPath(newProjectDir));
-            const projectFilePath = path.join(newProjectDir, `${newProjectName}.md`); // Main project file
+            const projectFilePath = path.join(newProjectDir, `${newProjectName}.md`); // Project journal file
             
-            this.appendToMdFile(projectFilePath, `# Project: ${newProjectName}\n\n## Initial Item\n\n- [ ] ${item.description}\n`);
+            this.appendToMdFile(projectFilePath, `# Journal: ${newProjectName}\n\n## Initial Item\n\n- [ ] ${item.description}\n`);
 
             console.log(`Project '${newProjectName}' created with item as initial task.`);
             this.archiveInboxItem(item);
