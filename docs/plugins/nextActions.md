@@ -45,6 +45,7 @@ The `nextActions` plugin provides the following tools for the agent to interact 
     *   Adds a new next action.
     *   This tool expects to be called with an object containing a single key: `'input'`. The value for the `'input'` key must be a JSON string.
     *   This JSON string should represent an object with the following keys: `'description'` (string, required), and optional `'context'` (string), `'project'` (string), `'dueDate'` (string, YYYY-MM-DD).
+    *   **Automatic Project Tagging**: If you add a task *without* specifying a project (either in the `project` field of the JSON input or as a `+project` tag within the `description` string), AND you have an active project set in Wooster (that is not "home"), then the system will automatically prepend the active project to your task (e.g., `+MyActiveProject Task description`).
     *   Example of how the agent should call the tool, providing the structured object with the `input` key: `toolName({ input: '{"description": "My new task", "context": "@home", "dueDate": "2024-12-01"}' })`
     *   The value of the `'input'` key (the JSON string itself) would look like: `'{"description": "My new task", "context": "@home", "dueDate": "2024-12-01"}'`
 
