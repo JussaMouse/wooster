@@ -20,7 +20,7 @@ Your plugin class must implement the `WoosterPlugin` interface (from `src/types/
 
 #### 1. Static Properties (Crucial for Loading & Validation)
 
-The `PluginManager` validates plugins by expecting certain static properties on the plugin's default exported class constructor. These properties are read *before* the plugin is instantiated.
+The `PluginManager` validates plugins by expecting certain static properties on the plugin's default exported class constructor. These properties are read *before* the plugin is instantiated. **If these static properties are not correctly defined on the class constructor, the `PluginManager` will not be able to recognize or load your plugin.**
 
 -   **`pluginName` (string):** (Recommended) The canonical, unique name for your plugin (e.g., `'myPlugin'`). This is used as the key in configuration files (e.g., `config.plugins.myPlugin`) and for logging. While `name` is also checked for backward compatibility, `pluginName` is preferred to avoid conflicts with `Function.name`.
 -   **`version` (string):** The version number of your plugin (e.g., `'0.1.0'`).
@@ -72,9 +72,11 @@ export default MyPlugin; // Default export the class
 Your plugin's `index.ts` file **must** have a `default export` of the plugin class itself.
 `export default MyPluginClass;`
 
+**Important:** Do **not** export an instance of your class (e.g., `export default new MyPluginClass();`). The `PluginManager` is responsible for creating an instance of your plugin class after validating its static properties.
+
 #### 3. Plugin Lifecycle Methods
 
-The `WoosterPlugin` interface defines several lifecycle methods. The `PluginManager` will call these on an **instance** of your plugin class.
+The `WoosterPlugin` interface defines several lifecycle methods. After validating the static properties and creating an instance of your plugin, the `PluginManager` will call these methods on that **instance**.
 
 -   **`async initialize(config: AppConfig, services: CoreServices): Promise<void>`:**
     Called when the plugin is loaded. Use this to set up your plugin, store the provided `config` and `services` on `this` for later use, register services, etc.
