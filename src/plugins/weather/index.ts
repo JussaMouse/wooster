@@ -1,4 +1,4 @@
-import { tool } from '@langchain/core/tools';
+import { DynamicTool } from 'langchain/tools';
 import { z } from 'zod';
 import { AppConfig } from '../../configLoader';
 import { WoosterPlugin, CoreServices } from '../../types/plugin';
@@ -7,12 +7,6 @@ import { LogLevel } from '../../logger';
 // Type for the forecast function, matching what DailyReview expects.
 // Ideally, this would be a shared type in a more central location if many plugins use this exact signature.
 export type GetWeatherForecastType = () => Promise<string>;
-
-let core: CoreServices | null = null;
-let weatherApiKey: string | null = null;
-let weatherCity: string | null = null;
-let apiUnits: "metric" | "imperial" = "imperial"; // For OpenWeatherMap API call, default to imperial if not specified
-let displayUnits: "C" | "F" = "F"; // For display, default to F
 
 interface WeatherResponse {
   cod: string;
@@ -71,177 +65,184 @@ function formatToLocalHour(date: Date): string {
   return date.toLocaleTimeString([], { hour: 'numeric', hour12: true }).toLowerCase();
 }
 
-async function fetchWeatherFromApi(): Promise<string> {
-  if (!core) {
-    return "WeatherPlugin Error: Core services not available.";
-  }
-  if (!weatherApiKey || !weatherCity) {
-    core.log(LogLevel.WARN, 'WeatherPlugin: API key or city not configured. Cannot fetch weather.');
-    return "Weather information is unavailable because the API key or city is not configured.";
-  }
-
-  const apiUrl = `https://api.openweathermap.org/data/2.5/forecast?q=${encodeURIComponent(weatherCity)}&appid=${weatherApiKey}&units=${apiUnits}`;
-
-  try {
-    core.log(LogLevel.INFO, `WeatherPlugin: Fetching weather for ${weatherCity} from OpenWeatherMap using ${apiUnits} for API.`);
-    const response = await fetch(apiUrl);
-    if (!response.ok) {
-      const errorBody = await response.text();
-      core.log(LogLevel.ERROR, `WeatherPlugin: API request failed with status ${response.status}. Response: ${errorBody}`, { city: weatherCity, status: response.status });
-      return `Weather information for ${weatherCity} is currently unavailable (API error: ${response.status}).`;
-    }
-
-    const data = await response.json() as WeatherResponse;
-
-    if (data.cod !== "200") {
-      core.log(LogLevel.ERROR, `WeatherPlugin: API returned error code ${data.cod}. Message: ${data.message}`, { city: weatherCity, responseData: data });
-      return `Weather information for ${weatherCity} is currently unavailable (API response error: ${data.cod}).`;
-    }
-    
-    if (!data.list || data.list.length === 0) {
-      core.log(LogLevel.WARN, 'WeatherPlugin: No forecast data received from API.', { city: weatherCity, responseData: data });
-      return `No forecast data available for ${weatherCity}.`;
-    }
-
-    const currentForecast = data.list[0];
-    const currentTemp = Math.round(currentForecast.main.temp);
-    const currentWeatherDescription = currentForecast.weather[0]?.description || 'N/A';
-    const currentWeatherMain = currentForecast.weather[0]?.main.toLowerCase() || '';
-    const currentPop = Math.round((currentForecast.pop || 0) * 100);
-
-    const isCurrentlyRaining = ["rain", "drizzle", "thunderstorm", "shower"].some(term => currentWeatherMain.includes(term) || currentWeatherDescription.toLowerCase().includes(term));
-
-    const now = new Date();
-    const localTenPM = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 22, 0, 0);
-    
-    let maxPopToday = 0;
-    let maxPopSlot: ForecastSlot | null = null;
-    let relevantSlotsFound = false;
-
-    for (const slot of data.list) {
-      const slotDate = new Date(slot.dt * 1000);
-      if (slotDate >= now && slotDate <= localTenPM) {
-        if (slot.pop > maxPopToday) {
-          maxPopToday = slot.pop;
-          maxPopSlot = slot;
-        }
-        relevantSlotsFound = true;
-      }
-      if (slotDate > localTenPM && slotDate.getDate() === now.getDate()) { 
-        break;
-      }
-    }
-    
-    const maxPopPercentageToday = Math.round(maxPopToday * 100);
-
-    let forecastString = `Currently in ${weatherCity}: `;
-    if (isCurrentlyRaining) {
-      forecastString += `Raining, ${currentTemp}°${displayUnits}.`;
-    } else {
-      forecastString += `${currentTemp}°${displayUnits}, ${currentWeatherDescription}.`;
-    }
-
-    if (relevantSlotsFound && maxPopSlot && maxPopPercentageToday > 0) {
-      const slotTime = new Date(maxPopSlot.dt * 1000);
-      const slotStartHour = formatToLocalHour(slotTime);
-      const slotEndHour = formatToLocalHour(new Date(slotTime.getTime() + 3 * 60 * 60 * 1000));
-      
-      if (isCurrentlyRaining) {
-        if (maxPopSlot.dt > currentForecast.dt && maxPopPercentageToday > currentPop) {
-            forecastString += ` The highest chance of continued rain (${maxPopPercentageToday}%) is between ${slotStartHour} - ${slotEndHour} today.`;
-        } else if (maxPopSlot.dt === currentForecast.dt && maxPopPercentageToday >= currentPop) {
-             forecastString += ` This period has a ${maxPopPercentageToday}% chance of rain.`;
-        }
-      } else {
-        forecastString += ` Highest chance of rain (${maxPopPercentageToday}%) today is between ${slotStartHour} - ${slotEndHour}.`;
-      }
-    } else if (isCurrentlyRaining) {
-      // No action needed, initial string is sufficient
-    } else {
-      forecastString += ` Little to no rain expected until 10 PM. Current chance of rain: ${currentPop}%.`;
-    }
-    
-    core.log(LogLevel.INFO, `WeatherPlugin: Successfully fetched and processed weather for ${weatherCity}.`);
-    return forecastString;
-
-  } catch (error: any) {
-    core.log(LogLevel.ERROR, 'WeatherPlugin: Error fetching or processing weather data.', { error: error.message, stack: error.stack, city: weatherCity });
-    return `An error occurred while fetching weather information for ${weatherCity}.`;
-  }
-}
-
-// This function will be registered as a service
-const getWeatherForecastFunction: GetWeatherForecastType = async () => {
-  return fetchWeatherFromApi();
-};
-
-// Define the Zod schema for the input (an empty object)
 const getWeatherInputSchema = z.object({});
 
-// Agent Tool Definition using the `tool` utility function
-const getWeatherTool = tool(
-  async (_input: z.infer<typeof getWeatherInputSchema>) => {
-    // _input will be an empty object here, not used by fetchWeatherFromApi
-    if (core) {
-      core.log(LogLevel.DEBUG, "WeatherPlugin: get_weather_forecast tool (created with 'tool' utility) called with input.", { input: _input });
-    }
-    return fetchWeatherFromApi();
-  },
-  {
-    name: "get_weather_forecast",
-    description: "Provides the current weather forecast for the pre-configured city. Expects an empty object as input.",
-    schema: getWeatherInputSchema,
-  }
-);
-
 class WeatherPluginDefinition implements WoosterPlugin {
-  readonly name = "weather";
-  readonly version = "1.0.0";
-  readonly description = "Provides weather forecast information using OpenWeatherMap.";
+  static readonly pluginName = "weather";
+  static readonly version = "1.0.1"; // Incremented version due to refactor
+  static readonly description = "Provides weather forecast information using OpenWeatherMap.";
+
+  readonly name = WeatherPluginDefinition.pluginName;
+  readonly version = WeatherPluginDefinition.version;
+  readonly description = WeatherPluginDefinition.description;
+
+  private core: CoreServices | null = null;
+  private weatherApiKey: string | null = null;
+  private weatherCity: string | null = null;
+  private apiUnits: "metric" | "imperial" = "imperial";
+  private displayUnits: "C" | "F" = "F";
+  
+  private getWeatherToolInstance!: DynamicTool;
+
+  private logMsg(level: LogLevel, message: string, details?: object) {
+    this.core?.log(level, `[${this.name} Plugin v${this.version}] ${message}`, details);
+  }
 
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
-    core = services;
-    core.log(LogLevel.INFO, `WeatherPlugin (v${this.version}): Initializing...`);
+    this.core = services;
+    this.logMsg(LogLevel.INFO, 'Initializing...');
 
     if (config.weather) {
-      weatherApiKey = config.weather.openWeatherMapApiKey;
-      weatherCity = config.weather.city;
-      const configuredDisplayUnits = config.weather.units; // This is "C" or "F", or undefined
+      this.weatherApiKey = config.weather.openWeatherMapApiKey;
+      this.weatherCity = config.weather.city;
+      const configuredDisplayUnits = config.weather.units;
 
       if (configuredDisplayUnits === "C") {
-        displayUnits = "C";
-        apiUnits = "metric";
+        this.displayUnits = "C";
+        this.apiUnits = "metric";
       } else if (configuredDisplayUnits === "F") {
-        displayUnits = "F";
-        apiUnits = "imperial";
+        this.displayUnits = "F";
+        this.apiUnits = "imperial";
       } else {
-        // Default if undefined or invalid - configLoader defaults to "F"
-        // so we align plugin defaults here if somehow an invalid value bypasses configLoader
-        displayUnits = "F"; 
-        apiUnits = "imperial";
-        if (configuredDisplayUnits) { // Log if it was defined but invalid
-            core.log(LogLevel.WARN, `WeatherPlugin: Invalid display units "${configuredDisplayUnits}" from config. Defaulting to ${displayUnits} (API: ${apiUnits}).`);
+        this.displayUnits = "F"; 
+        this.apiUnits = "imperial";
+        if (configuredDisplayUnits) {
+          this.logMsg(LogLevel.WARN, `Invalid display units "${configuredDisplayUnits}" from config. Defaulting to ${this.displayUnits} (API: ${this.apiUnits}).`);
         }
       }
-      core.log(LogLevel.INFO, `WeatherPlugin: Configured with city "${weatherCity}", API key. Display units: "${displayUnits}" (API units: "${apiUnits}").`);
+      this.logMsg(LogLevel.INFO, `Configured with city "${this.weatherCity}", API key present. Display units: "${this.displayUnits}" (API units: "${this.apiUnits}").`);
     } else {
-      core.log(LogLevel.WARN, "WeatherPlugin: Main 'weather' config section not found. API key, city, or units might be missing.");
-      // Keep default apiUnits = "imperial" and displayUnits = "F" if no config.weather
+      this.logMsg(LogLevel.WARN, "Main 'weather' config section not found. API key, city, or units might be missing.");
     }
 
-    services.registerService("getWeatherForecastFunction", getWeatherForecastFunction);
-    core.log(LogLevel.INFO, 'WeatherPlugin: getWeatherForecastFunction registered as a service.');
+    services.registerService("getWeatherForecastFunction", this.getWeatherForecastServiceMethod.bind(this));
+    this.logMsg(LogLevel.INFO, 'getWeatherForecastFunction registered as a service.');
+
+    this.getWeatherToolInstance = new DynamicTool({
+      name: "get_weather_forecast",
+      description: `Provides the current weather forecast for the pre-configured city (${this.weatherCity || 'unknown'}). Expects an empty object as input.`,
+      func: async (_input: z.infer<typeof getWeatherInputSchema>) => {
+        this.logMsg(LogLevel.DEBUG, "get_weather_forecast tool called.", { input: _input });
+        return this._fetchWeatherFromApi();
+      },
+    });
   }
 
-  getAgentTools?() { // Let TypeScript infer the return type based on the tool function, or use : StructuredTool[] if confident
-    const appConfig = core?.getConfig();
-    if (appConfig && appConfig.plugins[this.name] === true && weatherApiKey && weatherCity) {
-        core?.log(LogLevel.DEBUG, 'WeatherPlugin: Providing get_weather_forecast tool (created with tool utility).');
-        return [getWeatherTool];
+  public async getWeatherForecastServiceMethod(): Promise<string> {
+    return this._fetchWeatherFromApi();
+  }
+  
+  private async _fetchWeatherFromApi(): Promise<string> {
+    if (!this.core) {
+      // Should not happen if initialize was called
+      console.error("WeatherPlugin Error: Core services not available post-initialization.");
+      return "WeatherPlugin Internal Error: Core services not available.";
     }
-    core?.log(LogLevel.DEBUG, 'WeatherPlugin: Not providing get_weather_forecast tool (plugin disabled, or API key/city missing).');
+    if (!this.weatherApiKey || !this.weatherCity) {
+      this.logMsg(LogLevel.WARN, 'API key or city not configured. Cannot fetch weather.');
+      return "Weather information is unavailable because the API key or city is not configured.";
+    }
+
+    const apiUrl = `https://api.openweathermap.org/data/2.5/forecast?q=${encodeURIComponent(this.weatherCity)}&appid=${this.weatherApiKey}&units=${this.apiUnits}`;
+
+    try {
+      this.logMsg(LogLevel.INFO, `Fetching weather for ${this.weatherCity} from OpenWeatherMap using ${this.apiUnits} for API.`);
+      const response = await fetch(apiUrl);
+      if (!response.ok) {
+        const errorBody = await response.text();
+        this.logMsg(LogLevel.ERROR, `API request failed with status ${response.status}. Response: ${errorBody}`, { city: this.weatherCity, status: response.status });
+        return `Weather information for ${this.weatherCity} is currently unavailable (API error: ${response.status}).`;
+      }
+
+      const data = await response.json() as WeatherResponse;
+
+      if (data.cod !== "200") {
+        this.logMsg(LogLevel.ERROR, `API returned error code ${data.cod}. Message: ${data.message}`, { city: this.weatherCity, responseData: data });
+        return `Weather information for ${this.weatherCity} is currently unavailable (API response error: ${data.cod}).`;
+      }
+      
+      if (!data.list || data.list.length === 0) {
+        this.logMsg(LogLevel.WARN, 'No forecast data received from API.', { city: this.weatherCity, responseData: data });
+        return `No forecast data available for ${this.weatherCity}.`;
+      }
+
+      const currentForecast = data.list[0];
+      const currentTemp = Math.round(currentForecast.main.temp);
+      const currentWeatherDescription = currentForecast.weather[0]?.description || 'N/A';
+      const currentWeatherMain = currentForecast.weather[0]?.main.toLowerCase() || '';
+      const currentPop = Math.round((currentForecast.pop || 0) * 100);
+
+      const isCurrentlyRaining = ["rain", "drizzle", "thunderstorm", "shower"].some(term => currentWeatherMain.includes(term) || currentWeatherDescription.toLowerCase().includes(term));
+
+      const now = new Date();
+      const localTenPM = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 22, 0, 0);
+      
+      let maxPopToday = 0;
+      let maxPopSlot: ForecastSlot | null = null;
+      let relevantSlotsFound = false;
+
+      for (const slot of data.list) {
+        const slotDate = new Date(slot.dt * 1000);
+        if (slotDate >= now && slotDate <= localTenPM) {
+          if (slot.pop > maxPopToday) {
+            maxPopToday = slot.pop;
+            maxPopSlot = slot;
+          }
+          relevantSlotsFound = true;
+        }
+        if (slotDate > localTenPM && slotDate.getDate() === now.getDate()) { 
+          break;
+        }
+      }
+      
+      const maxPopPercentageToday = Math.round(maxPopToday * 100);
+
+      let forecastString = `Currently in ${this.weatherCity}: `;
+      if (isCurrentlyRaining) {
+        forecastString += `Raining, ${currentTemp}°${this.displayUnits}.`;
+      } else {
+        forecastString += `${currentTemp}°${this.displayUnits}, ${currentWeatherDescription}.`;
+      }
+
+      if (relevantSlotsFound && maxPopSlot && maxPopPercentageToday > 0) {
+        const slotTime = new Date(maxPopSlot.dt * 1000);
+        const slotStartHour = formatToLocalHour(slotTime);
+        const slotEndHour = formatToLocalHour(new Date(slotTime.getTime() + 3 * 60 * 60 * 1000)); // Assuming 3-hour slots
+        
+        if (isCurrentlyRaining) {
+          if (maxPopSlot.dt > currentForecast.dt && maxPopPercentageToday > currentPop) {
+              forecastString += ` The highest chance of continued rain (${maxPopPercentageToday}%) is between ${slotStartHour} - ${slotEndHour} today.`;
+          } else if (maxPopSlot.dt === currentForecast.dt && maxPopPercentageToday >= currentPop) {
+               forecastString += ` This period has a ${maxPopPercentageToday}% chance of rain.`;
+          }
+        } else {
+          forecastString += ` Highest chance of rain (${maxPopPercentageToday}%) today is between ${slotStartHour} - ${slotEndHour}.`;
+        }
+      } else if (isCurrentlyRaining) {
+        // No action needed, initial string is sufficient if it's already raining and no higher chance later
+      } else {
+        forecastString += ` Little to no rain expected until 10 PM. Current chance of rain: ${currentPop}%.`;
+      }
+      
+      this.logMsg(LogLevel.INFO, `Successfully fetched and processed weather for ${this.weatherCity}.`);
+      return forecastString;
+
+    } catch (error: any) {
+      this.logMsg(LogLevel.ERROR, 'Error fetching or processing weather data.', { error: error.message, stack: error.stack, city: this.weatherCity });
+      return `An error occurred while fetching weather information for ${this.weatherCity}.`;
+    }
+  }
+
+  getAgentTools?() {
+    const appConfig = this.core?.getConfig();
+    // Check if plugin specifically enabled and if essential config (API key and city) is present
+    if (appConfig && appConfig.plugins[this.name] === true && this.weatherApiKey && this.weatherCity) {
+        this.logMsg(LogLevel.DEBUG, 'Providing get_weather_forecast tool.');
+        return [this.getWeatherToolInstance];
+    }
+    this.logMsg(LogLevel.DEBUG, 'Not providing get_weather_forecast tool (plugin disabled, or API key/city missing).');
     return [];
   }
 }
 
-export default new WeatherPluginDefinition(); 
+export default WeatherPluginDefinition; 
