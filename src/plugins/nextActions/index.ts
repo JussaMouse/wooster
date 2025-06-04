@@ -515,7 +515,20 @@ ${archivedTaskString}
                 const { description, context, project, dueDate } = JSON.parse(jsonInput);
                 if (!description) return "Error: description is required.";
                 const addedTask = await this.addTask(description, context, project, dueDate);
-                return `Task added: ${TaskParser.serialize(addedTask)}`;
+                // Provide a more descriptive success message
+                let response = `Task "${addedTask.description}" added successfully.`;
+                if (addedTask.project && addedTask.project.toLowerCase() !== '+home') {
+                    response += ` Project: ${addedTask.project.substring(1)}.`;
+                } else if (addedTask.project && addedTask.project.toLowerCase() === '+home') {
+                    response += ` Project: Home.`; // Explicitly mention if it's home
+                }
+                if (addedTask.context) {
+                    response += ` Context: ${addedTask.context}.`;
+                }
+                if (addedTask.dueDate) {
+                    response += ` Due: ${addedTask.dueDate}.`;
+                }
+                return response;
             } catch (e: any) {
                 this.logMsg(LogLevel.ERROR, "Error in addNextActionTool", { error: e.message, jsonInput });
                 return `Error adding task: ${e.message}`;
