@@ -212,22 +212,20 @@ class NextActionsPluginDefinition implements WoosterPlugin {
     const tasks = await this.readNextActionsFromFile();
     const now = new Date().toISOString().replace(/T.*/, ''); // YYYY-MM-DD
 
-    let effectiveProject = projectFromInput;
+    let effectiveProject = projectFromInput; // Will be reassigned based on priority
     let effectiveContext = contextFromInput;
 
-    const descriptionAlreadyHasContext = /(?:^|\s)@\w+/.test(description.trim());
+    const descriptionAlreadyHasContext = /(?:^|\\s)@\\w+/.test(description.trim());
     if (!effectiveContext && !descriptionAlreadyHasContext) {
       effectiveContext = '@home';
       this.logMsg(LogLevel.DEBUG, `Defaulting context to @home for new next action.`);
     }
 
-    const activeProjectName = (this.coreServices && typeof this.coreServices.getActiveProjectName === 'function') 
-                              ? this.coreServices.getActiveProjectName() 
+    const activeProjectName = (this.coreServices && typeof this.coreServices.getActiveProjectName === 'function')
+                              ? this.coreServices.getActiveProjectName()
                               : null;
 
-    // Use a regex similar to TaskParser's for checking if a project tag is already in the description.
-    // This regex looks for +ProjectName, +Project Name (subsequent capitalized), or +Project 123.
-    const taskParserProjectRegex = /(?:^|\s)(\+[\w-]+(?:(?:\s[A-Z][\w-]*)+)?(?:\s\d+)?)/;
+    const taskParserProjectRegex = /(?:^|\\s)(\\+[\w-]+(?:(?:\\s[A-Z][\\w-]*)+)?(?:\\s\\d+)?)/;
     const descriptionHasProjectTag = taskParserProjectRegex.test(description.trim());
 
     this.logMsg(LogLevel.DEBUG, `addTask - Initial decision values:`, {
@@ -238,49 +236,42 @@ class NextActionsPluginDefinition implements WoosterPlugin {
       descriptionHasProjectTag,
     });
 
-    // Clear effectiveProject, it will be set based on priority
-    effectiveProject = null; 
+    // This variable will hold the project string that is explicitly chosen for prepending
+    // It might be from projectFromInput, activeProject, or a default.
+    // If null, it means the project is expected to be parsed from the description string itself.
+    let projectChosenForPrepending: string | null = null;
 
     if (projectFromInput) {
-      // 1. Project explicitly passed in tool input JSON
       this.logMsg(LogLevel.DEBUG, `addTask - Priority 1: Project from input JSON: '${projectFromInput}'`);
       let proj = projectFromInput.trim();
       if (!proj.startsWith('+')) {
         proj = `+${proj}`;
       }
-      // Strip quotes like +'Project Name' or +"Project Name" to +Project Name
-      effectiveProject = proj.replace(/^\+\s*(['"])(.*)\1$/, '+$2');
-      this.logMsg(LogLevel.DEBUG, `addTask - Effective project from input JSON: '${effectiveProject}'`);
+      projectChosenForPrepending = proj.replace(/^\\+\\s*(['"])(.*)\\1$/, '+$2');
+      this.logMsg(LogLevel.DEBUG, `addTask - Effective project from input JSON (for prepending): '${projectChosenForPrepending}'`);
     } else if (descriptionHasProjectTag) {
-      // 2. Project tag is typed directly in the description string.
-      // Let TaskParser.parse() extract it. Don't prepend anything here.
-      this.logMsg(LogLevel.DEBUG, `addTask - Priority 2: Project tag found in description. Parser will extract. No prepending.`);
-      // effectiveProject remains null, signaling no prepending
+      this.logMsg(LogLevel.DEBUG, `addTask - Priority 2: Project tag found in description. Parser will extract. No prepending by addTask.`);
+      projectChosenForPrepending = null; // Parser will handle it
     } else if (activeProjectName && activeProjectName.toLowerCase() !== 'home') {
-      // 3. No project from input, no tag in description. Auto-tag with active (non-home) project.
       this.logMsg(LogLevel.DEBUG, `addTask - Priority 3: Auto-prepending active project: '+${activeProjectName}'`);
-      effectiveProject = `+${activeProjectName}`;
+      projectChosenForPrepending = `+${activeProjectName}`;
     } else {
-      // 4. No project from input, no tag in description, active project is 'home' or null. Default to '+home'.
       this.logMsg(LogLevel.DEBUG, `addTask - Priority 4: Defaulting project to '+home'.`);
-      effectiveProject = '+home';
+      projectChosenForPrepending = '+home';
     }
 
-    this.logMsg(LogLevel.DEBUG, `addTask - Final effective context: '${effectiveContext}', effective project for prepending: '${effectiveProject || "null (parser will handle if in desc)"}'`);
+    this.logMsg(LogLevel.DEBUG, `addTask - Final effective context: '${effectiveContext}', project chosen for prepending: '${projectChosenForPrepending || "null (parser will handle if in desc)"}'`);
 
-    // Construct the task string for TaskParser.parse
-    // Order: context, project (if prepending), description
     let taskStringParts: string[] = [description.trim()];
-    if (effectiveProject) { // Only prepend if effectiveProject is determined by steps 1, 3, or 4
-        taskStringParts.unshift(effectiveProject);
+    if (projectChosenForPrepending) {
+        taskStringParts.unshift(projectChosenForPrepending);
     }
-    if (effectiveContext) { 
+    if (effectiveContext) {
         taskStringParts.unshift(effectiveContext);
     }
     
     let combinedDescriptionForParser = taskStringParts.join(' ');
 
-    // Add due date and captured date for parsing
     let rawTaskForParser = `- [ ] ${combinedDescriptionForParser}`;
     if (dueDate) {
       rawTaskForParser += ` due:${dueDate}`;
@@ -290,9 +281,8 @@ class NextActionsPluginDefinition implements WoosterPlugin {
     const parsedTask = TaskParser.parse(rawTaskForParser);
     if (!parsedTask) {
       this.logMsg(LogLevel.ERROR, "Failed to parse the constructed task string in addTask.", { rawTaskForParser });
-      // Fallback: add with minimal parsing if primary parsing fails
-      const fallbackDescription = description.trim() + 
-                                (projectFromInput ? ` ${projectFromInput}` : '') +
+      const fallbackDescription = description.trim() +
+                                (projectFromInput ? ` ${projectFromInput}` : '') + // Use original projectFromInput for fallback
                                 (contextFromInput ? ` ${contextFromInput}` : '') +
                                 (dueDate ? ` due:${dueDate}` : '');
       const fallbackTask: TaskItem = {
@@ -301,6 +291,8 @@ class NextActionsPluginDefinition implements WoosterPlugin {
           description: fallbackDescription,
           isCompleted: false,
           capturedDate: now,
+          project: projectChosenForPrepending, // At least try to retain the intended project
+          context: effectiveContext 
       };
       tasks.push(fallbackTask);
       await this.writeNextActionsToFile(tasks);
@@ -308,16 +300,41 @@ class NextActionsPluginDefinition implements WoosterPlugin {
       return fallbackTask;
     }
 
-    // Create the TaskItem using values from the successfully parsed task
+    let finalProjectToStore = parsedTask.project;
+    let finalDescriptionToStore = parsedTask.description;
+
+    if (projectChosenForPrepending && parsedTask.project !== projectChosenForPrepending) {
+        // If we prepended a specific project, and TaskParser either didn't find it
+        // or found a different one, we trust the projectChosenForPrepending.
+        // This implies projectChosenForPrepending might still be in parsedTask.description.
+        this.logMsg(LogLevel.DEBUG, `addTask - Overriding parsed project. Original parsed: '${parsedTask.project}', Using intended: '${projectChosenForPrepending}'`);
+        finalProjectToStore = projectChosenForPrepending;
+        
+        // Remove the projectChosenForPrepending string from the beginning of parsedTask.description
+        // Escape special characters in projectChosenForPrepending for regex
+        // A simple escape for '+' should be sufficient for typical project names like '+project' or '+project name'
+        const escapedProjectString = projectChosenForPrepending.replace(/[.*+?^${}()|[\]\\]/g, '\\\\$&');
+        const projectRemovalRegex = new RegExp(`^${escapedProjectString}\\s*`);
+        
+        if (parsedTask.description.startsWith(projectChosenForPrepending)) {
+             finalDescriptionToStore = parsedTask.description.replace(projectRemovalRegex, '').trim();
+             this.logMsg(LogLevel.DEBUG, `addTask - Cleaned description. Original: '${parsedTask.description}', New: '${finalDescriptionToStore}'`);
+        } else {
+            this.logMsg(LogLevel.DEBUG, `addTask - Parsed description did not start with prepended project. Desc: '${parsedTask.description}', Prepended: '${projectChosenForPrepending}'`);
+            // finalDescriptionToStore remains parsedTask.description as a fallback
+        }
+    }
+    
     const taskToAdd: TaskItem = {
-      id: parsedTask.id, 
-      rawText: '', 
-      description: parsedTask.description, 
+      id: parsedTask.id,
+      rawText: '', // Will be regenerated by TaskParser.serialize
+      description: finalDescriptionToStore,
       isCompleted: false,
-      context: parsedTask.context,
-      project: parsedTask.project,
-      dueDate: parsedTask.dueDate,
+      context: parsedTask.context, // Trust parser for context
+      project: finalProjectToStore, // Use our adjusted project
+      dueDate: parsedTask.dueDate, // Trust parser for due date
       capturedDate: parsedTask.capturedDate || now,
+      additionalMetadata: parsedTask.additionalMetadata, // Carry over any other metadata
     };
     
     tasks.push(taskToAdd);
