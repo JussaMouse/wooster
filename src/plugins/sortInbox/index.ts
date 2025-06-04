@@ -646,7 +646,49 @@ Enter code: `;
       },
     });
 
-    return [sortInboxTool, addWaitingForItemTool];
+    const viewWaitingForItemsTool = new DynamicTool({
+      name: "viewWaitingForItems",
+      description: "Reads and displays the content of the global 'waiting_for.md' file. The agent will call this tool with an object, which may contain an 'input' key (e.g., { input: {} } or { input: '' }). This input is ignored by the tool as it requires no parameters.",
+      func: async (args?: string | object) => { // Accept potential args object
+        this.logMsg(LogLevel.DEBUG, "viewWaitingForItemsTool executed", { args });
+        try {
+          const fullPath = this.getFullPath(this.waitingForFilePath);
+          if (!fs.existsSync(fullPath)) {
+            this.logMsg(LogLevel.INFO, `Waiting For file not found at ${fullPath}.`);
+            return "The waiting_for.md file does not exist or is empty.";
+          }
+          const fileContent = fs.readFileSync(fullPath, 'utf-8');
+          if (!fileContent.trim()) {
+            return "The waiting_for.md file is empty.";
+          }
+          return `Contents of waiting_for.md:\n---\n${fileContent.trim()}`;
+        } catch (e: any) {
+          this.logMsg(LogLevel.ERROR, "Error in viewWaitingForItemsTool", { error: e.message });
+          return `Error reading waiting_for.md: ${e.message}`;
+        }
+      },
+    });
+
+    const viewInboxTool = new DynamicTool({
+      name: "viewInboxItems",
+      description: "Reads and displays the content of the global 'inbox.md' file. The agent will call this tool with an object, which may contain an 'input' key (e.g., { input: {} } or { input: '' }). This input is ignored by the tool as it requires no parameters.",
+      func: async (args?: string | object) => {
+        this.logMsg(LogLevel.DEBUG, "viewInboxItemsTool executed", { args });
+        try {
+          const inboxItems = await this.readInboxItems(); // Use existing method
+          if (inboxItems.length === 0) {
+            return "The inbox.md file is empty or does not exist.";
+          }
+          const itemLines = inboxItems.map(item => item.rawText);
+          return `Contents of inbox.md:\n---\n${itemLines.join('\n')}`;
+        } catch (e: any) {
+          this.logMsg(LogLevel.ERROR, "Error in viewInboxItemsTool", { error: e.message });
+          return `Error reading inbox.md: ${e.message}`;
+        }
+      },
+    });
+
+    return [sortInboxTool, addWaitingForItemTool, viewWaitingForItemsTool, viewInboxTool];
   }
 }
 

@@ -162,4 +162,16 @@ The `sortInbox` plugin provides the following tools for the agent:
         *   `'waitingFor'` (string, optional): The person, entity, or event you are waiting on.
     *   **Example Agent Call**: `agent.callTool('addWaitingForItem', { input: '{"description": "approval on the Q3 budget", "waitingFor": "Finance Department"}' })`
     *   **Output**: A confirmation message, e.g., "Added to Waiting For list: 'approval on the Q3 budget' (waiting for Finance Department)".
-    *   **File Interaction**: Appends a formatted line to `waiting_for.md`. The typical format is: `- [ ] @Waiting [Person/Entity, if provided] re: [Description] (Logged: YYYY-MM-DD)`. 
+    *   **File Interaction**: Appends a formatted line to `waiting_for.md`. The typical format is: `- [ ] @Waiting [Person/Entity, if provided] re: [Description] (Logged: YYYY-MM-DD)`.
+
+*   **`viewWaitingForItems`**:
+    *   **Description**: Reads and displays all items from the global `waiting_for.md` file. While the tool itself requires no parameters, the agent will typically call it with an object containing an `'input'` key (e.g., `toolName({ input: {} })` or `toolName({ input: '' })`). This input is ignored by the tool.
+    *   **Input**: Effectively none. The agent might provide an `input` key with an empty object or string, which is disregarded.
+    *   **Output**: The content of the `waiting_for.md` file, typically prefixed with a header like "Contents of waiting_for.md:", or a message if the file doesn't exist or is empty.
+    *   **Example Agent Call**: `agent.callTool('viewWaitingForItems', { input: {} })` or simply `agent.callTool('viewWaitingForItems', {})`
+
+*   **`viewInboxItems`**:
+    *   **Description**: Reads and displays all items from the global `inbox.md` file. While the tool itself requires no parameters, the agent will typically call it with an object containing an `'input'` key (e.g., `toolName({ input: {} })` or `toolName({ input: '' })`). This input is ignored by the tool.
+    *   **Input**: Effectively none. The agent might provide an `input` key with an empty object or string, which is disregarded.
+    *   **Output**: The content of the `inbox.md` file, typically prefixed with a header like "Contents of inbox.md:", or a message if the file is empty or doesn't exist.
+    *   **Example Agent Call**: `agent.callTool('viewInboxItems', { input: {} })` or `agent.callTool('viewInboxItems', {})` 
