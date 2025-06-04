@@ -214,22 +214,50 @@ class NextActionsPluginDefinition implements WoosterPlugin {
       this.logMsg(LogLevel.DEBUG, `Defaulting context to @home for new next action.`);
     }
 
-    // Check if we should auto-append the active project
+    // Determine active project name
     const activeProjectName = (this.coreServices && typeof this.coreServices.getActiveProjectName === 'function') 
                               ? this.coreServices.getActiveProjectName() 
                               : null;
+    this.logMsg(LogLevel.DEBUG, `addTask - Values at decision point for project tagging:`, {
+      initialDescription: description,
+      projectFromInput,
+      contextFromInput,
+      activeProjectNameFromServices: activeProjectName,
+    });
                               
-    const descriptionAlreadyHasProject = /(?:^|\s)\+\w+/.test(description.trim()); // Simpler check for existence, full parse handles multi-word
+    const descriptionAlreadyHasProject = /(?:^|\s)(\+[\w-]+(?:\s[\w-]+)*)/.test(description.trim());
 
-    if (
-      !projectFromInput &&             // User did not provide a project in the JSON input
-      !descriptionAlreadyHasProject &&   // User did not type +project in the description
-      activeProjectName &&               // Active project name exists
-      activeProjectName.toLowerCase() !== 'home' // Active project is not 'home' (case-insensitive)
-    ) {
-      this.logMsg(LogLevel.DEBUG, `Auto-prepending active project '+${activeProjectName}' to new next action.`);
-      effectiveProject = `+${activeProjectName}`; 
+    if (projectFromInput) {
+      // User explicitly provided a project in the tool call
+      this.logMsg(LogLevel.DEBUG, `addTask - Project provided directly in input: '${projectFromInput}'`);
+      if (projectFromInput.startsWith('+')) {
+        effectiveProject = projectFromInput;
+      } else {
+        effectiveProject = `+${projectFromInput}`;
+      }
+      effectiveProject = effectiveProject.replace(/^\+\s*(['"])(.*)\1$/, '+$2');
+      this.logMsg(LogLevel.DEBUG, `addTask - Effective project after processing projectFromInput: '${effectiveProject}'`);
+    } else if (!descriptionAlreadyHasProject && activeProjectName && activeProjectName.toLowerCase() !== 'home') {
+      // Auto-tag with the current non-home active project
+      this.logMsg(LogLevel.DEBUG, `addTask - Auto-prepending active project '+${activeProjectName}' from services.`);
+      effectiveProject = `+${activeProjectName}`;
+    } else if (!descriptionAlreadyHasProject) {
+      // If no project from input, not in description, and active project is home or null (or not set),
+      // default to +home.
+      this.logMsg(LogLevel.DEBUG, `addTask - Defaulting project to '+home'. Conditions: no projectFromInput, not in description. Active project: '${activeProjectName || "null"}'.`);
+      effectiveProject = '+home';
+    } else {
+      // Project is in description, or some other case where we don't auto-tag / default to home.
+      // TaskParser will attempt to extract it from the description if present.
+      this.logMsg(LogLevel.DEBUG, `addTask - Project likely in description or no default applicable. Effective project will be determined by parser or remain null if not found.`, {
+        projectFromInput,
+        descriptionAlreadyHasProject,
+        activeProjectName,
+      });
+      effectiveProject = null; // Let parser handle if in description; otherwise, it's truly no project for prepending.
     }
+
+    this.logMsg(LogLevel.DEBUG, `addTask - Final effective context: '${effectiveContext}', effective project for prepending: '${effectiveProject || "null"}'`);
 
     // Construct the task string for TaskParser.parse
     // Order: context, project, description
@@ -439,12 +467,13 @@ ${archivedTaskString}
                 if (task.context) { // Context first in display
                     prefix += `${task.context} `;
                 }
-                if (task.project) { // Project second in display
+                // Conditional project display: show only if project exists and is not '+home'
+                if (task.project && task.project.toLowerCase() !== '+home') { 
                     prefix += `[${task.project.substring(1)}] `;
                 }
 
                 let taskLine = `- [${task.isCompleted ? 'x' : ' '}] `;
-                if (prefix.trim() !== "") { // Check if prefix has content before adding colon
+                if (prefix.trim() !== "") { 
                     taskLine += prefix.trim() + ": ";
                 }
                 taskLine += task.description;
@@ -452,7 +481,6 @@ ${archivedTaskString}
                 if (task.dueDate) {
                     taskLine += ` due:${task.dueDate}`;
                 }
-                // Omitting (Captured: ...) and (id: ...) for this display output
 
                 responseLines.push(`${index + 1}. ${taskLine.trim()}`);
             });
