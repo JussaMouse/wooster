@@ -442,22 +442,26 @@ ${archivedTaskString}
             if (tasks.length === 0) return "No next actions found matching criteria.";
             const responseLines: string[] = ["Current Next Actions:"];
             tasks.forEach((task, index) => {
-                let line = `- [${task.isCompleted ? 'x' : ' '}] `;
+                let prefix = "";
                 if (task.project) {
-                    // Remove '+' from project name and add brackets
-                    line += `[${task.project.substring(1)}] `;
+                    prefix += `[${task.project.substring(1)}] `;
                 }
                 if (task.context) {
-                    line += `${task.context} `;
+                    prefix += `${task.context} `;
                 }
-                line += task.description;
+
+                let taskLine = `- [${task.isCompleted ? 'x' : ' '}] `;
+                if (prefix.trim() !== "") { // Check if prefix has content before adding colon
+                    taskLine += prefix.trim() + ": ";
+                }
+                taskLine += task.description;
 
                 if (task.dueDate) {
-                    line += ` due:${task.dueDate}`;
+                    taskLine += ` due:${task.dueDate}`;
                 }
                 // Omitting (Captured: ...) and (id: ...) for this display output
 
-                responseLines.push(`${index + 1}. ${line.trim()}`);
+                responseLines.push(`${index + 1}. ${taskLine.trim()}`);
             });
             return responseLines.join('\n');
         } catch (e: any) {
