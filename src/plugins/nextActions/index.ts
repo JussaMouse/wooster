@@ -53,14 +53,22 @@ class NextActionsPluginDefinition implements WoosterPlugin {
     this.logMsg(LogLevel.INFO, `Initializing...`);
 
     const gtdConfig = config.gtd;
-    this.nextActionsFilePath = gtdConfig?.nextActionsPath ?? path.join(gtdConfig?.basePath || './gtd/', DEFAULT_NEXT_ACTIONS_FILENAME);
-    this.archiveDirPath = gtdConfig?.archiveDir ?? DEFAULT_ARCHIVE_DIR_PATH;
+    const basePath = gtdConfig?.basePath || 'gtd'; // Default base path if not specified
+
+    this.nextActionsFilePath = gtdConfig?.nextActionsPath ?? path.join(basePath, DEFAULT_NEXT_ACTIONS_FILENAME);
+    
+    // Determine the archive path for next actions
+    let defaultNextActionsArchiveDir = path.join(basePath, 'archives', 'nextActions');
+    if (!gtdConfig?.basePath && !gtdConfig?.nextActionsArchiveDirPath) { // If no basePath and no specific archive path, use logs/
+        defaultNextActionsArchiveDir = path.join('logs', 'nextActionsArchive');
+    }
+    this.archiveDirPath = gtdConfig?.nextActionsArchiveDirPath ?? defaultNextActionsArchiveDir;
 
     this.logMsg(LogLevel.INFO, `Using Next Actions file: ${this.nextActionsFilePath}`);
-    this.logMsg(LogLevel.INFO, `Using Archive directory: ${this.archiveDirPath}`);
+    this.logMsg(LogLevel.INFO, `Using Next Actions Archive directory: ${this.archiveDirPath}`);
 
     this.ensureDirExists(this.getFullPath(path.dirname(this.nextActionsFilePath)));
-    this.ensureDirExists(this.getFullPath(this.archiveDirPath));
+    this.ensureDirExists(this.getFullPath(this.archiveDirPath)); // This will now be the dedicated next actions archive
   }
 
   async shutdown(): Promise<void> {
@@ -461,8 +469,13 @@ ${archivedTaskString}
             // If jsonInput is undefined or an empty string, filters and sortOptions will remain undefined, which is the correct behavior for no options.
 
             const tasks = await this.getTasks(filters, sortOptions);
-            if (tasks.length === 0) return "No next actions found matching criteria.";
-            const responseLines: string[] = ["Current Next Actions:"];
+            const totalTasks = tasks.length;
+
+            if (totalTasks === 0) {
+                return "No next actions found matching criteria.";
+            }
+            
+            const responseLines: string[] = [`Current Next Actions (${totalTasks} task${totalTasks === 1 ? '' : 's'}):`];
             tasks.forEach((task, index) => {
                 let prefix = "";
                 if (task.context) { // Context first in display
@@ -512,7 +525,7 @@ ${archivedTaskString}
     
     const completeNextActionTool = new DynamicTool({
         name: "completeNextAction",
-        description: "Completes a single next action. This tool MUST be called with an object containing a single key: 'input'. The value for this 'input' key MUST be a JSON string. This JSON string ITSELF MUST represent an object with a single key: 'identifier'. The value for 'identifier' (inside the JSON string) should be the unique task ID (string), a unique phrase from the task's description (string), or the task's line number (number, if recently viewed). For example, if completing task with ID '123', the agent must call the tool as: completeNextActionTool({ input: '{\"identifier\": \"123\"}' }). If completing task by line number 5, call as: completeNextActionTool({ input: '{\"identifier\": 5}' }). If by description 'Buy milk', call as: completeNextActionTool({ input: '{\"identifier\": \"Buy milk\"}' })",
+        description: "Completes a single next action. This tool MUST be called with an object containing a single key: 'input'. The value for this 'input' key MUST be a JSON string. This JSON string ITSELF MUST represent an object with a single key: 'identifier'. The value for 'identifier' (inside the JSON string) should be the unique task ID (string), a unique phrase from the task's description (string), or the task's line number (number, if recently viewed). IMPORTANT: Before calling this tool, especially if using a line number, it is advisable to confirm the specific task with the user to ensure the correct action is completed. For example, if completing task with ID '123', the agent must call the tool as: completeNextActionTool({ input: '{\"identifier\": \"123\"}' }). If completing task by line number 5, call as: completeNextActionTool({ input: '{\"identifier\": 5}' }). If by description 'Buy milk', call as: completeNextActionTool({ input: '{\"identifier\": \"Buy milk\"}' })",
         func: async (jsonInput: string) => {
             this.logMsg(LogLevel.DEBUG, "completeNextActionTool executed", { jsonInput });
             try {

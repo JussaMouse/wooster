@@ -25,6 +25,7 @@ export interface GtdConfig {
   basePath?: string;
   projectsDir?: string;
   archiveDir?: string;
+  nextActionsArchiveDirPath?: string;
   inboxPath?: string;
   nextActionsPath?: string;
   somedayMaybePath?: string;
@@ -152,6 +153,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     basePath: undefined,
     projectsDir: undefined,
     archiveDir: undefined,
+    nextActionsArchiveDirPath: undefined,
     inboxPath: undefined,
     nextActionsPath: undefined,
     somedayMaybePath: undefined,
@@ -345,6 +347,7 @@ export function loadConfig(): AppConfig {
     basePath: (gtdBasePathEnv && gtdBasePathEnv !== '') ? gtdBasePathEnv : DEFAULT_CONFIG.gtd?.basePath,
     projectsDir: (gtdProjectsDirEnv && gtdProjectsDirEnv !== '') ? gtdProjectsDirEnv : DEFAULT_CONFIG.gtd?.projectsDir,
     archiveDir: (gtdArchiveDirEnv && gtdArchiveDirEnv !== '') ? gtdArchiveDirEnv : DEFAULT_CONFIG.gtd?.archiveDir,
+    nextActionsArchiveDirPath: getEnvVar('GTD_NEXT_ACTIONS_ARCHIVE_DIR_PATH') || DEFAULT_CONFIG.gtd?.nextActionsArchiveDirPath,
     inboxPath: (gtdInboxPathEnv && gtdInboxPathEnv !== '') ? gtdInboxPathEnv : DEFAULT_CONFIG.gtd?.inboxPath,
     nextActionsPath: (gtdNextActionsPathEnv && gtdNextActionsPathEnv !== '') ? gtdNextActionsPathEnv : DEFAULT_CONFIG.gtd?.nextActionsPath,
     somedayMaybePath: (gtdSomedayMaybePathEnv && gtdSomedayMaybePathEnv !== '') ? gtdSomedayMaybePathEnv : DEFAULT_CONFIG.gtd?.somedayMaybePath,
