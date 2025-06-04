@@ -8,8 +8,6 @@ import { execSync } from 'child_process';
 import { mainReplManager } from '../../index'; // Import mainReplManager
 import * as chrono from 'chrono-node'; // Added for date parsing
 
-let core: CoreServices;
-
 // Default File and Directory Paths
 const DEFAULT_GTD_BASE_PATH = './gtd/';
 const DEFAULT_INBOX_FILENAME = 'inbox.md';
@@ -42,10 +40,15 @@ interface CalendarService {
 }
 
 class SortInboxPluginDefinition implements WoosterPlugin {
-  readonly name = "sortInbox";
-  readonly version = "1.4.0"; // Version bump for calendar event creation
-  readonly description = "Processes items from inbox.md with an interactive, detailed workflow, including calendar event creation.";
+  static readonly pluginName = "sortInbox";
+  static readonly version = "1.4.0"; // Version bump for calendar event creation
+  static readonly description = "Processes items from inbox.md with an interactive, detailed workflow, including calendar event creation.";
 
+  readonly name = SortInboxPluginDefinition.pluginName;
+  readonly version = SortInboxPluginDefinition.version;
+  readonly description = SortInboxPluginDefinition.description;
+
+  private coreServices!: CoreServices; // Added instance member
   private workspaceRoot = '';
   private calendarService: CalendarService | undefined;
 
@@ -58,20 +61,28 @@ class SortInboxPluginDefinition implements WoosterPlugin {
   private waitingForFilePath!: string;
   private projectsDirPath!: string;
 
+  private logMsg(level: LogLevel, message: string, metadata?: object) {
+    if (this.coreServices && this.coreServices.log) {
+      this.coreServices.log(level, `[${SortInboxPluginDefinition.pluginName} Plugin v${SortInboxPluginDefinition.version}] ${message}`, metadata);
+    } else {
+      console.log(`[${level}][${SortInboxPluginDefinition.pluginName} Plugin v${SortInboxPluginDefinition.version}] ${message}`, metadata || '');
+    }
+  }
+
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
-    core = services;
+    this.coreServices = services; // Use instance member
     this.workspaceRoot = process.cwd(); // Assuming Wooster runs from project root
-    core.log(LogLevel.INFO, `SortInboxPlugin (v${this.version}): Initializing...`);
+    this.logMsg(LogLevel.INFO, `Initializing...`);
 
     // Initialize paths from config or use defaults
     this.gtdBasePath = config.gtd?.basePath ?? DEFAULT_GTD_BASE_PATH;
-    core.log(LogLevel.INFO, `SortInboxPlugin: Using GTD base path for core files: ${this.gtdBasePath}`);
+    this.logMsg(LogLevel.INFO, `Using GTD base path for core files: ${this.gtdBasePath}`);
 
     this.projectsDirPath = config.gtd?.projectsDir ?? DEFAULT_PROJECTS_DIR_PATH;
-    core.log(LogLevel.INFO, `SortInboxPlugin: Using projects directory: ${this.projectsDirPath}`);
+    this.logMsg(LogLevel.INFO, `Using projects directory: ${this.projectsDirPath}`);
 
     this.archiveDirPath = config.gtd?.archiveDir ?? DEFAULT_ARCHIVE_DIR_PATH;
-    core.log(LogLevel.INFO, `SortInboxPlugin: Using archive directory: ${this.archiveDirPath}`);
+    this.logMsg(LogLevel.INFO, `Using archive directory: ${this.archiveDirPath}`);
     
     // Specific file paths (typically within gtdBasePath, but could be overridden if needed in future by more specific config)
     this.inboxFilePath = config.gtd?.inboxPath ?? path.join(this.gtdBasePath, DEFAULT_INBOX_FILENAME);
@@ -79,10 +90,10 @@ class SortInboxPluginDefinition implements WoosterPlugin {
     this.somedayMaybeFilePath = config.gtd?.somedayMaybePath ?? path.join(this.gtdBasePath, DEFAULT_SOMEDAY_MAYBE_FILENAME);
     this.waitingForFilePath = config.gtd?.waitingForPath ?? path.join(this.gtdBasePath, DEFAULT_WAITING_FOR_FILENAME);
 
-    core.log(LogLevel.INFO, `SortInboxPlugin: Inbox file path: ${this.inboxFilePath}`);
-    core.log(LogLevel.INFO, `SortInboxPlugin: Next Actions file path: ${this.nextActionsFilePath}`);
-    core.log(LogLevel.INFO, `SortInboxPlugin: Someday/Maybe file path: ${this.somedayMaybeFilePath}`);
-    core.log(LogLevel.INFO, `SortInboxPlugin: Waiting For file path: ${this.waitingForFilePath}`);
+    this.logMsg(LogLevel.INFO, `Inbox file path: ${this.inboxFilePath}`);
+    this.logMsg(LogLevel.INFO, `Next Actions file path: ${this.nextActionsFilePath}`);
+    this.logMsg(LogLevel.INFO, `Someday/Maybe file path: ${this.somedayMaybeFilePath}`);
+    this.logMsg(LogLevel.INFO, `Waiting For file path: ${this.waitingForFilePath}`);
 
     this.ensureDirExists(this.getFullPath(this.gtdBasePath));
     this.ensureDirExists(this.getFullPath(this.projectsDirPath));
@@ -91,15 +102,15 @@ class SortInboxPluginDefinition implements WoosterPlugin {
     // Attempt to get CalendarService
     this.calendarService = services.getService("CalendarService") as CalendarService | undefined;
     if (this.calendarService && typeof this.calendarService.createEvent === 'function') {
-      core.log(LogLevel.INFO, "SortInboxPlugin: Successfully connected to CalendarService.");
+      this.logMsg(LogLevel.INFO, "Successfully connected to CalendarService.");
     } else {
       this.calendarService = undefined; // Ensure it's undefined if not valid
-      core.log(LogLevel.WARN, "SortInboxPlugin: CalendarService not found or is invalid. Calendar creation will be limited to next_actions.md.");
+      this.logMsg(LogLevel.WARN, "CalendarService not found or is invalid. Calendar creation will be limited to next_actions.md.");
     }
   }
 
   async shutdown(): Promise<void> {
-    core.log(LogLevel.INFO, `SortInboxPlugin (v${this.version}): Shutdown.`);
+    this.logMsg(LogLevel.INFO, `Shutdown.`);
   }
 
   private getFullPath(relativePath: string): string {
@@ -113,7 +124,7 @@ class SortInboxPluginDefinition implements WoosterPlugin {
   private ensureDirExists(dirPath: string): void {
     if (!fs.existsSync(dirPath)) {
       fs.mkdirSync(dirPath, { recursive: true });
-      core.log(LogLevel.INFO, `SortInboxPlugin: Created directory ${dirPath}`);
+      this.logMsg(LogLevel.INFO, `Created directory ${dirPath}`);
     }
   }
 
@@ -129,7 +140,7 @@ class SortInboxPluginDefinition implements WoosterPlugin {
     const projectsFullPath = this.getFullPath(this.projectsDirPath);
     try {
       if (!fs.existsSync(projectsFullPath)) {
-        core.log(LogLevel.WARN, `SortInboxPlugin: Projects directory ${projectsFullPath} does not exist. Returning empty list.`);
+        this.logMsg(LogLevel.WARN, `Projects directory ${projectsFullPath} does not exist. Returning empty list.`);
         return [];
       }
       return fs.readdirSync(projectsFullPath).filter(file => {
@@ -137,12 +148,12 @@ class SortInboxPluginDefinition implements WoosterPlugin {
         try {
           return fs.statSync(fullEntryPath).isDirectory();
         } catch (statError: any) {
-          core.log(LogLevel.ERROR, `SortInboxPlugin: Error stating file ${fullEntryPath} in getProjectList.`, { message: statError.message });
+          this.logMsg(LogLevel.ERROR, `Error stating file ${fullEntryPath} in getProjectList.`, { message: statError.message });
           return false;
         }
       });
     } catch (error: any) {
-      core.log(LogLevel.ERROR, `SortInboxPlugin: Error listing projects in ${projectsFullPath}`, { message: error.message, stack: error.stack });
+      this.logMsg(LogLevel.ERROR, `Error listing projects in ${projectsFullPath}`, { message: error.message, stack: error.stack });
       return [];
     }
   }
@@ -212,7 +223,7 @@ ${item.description}
     const inboxPath = this.getFullPath(this.inboxFilePath);
     try {
       if (!fs.existsSync(inboxPath)) {
-        core.log(LogLevel.WARN, `SortInboxPlugin: Inbox file not found at ${inboxPath}. Creating it.`);
+        this.logMsg(LogLevel.WARN, `Inbox file not found at ${inboxPath}. Creating it.`);
         fs.writeFileSync(inboxPath, '', 'utf-8');
         return [];
       }
@@ -226,10 +237,10 @@ ${item.description}
           items.push(item);
         }
       });
-      core.log(LogLevel.DEBUG, `SortInboxPlugin: Read ${items.length} items from inbox.md`);
+      this.logMsg(LogLevel.DEBUG, `Read ${items.length} items from inbox.md`);
       return items;
     } catch (error: any) {
-      core.log(LogLevel.ERROR, `SortInboxPlugin: Error reading or parsing ${this.inboxFilePath}.`, { error: error.message });
+      this.logMsg(LogLevel.ERROR, `Error reading or parsing ${this.inboxFilePath}.`, { error: error.message });
       return [];
     }
   }
@@ -243,6 +254,7 @@ ${item.description}
     if (process.stdout.isTTY) {
         console.clear(); // Clear terminal for each new item
     }
+    this.logMsg(LogLevel.DEBUG, "Processing inbox item", { description: item.description });
     console.log('\n-----------------------------------------------------');
     console.log(`Item: "${item.description}" ${item.timestamp ? '(Captured: ' + item.timestamp + ')' : ''}`);
     console.log('-----------------------------------------------------');
@@ -385,7 +397,7 @@ Enter code: `;
         const scheduleInput = await this.ask(rl, "When to schedule? (e.g., 'tomorrow 3pm for 1 hour', 'next Friday 10am to 11:30am', 'Dec 25th 9am-5pm'). Details for event (optional): ");
         
         if (this.calendarService) {
-          core.log(LogLevel.INFO, `SortInbox (Calendar): User input for scheduling: '${scheduleInput}' for item '${item.description}'.`);
+          this.logMsg(LogLevel.INFO, `User input for scheduling: '${scheduleInput}' for item '${item.description}'.`);
 
           const now = new Date();
           const parsedResults = chrono.parse(scheduleInput, now, { forwardDate: true });
@@ -446,12 +458,12 @@ Enter code: `;
               });
 
               if (typeof result === 'string') { 
-                core.log(LogLevel.ERROR, `SortInbox (Calendar): CalendarService reported an error: ${result}`);
+                this.logMsg(LogLevel.ERROR, `CalendarService reported an error: ${result}`);
                 console.log(`Failed to create calendar event: ${result}.`);
                 this.appendToMdFile(this.nextActionsFilePath, `- [ ] SCHEDULE (API Error): ${this.prependContextIfNeeded(item.description)} - ${result} (Captured: ${item.timestamp || 'N/A'})`);
                 console.log("Item moved to Next Actions due to scheduling error.");
               } else { 
-                core.log(LogLevel.INFO, `SortInbox (Calendar): CalendarService success. Event Data:`, { result });
+                this.logMsg(LogLevel.INFO, `CalendarService success. Event Data:`, { result });
                 console.log("Calendar event created successfully!");
               }
               this.archiveInboxItem(item);
@@ -460,7 +472,7 @@ Enter code: `;
               item.isProcessed = true;
 
             } catch (e: any) {
-              core.log(LogLevel.ERROR, `SortInbox (Calendar): Error calling CalendarService.createEvent`, { message: e.message, stack: e.stack });
+              this.logMsg(LogLevel.ERROR, `Error calling CalendarService.createEvent`, { message: e.message, stack: e.stack });
               console.log("Error trying to schedule with CalendarService. Adding to Next Actions as fallback.");
               this.appendToMdFile(this.nextActionsFilePath, `- [ ] SCHEDULE (Exec Error): ${this.prependContextIfNeeded(item.description)} (Captured: ${item.timestamp || 'N/A'})`);
               this.archiveInboxItem(item);
@@ -477,7 +489,7 @@ Enter code: `;
             item.isProcessed = true;
           }
         } else { 
-            core.log(LogLevel.WARN, `SortInbox (Calendar): CalendarService not found. Appending to next_actions.md.`);
+            this.logMsg(LogLevel.WARN, `CalendarService not found. Appending to next_actions.md.`);
             console.log("CalendarService not available. Adding to Next Actions as a reminder to schedule.");
             this.appendToMdFile(this.nextActionsFilePath, `- [ ] SCHEDULE (no service): ${this.prependContextIfNeeded(item.description)} (Captured: ${item.timestamp || 'N/A'})`);
             this.archiveInboxItem(item);
@@ -522,7 +534,7 @@ Enter code: `;
           } else {
             meta = { error: String(error), details: "Unknown error during $EDITOR modification for item: " + item.description };
           }
-          core.log(LogLevel.ERROR, "SortInboxPlugin: $EDITOR error", meta);
+          this.logMsg(LogLevel.ERROR, "$EDITOR error", meta);
           console.log("Failed to edit item. Please ensure $EDITOR is set and working, or edit the item manually in inbox.md.");
         }
         // Do not mark as processed, loop back to re-evaluate the (potentially modified) item.
@@ -540,106 +552,65 @@ Enter code: `;
   }
 
   public async sortInbox(): Promise<void> {
-    core.log(LogLevel.INFO, "SortInboxPlugin: Starting inbox sorting process...");
-    let items = await this.readInboxItems();
-
+    if (mainReplManager) {
+      mainReplManager.pauseInput();
+      this.logMsg(LogLevel.INFO, "Main REPL paused for Sort Inbox session.");
+    }
+    this.logMsg(LogLevel.INFO, "Starting inbox sorting session...");
+    const items = await this.readInboxItems();
     if (items.length === 0) {
-      core.log(LogLevel.INFO, "SortInboxPlugin: Inbox is empty or contains no actionable items.");
-      if (process.stdout.isTTY) {
-        console.clear(); // Clear if inbox is empty from the start
-        console.log("Inbox is currently empty or all items are processed. 🎉");
-      }
+      this.logMsg(LogLevel.INFO, "Inbox is empty. Nothing to sort.");
+      console.log("Inbox is empty. Nothing to sort.");
+      if (mainReplManager) mainReplManager.resumeInput();
       return;
     }
 
-    core.log(LogLevel.INFO, `SortInboxPlugin: Found ${items.length} items to process.`);
-    if (process.stdout.isTTY && items.length > 0) { // Only log if there are items
-      // Initial clear before first item, processItem will clear for subsequent items
-      console.clear(); 
-        console.log(`Found ${items.length} items in your inbox. Processing one by one...`);
-    }
+    console.log(`Found ${items.length} item(s) in the inbox.`);
 
     const rl = readline.createInterface({
       input: process.stdin,
-      output: process.stdout
+      output: process.stdout,
     });
 
-    return new Promise(async (resolvePromise) => {
-      try {
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
-          if (item.isProcessed) continue;
+    try {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.isProcessed) continue; // Skip if already handled in this session (e.g. after 'skip')
 
-          const shouldQuit = await this.processItem(item, rl);
-          if (shouldQuit) break;
+        const shouldQuit = await this.processItem(item, rl);
+        if (shouldQuit) {
+          this.logMsg(LogLevel.INFO, "User chose to quit sorting session.");
+          break; 
         }
-      } catch (error) {
-        let meta: object | undefined;
-        if (error instanceof Error) {
-            meta = { message: error.message, stack: error.stack };
-        } else {
-            meta = { error: String(error) };
-        }
-        core.log(LogLevel.ERROR, "SortInboxPlugin: Error during item processing loop.", meta);
-        if (process.stdout.isTTY) {
-            console.error("An error occurred during inbox processing. Please check logs.");
-        }
-      } finally {
-        rl.close();
-        const finalItems = await this.readInboxItems();
-        if (process.stdout.isTTY) {
-            console.clear(); // Final clear
-        }
-        if (finalItems.length === 0 && process.stdout.isTTY) {
-            console.log("\nInbox zero! 🎉");
-        } else if (process.stdout.isTTY) {
-            console.log("\nFinished processing session.");
-            if (finalItems.length > 0) console.log(`${finalItems.length} item(s) remaining in inbox.`);
+        // If not quitting, mark as processed for this session and remove from original inbox file
+        item.isProcessed = true; 
+        this.removeLineFromFile(this.inboxFilePath, item.rawText);
+      }
+    } finally {
+      rl.close();
+      if (mainReplManager) {
+        mainReplManager.resumeInput();
+        this.logMsg(LogLevel.INFO, "Main REPL resumed after Sort Inbox session.");
+      }
+      this.logMsg(LogLevel.INFO, "Inbox sorting session finished.");
+      console.log("Exiting Sort Inbox session.");
     }
-    core.log(LogLevel.INFO, "SortInboxPlugin: Finished processing inbox items.");
-        resolvePromise();
-    }
-    });
   }
 
   getAgentTools?(): DynamicTool[] {
     const sortInboxTool = new DynamicTool({
-      name: "processInboxItems",
-      description: "Initiates an interactive command-line session to process items from inbox.md. Allows user to categorize, defer, delegate, or action each item. This tool is blocking and will wait for the session to complete.",
-      func: async (): Promise<string> => {
-        mainReplManager.pauseInput(); // Pause main REPL before starting
-        core.log(LogLevel.DEBUG, 'AgentTool processInboxItems: called, Main REPL paused.');
-        
-          if (!process.stdin.isTTY) {
-          const message = "ProcessInboxItems tool must be run in an interactive terminal session.";
-            core.log(LogLevel.WARN, `AgentTool processInboxItems: ${message}`);
-          mainReplManager.resumeInput(); // Resume REPL if not TTY and returning early
-            return message;
-          }
-        
-        try {
-          await this.sortInbox(); 
-          return "Inbox processing session finished.";
-        } catch (err) {
-            let meta: object | undefined;
-            if (err instanceof Error) {
-              meta = { message: err.message, stack: err.stack };
-            } else {
-              meta = { error: String(err) }; 
-            }
-            core.log(LogLevel.ERROR, "Error during sortInbox execution triggered by agent", meta);
-            return "Inbox processing session failed or was interrupted. Please check logs.";
-        } finally {
-          mainReplManager.resumeInput(); // Ensure REPL is resumed after session ends or errors
-          core.log(LogLevel.DEBUG, 'AgentTool processInboxItems: finished, Main REPL resumed.');
-        }
+      name: "sortInboxInteractively",
+      description: "Starts an interactive session to process items in the inbox.md file. Each item will be presented with options to defer, delegate, delete, make it a next action, add to a project, or make it a someday/maybe item.",
+      func: async () => {
+        this.logMsg(LogLevel.INFO, "sortInboxInteractively tool invoked.");
+        // No try-catch here, as sortInbox method has its own comprehensive try-finally.
+        // The `await` ensures that if sortInbox throws before its try-finally, it propagates.
+        await this.sortInbox(); 
+        return "Interactive inbox sorting session completed.";
       },
-      metadata: { 
-        isInteractive: true 
-      }
     });
     return [sortInboxTool];
   }
 }
 
-export default new SortInboxPluginDefinition(); 
+export default SortInboxPluginDefinition; 
