@@ -123,6 +123,23 @@ class NextActionsPluginDefinition implements WoosterPlugin {
     return `${context || '@home'} ${description}`;
   }
 
+  private getTaskSortKey(task: TaskItem): string {
+    // Null character \u0000 sorts before any other character.
+    // Using it for empty context/project ensures they come first in their respective groups.
+    const sortableContext = task.context ? task.context.toLowerCase() : '\u0000'; 
+    
+    // Project: empty/home sorts first, then alphabetically by project name (without '+')
+    const sortableProject = (task.project && task.project.toLowerCase() !== '+home') 
+        ? task.project.substring(1).toLowerCase() 
+        : '\u0000';
+        
+    const sortableDescription = task.description ? task.description.toLowerCase() : '\u0000';
+
+    // Using a non-printable character like \u0001 as a separator
+    // ensures distinct field comparison and prevents issues if a field contains common characters.
+    return `${sortableContext}\u0001${sortableProject}\u0001${sortableDescription}`;
+  }
+
   // --- Core Logic Methods (to be implemented more fully) ---
   public async getTasks(filters?: NextActionFilters, sortOptions?: NextActionSortOptions): Promise<TaskItem[]> {
     let tasks = await this.readNextActionsFromFile();
@@ -173,21 +190,25 @@ class NextActionsPluginDefinition implements WoosterPlugin {
     }
 
     // Apply Sorting
-    if (sortOptions && sortOptions.sortBy && sortOptions.sortBy !== 'fileOrder') {
+    const effectiveSortBy = sortOptions?.sortBy;
+    const sortOrder = sortOptions?.sortOrder || 'asc'; // Default to 'asc'
+
+    if (effectiveSortBy && effectiveSortBy !== 'fileOrder') {
       tasks.sort((a, b) => {
         let valA: any, valB: any;
-        switch (sortOptions.sortBy) {
+        switch (effectiveSortBy) {
           case 'dueDate':
             // Handle cases where dueDate might be null or undefined for robust sorting
-            valA = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
-            valB = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+            // Nulls/undefined sort last in ascending, first in descending.
+            valA = a.dueDate ? new Date(a.dueDate).getTime() : (sortOrder === 'asc' ? Infinity : -Infinity);
+            valB = b.dueDate ? new Date(b.dueDate).getTime() : (sortOrder === 'asc' ? Infinity : -Infinity);
             break;
           case 'project':
-            valA = a.project?.toLowerCase() || '';
+            valA = a.project?.toLowerCase() || ''; // Empty string sorts first
             valB = b.project?.toLowerCase() || '';
             break;
           case 'context':
-            valA = a.context?.toLowerCase() || '';
+            valA = a.context?.toLowerCase() || ''; // Empty string sorts first
             valB = b.context?.toLowerCase() || '';
             break;
           default:
@@ -195,12 +216,24 @@ class NextActionsPluginDefinition implements WoosterPlugin {
         }
 
         if (valA < valB) {
-          return sortOptions.sortOrder === 'desc' ? 1 : -1;
+          return sortOrder === 'desc' ? 1 : -1;
         }
         if (valA > valB) {
-          return sortOptions.sortOrder === 'desc' ? -1 : 1;
+          return sortOrder === 'desc' ? -1 : 1;
         }
+        // Secondary sort fordueDate, project, context by natural task order to maintain stability for ties
+        // For explicit sorts, if primary values are equal, maintain original relative order (or could add a secondary alpha sort here too)
+        // For now, let's keep it simple and not add an explicit secondary sort for these cases.
         return 0;
+      });
+    } else {
+      // Default sort (or if 'fileOrder' is specified):
+      // Alpha by context, then project (non-home), then description.
+      tasks.sort((a, b) => {
+        const keyA = this.getTaskSortKey(a);
+        const keyB = this.getTaskSortKey(b);
+        const comparison = keyA.localeCompare(keyB);
+        return sortOrder === 'desc' ? -comparison : comparison;
       });
     }
     // Default sort is 'fileOrder' (original order from file), which is already the case.
