@@ -1,7 +1,7 @@
 import { WoosterPlugin, CoreServices, AppConfig } from '../../types/plugin';
 import { LogLevel } from '../../logger';
 import { z } from 'zod';
-import { DynamicTool } from '@langchain/core/tools';
+import { DynamicTool } from 'langchain/tools';
 import * as chrono from 'chrono-node';
 import {
   TimeBlock,
@@ -11,9 +11,7 @@ import {
 } from './types';
 import { CreateCalendarEventService } from '../gcal/types'; // Actual service type
 
-let core: CoreServices;
-
-// Zod schema for the agent tool input (JSON string)
+// Zod schema for the agent tool input (JSON string) - REINSTATED
 const scheduleTimeBlockSchema = z.object({
   summary: z.string().min(1, "Summary for the time block is required."),
   startTime: z.string().min(1, "Start time is required."),
@@ -28,29 +26,42 @@ const scheduleTimeBlockSchema = z.object({
 });
 
 class TimeManagementPluginDefinition implements WoosterPlugin, TimeManagementService {
-  readonly name = "timeManagement";
-  readonly version = "0.1.1"; // Incremented version
-  readonly description = "Manages time blocks by interacting with Google Calendar service.";
+  static readonly pluginName = "timeManagement";
+  static readonly version = "0.1.1"; 
+  static readonly description = "Manages time blocks by interacting with Google Calendar service.";
 
+  readonly name = TimeManagementPluginDefinition.pluginName;
+  readonly version = TimeManagementPluginDefinition.version;
+  readonly description = TimeManagementPluginDefinition.description;
+
+  private coreServices!: CoreServices;
   private createEventService: CreateCalendarEventService | null = null;
 
-  async initialize(config: AppConfig, services: CoreServices): Promise<void> {
-    core = services;
-    core.log(LogLevel.INFO, `TimeManagementPlugin (v${this.version}): Initializing...`);
+  private logMsg(level: LogLevel, message: string, metadata?: object) {
+    if (this.coreServices && this.coreServices.log) {
+      this.coreServices.log(level, `[${TimeManagementPluginDefinition.pluginName} Plugin v${TimeManagementPluginDefinition.version}] ${message}`, metadata);
+    } else {
+      console.log(`[${level}][${TimeManagementPluginDefinition.pluginName} Plugin v${TimeManagementPluginDefinition.version}] ${message}`, metadata || '');
+    }
+  }
 
-    this.createEventService = core.getService("CreateCalendarEventService") as CreateCalendarEventService | null;
+  async initialize(config: AppConfig, services: CoreServices): Promise<void> {
+    this.coreServices = services;
+    this.logMsg(LogLevel.INFO, `Initializing...`);
+
+    this.createEventService = this.coreServices.getService("CreateCalendarEventService") as CreateCalendarEventService | null;
     if (!this.createEventService) {
-      core.log(LogLevel.WARN, "TimeManagementPlugin: CreateCalendarEventService (from GCalPlugin) not found. Scheduling features will be unavailable.");
+      this.logMsg(LogLevel.WARN, "CreateCalendarEventService (from GCalPlugin) not found. Scheduling features will be unavailable.");
     }
     
     services.registerService("TimeManagementService", this);
-    core.log(LogLevel.INFO, "TimeManagementPlugin: TimeManagementService registered.");
+    this.logMsg(LogLevel.INFO, "TimeManagementService registered.");
   }
 
   async scheduleTimeBlock(blockDetails: TimeBlock): Promise<TimeManagementGCalCreateEventResponse | string | null> {
-    core.log(LogLevel.DEBUG, "TimeManagementService: scheduleTimeBlock called", { blockDetails });
+    this.logMsg(LogLevel.DEBUG, "scheduleTimeBlock called", { blockDetails });
     if (!this.createEventService) {
-      core.log(LogLevel.ERROR, "TimeManagementService: CreateCalendarEventService is not available.");
+      this.logMsg(LogLevel.ERROR, "CreateCalendarEventService is not available.");
       return "Error: Calendar creation service is not available.";
     }
 
@@ -76,8 +87,6 @@ class TimeManagementPluginDefinition implements WoosterPlugin, TimeManagementSer
         }
         endDateTimeIso = parsedEndTime.toISOString();
       } else if (blockDetails.duration) {
-        // Parse duration (e.g., "2 hours", "90 minutes")
-        // This is a simplified duration parser. A more robust one might be needed.
         const durationRegex = /(\d+)\s*(hour|hr|h|minute|min|m)s?/i;
         const match = blockDetails.duration.match(durationRegex);
         if (!match) {
@@ -96,11 +105,10 @@ class TimeManagementPluginDefinition implements WoosterPlugin, TimeManagementSer
         }
         endDateTimeIso = new Date(parsedStartTime.getTime() + durationMs).toISOString();
       } else {
-        // This case should be prevented by Zod schema on the tool, but good to have defense here too.
         return "Error: Either endTime or duration must be provided.";
       }
     } catch (parseError: any) {
-      core.log(LogLevel.ERROR, "TimeManagementService: Error parsing date/time for time block.", { error: parseError.message, details: blockDetails });
+      this.logMsg(LogLevel.ERROR, "Error parsing date/time for time block.", { error: parseError.message, details: blockDetails });
       return `Error processing time information: ${parseError.message}`;
     }
     // --- End Date & Time Parsing Logic ---
@@ -112,27 +120,26 @@ class TimeManagementPluginDefinition implements WoosterPlugin, TimeManagementSer
       description: blockDetails.description,
       location: blockDetails.location,
       attendees: blockDetails.attendees,
-      timeZone: blockDetails.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone, // Default to system timezone
+      timeZone: blockDetails.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone, 
     };
 
     try {
-      core.log(LogLevel.DEBUG, "TimeManagementService: Calling CreateCalendarEventService with:", { eventOptions });
+      this.logMsg(LogLevel.DEBUG, "Calling CreateCalendarEventService with:", { eventOptions });
       const result = await this.createEventService(eventOptions);
 
-      if (typeof result === 'string') { // GCal service returned an error string
-        core.log(LogLevel.WARN, "TimeManagementService: CreateCalendarEventService returned an error string.", { error: result });
+      if (typeof result === 'string') { 
+        this.logMsg(LogLevel.WARN, "CreateCalendarEventService returned an error string.", { error: result });
         return result;
       }
-      // Assuming result is GCalEventData (calendar_v3.Schema$Event)
       if (result && result.id) { 
-        core.log(LogLevel.INFO, `TimeManagementService: Successfully scheduled time block via GCal. Event ID: ${result.id}`);
-        return result; // This is TimeManagementGCalCreateEventResponse
+        this.logMsg(LogLevel.INFO, `Successfully scheduled time block via GCal. Event ID: ${result.id}`);
+        return result; 
       } else {
-        core.log(LogLevel.ERROR, "TimeManagementService: CreateCalendarEventService returned unexpected result.", { result });
+        this.logMsg(LogLevel.ERROR, "CreateCalendarEventService returned unexpected result.", { result });
         return "Error: Failed to schedule time block, calendar service returned an unexpected result.";
       }
     } catch (error: any) {
-      core.log(LogLevel.ERROR, "TimeManagementService: Exception calling CreateCalendarEventService.", { error: error.message, stack: error.stack });
+      this.logMsg(LogLevel.ERROR, "Exception calling CreateCalendarEventService.", { error: error.message, stack: error.stack });
       return `Error: An unexpected error occurred while scheduling with calendar service: ${error.message}`;
     }
   }
@@ -142,27 +149,26 @@ class TimeManagementPluginDefinition implements WoosterPlugin, TimeManagementSer
       name: "scheduleTimeBlock",
       description: "Schedules a time block in your calendar. Input must be a JSON string with keys: 'summary' (string, required), 'startTime' (string, required, e.g., 'tomorrow 2pm'), and either 'endTime' (string, e.g., 'tomorrow 4pm') or 'duration' (string, e.g., '2 hours'). Optional keys: 'description', 'location', 'attendees' (array of emails), 'timeZone'. Example: { \"summary\": \"Work on report\", \"startTime\": \"tomorrow 2pm\", \"duration\": \"3 hours\" }",
       func: async (input: string): Promise<string> => {
-        core.log(LogLevel.DEBUG, 'AgentTool scheduleTimeBlock: called with JSON string input', { input });
+        this.logMsg(LogLevel.DEBUG, 'AgentTool scheduleTimeBlock: called with JSON string input', { input });
         let parsedArgs: TimeBlock;
         try {
           const rawParsedArgs = JSON.parse(input);
-          // Validate with the more detailed Zod schema that includes optional fields
           parsedArgs = scheduleTimeBlockSchema.parse(rawParsedArgs) as TimeBlock;
         } catch (e: any) {
           if (e instanceof z.ZodError) {
-            core.log(LogLevel.WARN, "AgentTool scheduleTimeBlock: Input JSON validation failed.", { errors: e.errors });
+            this.logMsg(LogLevel.WARN, "AgentTool scheduleTimeBlock: Input JSON validation failed.", { errors: e.errors });
             return `Invalid input format: ${e.errors.map(err => err.message).join('. ')}`;
           }
-          core.log(LogLevel.WARN, "AgentTool scheduleTimeBlock: Invalid JSON input string.", { input, error: e.message });
+          this.logMsg(LogLevel.WARN, "AgentTool scheduleTimeBlock: Invalid JSON input string.", { input, error: e.message });
           return "Invalid input: Please provide a valid JSON string as described in the tool description.";
         }
 
         const result = await this.scheduleTimeBlock(parsedArgs);
         
-        if (result && typeof result === 'object' && result.id && result.summary) { // result is GCalEventData
+        if (result && typeof result === 'object' && result.id && result.summary) { 
           return `OK, I\'ve scheduled "${result.summary}". Event link: ${result.htmlLink || 'N/A'}`;
         } else if (typeof result === 'string') {
-          return result; // This will be the error message from scheduleTimeBlock or GCalService
+          return result; 
         }
         return "Sorry, I couldn\'t schedule the time block due to an unexpected error from the service.";
       },
@@ -171,4 +177,4 @@ class TimeManagementPluginDefinition implements WoosterPlugin, TimeManagementSer
   }
 }
 
-export default new TimeManagementPluginDefinition(); 
+export default TimeManagementPluginDefinition; 
