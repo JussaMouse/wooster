@@ -61,8 +61,7 @@ wooster-project/
 │   └── waiting_for.md
 ├── projects/
 │   ├── ProjectAlpha/
-│   │   ├── ProjectAlpha.md  # Main notes and tasks for ProjectAlpha
-│   │   └── ref_ProjectAlpha.md # Reference material for ProjectAlpha
+│   │   └── ProjectAlpha.md  # Journal for ProjectAlpha (tasks/ notes/ ref)
 │   └── ProjectBeta/
 │       └── ProjectBeta.md
 ├── logs/
@@ -95,7 +94,7 @@ Here's how Wooster supports each step of the GTD workflow:
         *   `(d)one`: Marks the item as completed and archives it. (Useful for quick tasks found in inbox).
         *   `(n)ext Action`: Moves the item to your `gtd/next_actions.md` list. You can add project/context tags (e.g., `+ProjectAlpha @home`) and due dates (`due:YYYY-MM-DD`).
         *   `(p)roject`:
-            *   Create a new project: Wooster will create a new folder in your `GTD_PROJECTS_DIR` (e.g., `projects/MyNewProject/`) and a main notes file (e.g., `MyNewProject.md`) within it, adding the item as an initial task.
+            *   Create a new project: Wooster will create a new folder in your `GTD_PROJECTS_DIR` (e.g., `projects/MyNewProject/`) and a main notes file (e.g., `MyNewProject.md`) within it, adding the item as an initial task. All project-related notes, including reference material, should be added to this main file.
             *   Add to an existing project: Appends the item as a task to the selected project's main notes file.
         *   `(r)eference`: Adds the item as reference material to a selected project's main notes file (e.g., `projects/ProjectAlpha/ProjectAlpha.md`).
         *   `(s)omeday/Maybe`: Moves the item to `gtd/someday_maybe.md`.

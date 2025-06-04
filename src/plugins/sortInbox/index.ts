@@ -297,13 +297,10 @@ Enter code: `;
             const newProjectDir = path.join(this.projectsDirPath, newProjectName);
             this.ensureDirExists(this.getFullPath(newProjectDir));
             const projectFilePath = path.join(newProjectDir, `${newProjectName}.md`); // Main project file
-            const projectRefFilePath = path.join(newProjectDir, `ref_${newProjectName}.md`); // Separate ref file
             
-            this.appendToMdFile(projectFilePath, `# Project: ${newProjectName}\\n\\n## Initial Item\\n\\n- [ ] ${item.description}\\n`);
-            // Create an empty ref file
-            fs.writeFileSync(this.getFullPath(projectRefFilePath), `# Reference Materials for ${newProjectName}\\n`, 'utf-8');
+            this.appendToMdFile(projectFilePath, `# Project: ${newProjectName}\n\n## Initial Item\n\n- [ ] ${item.description}\n`);
 
-            console.log(`Project '${newProjectName}' created with item as initial task. Reference file ref_${newProjectName}.md also created.`);
+            console.log(`Project '${newProjectName}' created with item as initial task.`);
             this.archiveInboxItem(item);
             this.removeLineFromFile(this.inboxFilePath, item.rawText);
             item.isProcessed = true;
