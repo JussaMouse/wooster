@@ -18,6 +18,7 @@ The Wooster Scheduler System is responsible for managing and executing tasks at 
     *   Stores schedule definitions and execution logs.
 *   **`scheduleAgentTaskTool` (`src/tools/scheduler.ts`)**: A tool available to the Wooster agent, allowing it to schedule new tasks (typically `AGENT_PROMPT` type) based on user requests.
 *   **Direct Function Registration (in `src/index.ts`)**: System-level tasks (like the Daily Review email) are registered as direct functions with specific `task_key`s.
+*   **Plugin-Provided Task Definitions**: Plugins can define tasks to be managed by the scheduler. They do this by implementing the `getScheduledTaskSetups()` method. For details on how plugins provide these definitions, see the [Plugin Development Guide](./plugin_development_guide.md).
 
 ## 3. Database Schema
 

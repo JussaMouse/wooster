@@ -32,7 +32,7 @@ Tools are specialized functions that the agent can use to interact with external
     - `func`: The actual TypeScript `async` function that gets executed when the agent decides to use the tool. It takes an input (often a string or a structured object parsed from a string) and returns a string result (the "observation") to the agent.
 - **Source of Tools**: Tools are provided to the agent from two main sources:
     - **Core Tools**: Defined directly within `src/agentExecutorService.ts` or closely related core files (e.g., `src/fileSystemTool.ts`, `src/schedulerTool.ts`).
-    - **Plugin-Provided Tools**: Discovered and loaded from enabled plugins via the `pluginManager.ts`. See `docs/plugins.md` for how plugins provide tools.
+    - **Plugin-Provided Tools**: Discovered and loaded from enabled plugins via the `pluginManager.ts`. See `./plugin_development_guide.md` for how plugins provide tools.
 - **Agent Decision Making**: The `AgentExecutor` presents the names and descriptions of all available tools to the LLM. Based on the user's query and the conversation history, the LLM decides:
     1.  Whether a tool is needed to fulfill the request.
     2.  Which specific tool is most appropriate.
