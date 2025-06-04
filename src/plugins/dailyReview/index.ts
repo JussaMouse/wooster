@@ -6,11 +6,13 @@ import { log, LogLevel } from '../../logger';
 import { AppConfig } from '../../configLoader';
 import { WoosterPlugin, CoreServices, EmailService } from '../../types/plugin';
 import { ScheduledTaskSetupOptions } from '../../types/scheduler';
-import type { DailyReviewData, ProjectActionItem, GetWeatherForecastType, DailyReviewUserConfig } from './types';
+import { TaskItem } from '../../types/task';
+import type { DailyReviewData, GetWeatherForecastType, DailyReviewUserConfig } from './types';
 import type { ListCalendarEventsService } from '../gcal/types';
-import type { NextActionsService, NextActionItem } from '../nextActions/types';
 import type { GmailPluginEmailArgs } from '../gmail/types';
 import type { PersonalHealthService } from '../personalHealth/types.ts';
+
+export type GetOpenNextActionsService = (filters?: any, sortOptions?: any) => Promise<TaskItem[]>;
 
 const PROJECTS_DIR = path.join(__dirname, '../../../projects');
 const USER_CONFIG_DIR = path.join(process.cwd(), 'config');
@@ -18,8 +20,8 @@ const USER_CONFIG_FILE_PATH = path.join(USER_CONFIG_DIR, 'dailyReview.json');
 
 class DailyReviewPluginDefinition implements WoosterPlugin {
   static readonly pluginName = "dailyReview";
-  static readonly version = "1.0.0";
-  static readonly description = "Provides a daily review summary including calendar, project actions, and weather. Also schedules a daily email with this summary based on user configuration.";
+  static readonly version = "1.1.0";
+  static readonly description = "Provides a daily review summary including calendar, next actions from next_actions.md, and weather. Schedules a daily email.";
 
   readonly name = DailyReviewPluginDefinition.pluginName;
   readonly version = DailyReviewPluginDefinition.version;
@@ -58,7 +60,7 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
       },
       contentModules: {
         calendar: false,
-        projectActions: true,
+        nextActions: true,
         weather: false,
         healthLog: false,
         inspirationalQuote: false,
@@ -74,6 +76,13 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
       const data = await fs.readFile(USER_CONFIG_FILE_PATH, 'utf-8');
       this.userConfig = JSON.parse(data) as DailyReviewUserConfig;
       this.logMsg(LogLevel.INFO, 'User config loaded successfully.', { path: USER_CONFIG_FILE_PATH });
+      
+      if (this.userConfig && typeof (this.userConfig.contentModules as any).projectActions === 'boolean') {
+        this.logMsg(LogLevel.INFO, 'Migrating old projectActions config to nextActions.');
+        this.userConfig.contentModules.nextActions = (this.userConfig.contentModules as any).projectActions;
+        delete (this.userConfig.contentModules as any).projectActions;
+      }
+
     } catch (error: any) {
       if (error.code === 'ENOENT') {
         this.logMsg(LogLevel.INFO, 'No user config file found. Initializing with default.', { path: USER_CONFIG_FILE_PATH });
@@ -91,37 +100,52 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
         isNewConfig = true;
     }
 
-    let configModified = false;
-
+    let configModifiedSinceLoad = false;
     if (isNewConfig) {
-      this.logMsg(LogLevel.INFO, 'Performing first-time setup for content modules based on detected services.');
-      if (this.coreServices?.getService("getWeatherForecastFunction")) {
-        if (this.userConfig.contentModules.weather === false) { 
-            this.logMsg(LogLevel.INFO, 'Weather service detected. Auto-enabling weather content module for new config.');
-            this.userConfig.contentModules.weather = true;
-            configModified = true;
+        this.logMsg(LogLevel.INFO, 'Performing first-time setup for content modules based on detected services.');
+        if (this.coreServices?.getService("getWeatherForecastFunction")) {
+            if (this.userConfig.contentModules.weather === false) { 
+                this.logMsg(LogLevel.INFO, 'Weather service detected. Auto-enabling weather content module for new config.');
+                this.userConfig.contentModules.weather = true;
+                configModifiedSinceLoad = true;
+            }
         }
-      }
-      if (this.coreServices?.getService("ListCalendarEventsService")) {
-        if (this.userConfig.contentModules.calendar === false) { 
-            this.logMsg(LogLevel.INFO, 'Calendar service detected. Auto-enabling calendar content module for new config.');
-            this.userConfig.contentModules.calendar = true;
-            configModified = true;
+        if (this.coreServices?.getService("ListCalendarEventsService")) {
+            if (this.userConfig.contentModules.calendar === false) { 
+                this.logMsg(LogLevel.INFO, 'Calendar service detected. Auto-enabling calendar content module for new config.');
+                this.userConfig.contentModules.calendar = true;
+                configModifiedSinceLoad = true;
+            }
         }
-      }
-      if (this.coreServices?.getService("PersonalHealthService")) {
-        if (this.userConfig.contentModules.healthLog === false) { 
-            this.logMsg(LogLevel.INFO, 'PersonalHealthService detected. Auto-enabling healthLog content module for new config.');
-            this.userConfig.contentModules.healthLog = true;
-            configModified = true;
+        if (this.coreServices?.getService("PersonalHealthService")) {
+            if (this.userConfig.contentModules.healthLog === false) { 
+                this.logMsg(LogLevel.INFO, 'PersonalHealthService detected. Auto-enabling healthLog content module for new config.');
+                this.userConfig.contentModules.healthLog = true;
+                configModifiedSinceLoad = true;
+            }
         }
-      }
-      if (configModified) { 
-        this.userConfig.hasCompletedInitialSetup = true; 
-      }
+        if (this.coreServices?.getService("GetOpenNextActionsService")) {
+            if (this.userConfig.contentModules.nextActions === false) {
+                this.logMsg(LogLevel.INFO, 'NextActions service detected. Auto-enabling nextActions content module for new config.');
+                this.userConfig.contentModules.nextActions = true;
+                configModifiedSinceLoad = true;
+            }
+        }
+        if (configModifiedSinceLoad) { 
+            this.userConfig.hasCompletedInitialSetup = true; 
+        }
     }
+    
+    let migrationOccurred = false;
+    try {
+      const rawConfigData = await fs.readFile(USER_CONFIG_FILE_PATH, 'utf-8');
+      const rawParsedConfig = JSON.parse(rawConfigData);
+      if (rawParsedConfig.contentModules && typeof rawParsedConfig.contentModules.projectActions === 'boolean') {
+        migrationOccurred = true;
+      }
+    } catch (e) { /* ignore if file not found or parse error, isNewConfig handles new files */ }
 
-    if (configModified) {
+    if (configModifiedSinceLoad || migrationOccurred) {
       await this.saveDailyReviewConfig();
     }
   }
@@ -130,6 +154,9 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
     if (!this.userConfig) {
       this.logMsg(LogLevel.WARN, 'Attempted to save null user config. Skipping.');
       return;
+    }
+    if (this.userConfig.contentModules && (this.userConfig.contentModules as any).projectActions !== undefined) {
+        delete (this.userConfig.contentModules as any).projectActions;
     }
     try {
       await fs.mkdir(USER_CONFIG_DIR, { recursive: true });
@@ -145,89 +172,80 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
     if (!this.coreServices) {
       this.logMsg(LogLevel.ERROR, "Critical Error: Core services not available.");
       return { 
-        greeting: "Error: Daily review content generation failed (core services missing).", 
-        calendarEventsSummary: "- Error -", 
-        projectActions: [], 
-        weatherSummary: "- Error -", 
-        previousDayHealthLog: "- Error -",
-        inspirationalQuote: "- Error -",
+        greeting: "Hello! Wooster here. I had a little trouble brewing your daily review (core services missing).", 
+        calendarEventsSummary: undefined, 
+        nextActionsList: undefined, 
+        weatherSummary: undefined, 
+        previousDayHealthLog: undefined,
+        inspirationalQuote: undefined,
         chineseWordOfTheDay: undefined,
-        closing: "" 
+        closing: "Hope you have a great day anyway!" 
       };
     }
     this.logMsg(LogLevel.INFO, 'Generating daily review content structure...');
     const userCfg = this.userConfig || this.getDefaultUserConfig();
   
-    let calendarData: string | undefined = "- (Not enabled or service not available)";
+    let calendarData: string | undefined = undefined;
     if (userCfg.contentModules.calendar) {
       const getCalendarEventsFunc = this.coreServices.getService("ListCalendarEventsService") as ListCalendarEventsService | undefined;
       if (getCalendarEventsFunc) {
         try {
           const eventsResult = await getCalendarEventsFunc();
-          if (typeof eventsResult === 'string') {
-            calendarData = eventsResult;
+          if (typeof eventsResult === 'string' && eventsResult.toLowerCase() !== 'no upcoming events found.' && eventsResult.trim() !== '') {
+            calendarData = "🗓️ Today's Events:\n" + eventsResult;
           } else if (Array.isArray(eventsResult) && eventsResult.length > 0) {
-            calendarData = "Today's Events:\n" + eventsResult.map(event => `  - ${event.summary} (${new Date(event.start?.dateTime || event.start?.date || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`).join('\n');
+            calendarData = "🗓️ Today's Events:\n" + eventsResult.map(event => `  - ${event.summary} (${new Date(event.start?.dateTime || event.start?.date || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`).join('\n');
           } else {
-            calendarData = "No upcoming events found.";
+            calendarData = "🗓️ No upcoming events found for today. More time for action! ✨";
           }
         } catch (error: any) {
           this.logMsg(LogLevel.ERROR, "Error fetching calendar events.", { error: error.message });
-          calendarData = "- Error fetching calendar events.";
+          calendarData = "🗓️ Oops! Couldn't fetch calendar events.";
         }
       } else {
           this.logMsg(LogLevel.WARN, "ListCalendarEventsService service not found.");
+          calendarData = "🗓️ Calendar service not available.";
       }
     }
   
-    let projActions: ProjectActionItem[] = [];
-    if (userCfg.contentModules.projectActions) {
-        const nextActionsService = this.coreServices.getService("NextActionsService") as NextActionsService | undefined;
-        if (nextActionsService) {
+    let fetchedNextActions: TaskItem[] | undefined = undefined;
+    if (userCfg.contentModules.nextActions) {
+        const getOpenNextActions = this.coreServices.getService("GetOpenNextActionsService") as GetOpenNextActionsService | undefined;
+        if (getOpenNextActions) {
             try {
-                const rawActions: NextActionItem[] = await nextActionsService.getAggregatedActions(false);
-                const actionMap = new Map<string, string[]>();
-                rawActions.forEach(item => {
-                    if (item.action.trim() !== '') {
-                        const existing = actionMap.get(item.project);
-                        if (existing) {
-                            existing.push(item.action);
-                        } else {
-                            actionMap.set(item.project, [item.action]);
-                        }
-                    }
-                });
-                projActions = Array.from(actionMap.entries()).map(([projectName, actions]) => ({
-                    projectName,
-                    actions
-                }));
-                this.logMsg(LogLevel.INFO, 'Fetched project actions via NextActionsService.', { count: projActions.length });
+                const tasks = await getOpenNextActions({ status: 'open' });
+                if (tasks && tasks.length > 0) {
+                    fetchedNextActions = tasks;
+                    this.logMsg(LogLevel.INFO, 'Fetched next actions for daily review.', { count: tasks.length });
+                } else {
+                    this.logMsg(LogLevel.INFO, 'No open next actions found for daily review.');
+                }
             } catch (error: any) {
-                this.logMsg(LogLevel.ERROR, "Error fetching project actions via NextActionsService.", { error: error.message });
-                projActions = [{ projectName: "Error", actions: ["Could not fetch next actions due to service error."] }];
+                this.logMsg(LogLevel.ERROR, "Error fetching next actions for daily review.", { error: error.message });
             }
         } else {
-            this.logMsg(LogLevel.WARN, "NextActionsService not found. Cannot fetch project actions.");
-            projActions = [{ projectName: "Service N/A", actions: ["NextActionsService not available."] }];
+            this.logMsg(LogLevel.WARN, "GetOpenNextActionsService not found. Cannot fetch next actions.");
         }
     }
   
-    let weatherData = "- (Not enabled or service not available)";
+    let weatherData: string | undefined = undefined;
     if (userCfg.contentModules.weather) {
       const getWeatherForecastFunc = this.coreServices.getService("getWeatherForecastFunction") as GetWeatherForecastType | undefined;
       if (getWeatherForecastFunc) {
         try {
-          weatherData = await getWeatherForecastFunc();
+          const forecast = await getWeatherForecastFunc();
+          weatherData = forecast ? `🌦️ Weather Today: ${forecast}` : "🌦️ Couldn't get the weather details, but I hope it's nice!";
         } catch (error: any) {
           this.logMsg(LogLevel.ERROR, "Error fetching weather forecast via service.", { error: error.message });
-          weatherData = "- Error fetching weather forecast.";
+          weatherData = "🌦️ Oops! Weather forecast is hiding.";
         }
       } else {
           this.logMsg(LogLevel.WARN, "getWeatherForecastFunction service not found.");
+          weatherData = "🌦️ Weather service not available.";
       }
     }
     
-    let previousDayHealthLogData: string | undefined = "- (Not enabled or service not available)";
+    let previousDayHealthLogData: string | undefined = undefined;
     if (userCfg.contentModules.healthLog) {
         const healthService = this.coreServices.getService("PersonalHealthService") as PersonalHealthService | undefined;
         if (healthService) {
@@ -236,286 +254,272 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
                 const healthEvents = await healthService.getHealthEvents({ date: yesterdayStr, sort: 'asc' });
                 
                 if (healthEvents && healthEvents.length > 0) {
-                    previousDayHealthLogData = `Summary for ${yesterdayStr}:\n` + healthEvents.map((event: string) => `  - ${event.substring(11)}`).join('\n');
+                    previousDayHealthLogData = `🏃 Yesterday's Fitness Log (${yesterdayStr}):\n` + healthEvents.map((event: string) => `  - ${event.substring(11)}`).join('\n');
                 } else {
-                    previousDayHealthLogData = `No health events logged for ${yesterdayStr}.`;
+                    previousDayHealthLogData = `🏃 No health events logged for ${yesterdayStr}. A fresh start today?`;
                 }
                 this.logMsg(LogLevel.INFO, 'Previous day health log fetched via PersonalHealthService.', { date: yesterdayStr, count: healthEvents?.length || 0 });
             } catch (error: any) {
                 this.logMsg(LogLevel.ERROR, "Error fetching health log from PersonalHealthService.", { error: error.message });
-                previousDayHealthLogData = "- Error fetching health log from PersonalHealthService.";
+                previousDayHealthLogData = "🏃 Oops! Couldn't fetch yesterday's health log.";
             }
         } else {
             this.logMsg(LogLevel.WARN, "PersonalHealthService service not found.");
-            previousDayHealthLogData = "- (PersonalHealthService not available)";
+            previousDayHealthLogData = "🏃 Health log service not available.";
         }
     }
 
-    const reviewData: DailyReviewData = {
-        greeting: "Good morning! Here is your daily review from Wooster:",
-        calendarEventsSummary: calendarData,
-        projectActions: projActions,
-        weatherSummary: weatherData,
-        previousDayHealthLog: previousDayHealthLogData,
-        inspirationalQuote: userCfg.contentModules.inspirationalQuote ? "Fetch quote here..." : undefined,
-        chineseWordOfTheDay: userCfg.contentModules.chineseWordOfTheDay ? { char: "字", pinyin: "zì", translation: "word" } : undefined,
-        closing: "Have a productive day!"
+    let quoteData: string | undefined = undefined;
+    if (userCfg.contentModules.inspirationalQuote) {
+        const quotes = [
+            "The secret of getting ahead is getting started. - Mark Twain",
+            "The best time to plant a tree was 20 years ago. The second best time is now. - Chinese Proverb",
+            "Your limitation—it's only your imagination."
+        ];
+        quoteData = `💡 Thought for the day: "${quotes[Math.floor(Math.random() * quotes.length)]}"`;
+    }
+
+    let chineseWord: DailyReviewData['chineseWordOfTheDay'] = undefined;
+    if (userCfg.contentModules.chineseWordOfTheDay) {
+        const words = [ { word: "你好", pinyin: "nǐ hǎo", translation: "Hello" }, { word: "谢谢", pinyin: "xièxie", translation: "Thank you" }];
+        chineseWord = words[Math.floor(Math.random() * words.length)];
+        chineseWord = chineseWord ? { word: `🇨🇳 ${chineseWord.word}`, pinyin: chineseWord.pinyin, translation: chineseWord.translation } : undefined;
+    }
+
+    return {
+      greeting: "👋 Good morning! Here's your Wooster Daily Briefing:",
+      calendarEventsSummary: calendarData,
+      nextActionsList: fetchedNextActions,
+      weatherSummary: weatherData,
+      previousDayHealthLog: previousDayHealthLogData,
+      inspirationalQuote: quoteData,
+      chineseWordOfTheDay: chineseWord,
+      closing: "Make today amazing! ✨ - Wooster"
     };
-    this.logMsg(LogLevel.INFO, 'Daily review data structure generated.');
-    return reviewData;
   }
 
   private formatReviewDataToText(data: DailyReviewData): string {
     let text = `${data.greeting}\n\n`;
-    if (data.calendarEventsSummary) text += `Calendar:\n${data.calendarEventsSummary}\n\n`;
-    if (data.projectActions && data.projectActions.length > 0) {
-      text += "Project Actions:\n";
-      data.projectActions.forEach(p => {
-        text += `  ${p.projectName}:\n`;
-        p.actions.forEach(a => text += `    - ${a}\n`);
+    if (data.calendarEventsSummary) text += `${data.calendarEventsSummary}\n\n`;
+
+    if (data.nextActionsList && data.nextActionsList.length > 0) {
+      text += "📌 Your Next Actions:\n";
+      data.nextActionsList.forEach(task => {
+        let taskPrefix = "";
+        if (task.context) taskPrefix += `${task.context} `;
+        if (task.project && task.project.toLowerCase() !== '+home') taskPrefix += `[${task.project.substring(1)}] `;
+        text += `  - ${taskPrefix}${task.description}${task.dueDate ? ' (due: ' + task.dueDate + ')' : ''}\n`;
       });
       text += "\n";
+    } else if (this.userConfig?.contentModules.nextActions) {
+      text += "📌 No open next actions right now. Great job, or time to plan! 🎉\n\n";
     }
-    if (data.weatherSummary) text += `Weather:\n${data.weatherSummary}\n\n`;
-    if (data.previousDayHealthLog) text += `Health Log:\n${data.previousDayHealthLog}\n\n`;
-    if (data.inspirationalQuote) text += `Quote of the Day:\n${data.inspirationalQuote}\n\n`;
-    if (data.chineseWordOfTheDay) {
-      text += `Chinese Word of the Day: ${data.chineseWordOfTheDay.char} (${data.chineseWordOfTheDay.pinyin}) - ${data.chineseWordOfTheDay.translation}\n\n`;
+
+    if (data.weatherSummary) text += `${data.weatherSummary}\n\n`;
+    if (data.previousDayHealthLog) text += `${data.previousDayHealthLog}\n\n`;
+    if (data.inspirationalQuote) text += `${data.inspirationalQuote}\n\n`;
+
+    if (data.chineseWordOfTheDay && data.chineseWordOfTheDay.word) {
+      text += `🇨🇳 Chinese Word: ${data.chineseWordOfTheDay.word} (${data.chineseWordOfTheDay.pinyin}) - ${data.chineseWordOfTheDay.translation}\n\n`;
     }
     text += data.closing;
     return text;
   }
 
   private formatReviewDataToHtml(data: DailyReviewData): string {
-    let html = `<h2>${data.greeting}</h2>`;
-    if (data.calendarEventsSummary) html += `<h3>Calendar:</h3><p>${data.calendarEventsSummary.replace(/\n/g, "<br>")}</p>`;
-    if (data.projectActions && data.projectActions.length > 0) {
-      html += "<h3>Project Actions:</h3><ul>";
-      data.projectActions.forEach(p => {
-        html += `<li><b>${p.projectName}:</b><ul>`;
-        p.actions.forEach(a => html += `<li>${a}</li>`);
-        html += "</ul></li>";
+    // Helper to escape HTML entities
+    const escapeHtml = (unsafe: string): string => 
+      unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+    let html = `<div style="font-family: Arial, sans-serif; line-height: 1.6;">`;
+    html += `<h2 style="color: #2c3e50;">${escapeHtml(data.greeting)}</h2>`;
+
+    if (data.calendarEventsSummary) {
+      html += `<div style="margin-bottom: 20px; padding: 10px; background-color: #f9f9f9; border-left: 3px solid #3498db;">`;
+      html += `<h3 style="margin-top: 0; color: #3498db;">🗓️ Calendar</h3><p>${data.calendarEventsSummary.replace(/\n/g, "<br>")}</p>`;
+      html += `</div>`;
+    }
+
+    if (data.nextActionsList && data.nextActionsList.length > 0) {
+      html += `<div style="margin-bottom: 20px; padding: 10px; background-color: #f9f9f9; border-left: 3px solid #f39c12;">`;
+      html += `<h3 style="margin-top: 0; color: #f39c12;">📌 Your Next Actions</h3><ul>`;
+      data.nextActionsList.forEach(task => {
+        let taskPrefix = "";
+        if (task.context) taskPrefix += `<em>${escapeHtml(task.context)}</em> `;
+        if (task.project && task.project.toLowerCase() !== '+home') taskPrefix += `<strong>[${escapeHtml(task.project.substring(1))}]</strong> `;
+        const dueString = task.dueDate ? ` <small>(due: ${escapeHtml(task.dueDate)})</small>` : '';
+        html += `<li>${taskPrefix}${escapeHtml(task.description)}${dueString}</li>`;
       });
-      html += "</ul>";
+      html += "</ul></div>";
+    } else if (this.userConfig?.contentModules.nextActions) {
+      html += `<div style="margin-bottom: 20px; padding: 10px; background-color: #f9f9f9; border-left: 3px solid #2ecc71;">`;
+      html += `<h3 style="margin-top: 0; color: #2ecc71;">📌 Next Actions</h3><p>No open next actions right now. Great job, or time to plan! 🎉</p>`;
+      html += `</div>`;
     }
-    if (data.weatherSummary) html += `<h3>Weather:</h3><p>${data.weatherSummary.replace(/\n/g, "<br>")}</p>`;
-    if (data.previousDayHealthLog) html += `<h3>Health Log:</h3><p>${data.previousDayHealthLog.replace(/\n/g, "<br>")}</p>`;
-    if (data.inspirationalQuote) html += `<h3>Quote of the Day:</h3><p><em>${data.inspirationalQuote}</em></p>`;
-    if (data.chineseWordOfTheDay) {
-      html += `<h3>Chinese Word of the Day:</h3><p>${data.chineseWordOfTheDay.char} (${data.chineseWordOfTheDay.pinyin}) - ${data.chineseWordOfTheDay.translation}</p>`;
+
+    if (data.weatherSummary) {
+      html += `<div style="margin-bottom: 20px; padding: 10px; background-color: #f9f9f9; border-left: 3px solid #1abc9c;">`;
+      html += `<h3 style="margin-top: 0; color: #1abc9c;">🌦️ Weather</h3><p>${data.weatherSummary.replace(/\n/g, "<br>")}</p>`;
+      html += `</div>`;
     }
-    html += `<p>${data.closing}</p>`;
+    if (data.previousDayHealthLog) {
+      html += `<div style="margin-bottom: 20px; padding: 10px; background-color: #f9f9f9; border-left: 3px solid #9b59b6;">`;
+      html += `<h3 style="margin-top: 0; color: #9b59b6;">🏃 Fitness Log</h3><p>${data.previousDayHealthLog.replace(/\n/g, "<br>")}</p>`;
+      html += `</div>`;
+    }
+    if (data.inspirationalQuote) {
+      html += `<div style="margin-bottom: 20px; padding: 10px; background-color: #f0f9ff; border-left: 3px solid #5dade2;">`;
+      html += `<h3 style="margin-top: 0; color: #5dade2;">💡 Thought for the Day</h3><p><em>${escapeHtml(data.inspirationalQuote)}</em></p>`;
+      html += `</div>`;
+    }
+    if (data.chineseWordOfTheDay && data.chineseWordOfTheDay.word) {
+      html += `<div style="margin-bottom: 20px; padding: 10px; background-color: #fff9f0; border-left: 3px solid #e67e22;">`;
+      html += `<h3 style="margin-top: 0; color: #e67e22;">🇨🇳 Chinese Word</h3><p>${escapeHtml(data.chineseWordOfTheDay.word)} (${escapeHtml(data.chineseWordOfTheDay.pinyin || '')}) - ${escapeHtml(data.chineseWordOfTheDay.translation || '')}</p>`;
+      html += `</div>`;
+    }
+    html += `<p style="color: #7f8c8d; font-size: 0.9em;">${escapeHtml(data.closing)}</p>`;
+    html += `</div>`;
     return html;
   }
 
   private async sendDailyReviewEmail(): Promise<void> {
-    this.logMsg(LogLevel.INFO, 'Attempting to send daily review email...');
-    if (!this.userConfig || !this.userConfig.deliveryChannels.email?.enabled || !this.userConfig.deliveryChannels.email.recipient) {
-      this.logMsg(LogLevel.INFO, 'Email delivery for daily review is not enabled or recipient not set. Skipping.');
+    if (!this.userConfig || !this.userConfig.isDailyReviewEnabled || !this.userConfig.deliveryChannels.email.enabled) {
+      this.logMsg(LogLevel.INFO, 'Daily review email not sent due to user configuration (disabled overall or email channel disabled).');
       return;
-    }
-
-    if (!this.coreServices) {
-        this.logMsg(LogLevel.ERROR, "Cannot send daily review email: CoreServices not available.");
-        return;
     }
 
     const emailService = this.coreServices.getService("EmailService") as EmailService | undefined;
     if (!emailService) {
-      this.logMsg(LogLevel.ERROR, "EmailService not found when trying to send daily review. Email will not be sent.");
+      this.logMsg(LogLevel.ERROR, "EmailService not available. Cannot send daily review email.");
       return;
     }
 
-    const reviewData = await this.getDailyReviewContentInternal();
-    const htmlContent = this.formatReviewDataToHtml(reviewData);
-    const recipient = this.userConfig.deliveryChannels.email.recipient;
-    const subject = `Your Wooster Daily Review - ${new Date().toLocaleDateString()}`;
-
-    const emailArgs: GmailPluginEmailArgs = {
-      to: recipient,
-      subject: subject,
-      body: htmlContent,
-      isHtml: true,
-    };
+    const recipient = this.userConfig.deliveryChannels.email.recipient || this.appConfig?.gmail?.userPersonalEmailAddress;
+    if (!recipient) {
+      this.logMsg(LogLevel.ERROR, "No recipient configured for daily review email (checked dailyReview.json and GMAIL_USER_PERSONAL_EMAIL_ADDRESS).");
+      return;
+    }
 
     try {
-      const result = await emailService.send(emailArgs);
-      if (result.success) {
-        this.logMsg(LogLevel.INFO, 'Daily review email sent successfully.', { recipient, messageId: result.messageId });
-      } else {
-        this.logMsg(LogLevel.ERROR, 'Failed to send daily review email.', { recipient, error: result.message });
-      }
+      this.logMsg(LogLevel.INFO, 'Preparing to send daily review email.');
+      const reviewData = await this.getDailyReviewContentInternal();
+      const subject = "✨ Your Wooster Daily Briefing! ✨";
+      const htmlBody = this.formatReviewDataToHtml(reviewData);
+      // const textBody = this.formatReviewDataToText(reviewData); // Optional: for multipart
+
+      const emailArgs: GmailPluginEmailArgs = {
+        to: recipient,
+        subject: subject,
+        body: htmlBody, // Send HTML body
+        // htmlBody: htmlBody, // If sending multipart
+      };
+
+      await emailService.send(emailArgs);
+      this.logMsg(LogLevel.INFO, `Daily review email sent successfully to ${recipient}.`);
     } catch (error: any) {
-      this.logMsg(LogLevel.ERROR, 'Exception while sending daily review email.', { recipient, error: error.message });
+      this.logMsg(LogLevel.ERROR, "Failed to send daily review email.", { error: error.message, stack: error.stack });
     }
   }
 
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
     this.appConfig = config;
     this.coreServices = services;
-    this.logMsg(LogLevel.INFO, `Initializing DailyReviewPlugin (v${this.version})...`);
     await this.loadDailyReviewConfig();
+    this.logMsg(LogLevel.INFO, "Plugin initialized.");
 
-    this.dailyReviewAgentToolInstance = new DynamicTool({
-  name: "get_daily_review",
-      description: "Generates and returns the current daily review content as a JSON string based on user's settings. If not configured, prompts to check help.",
-      func: async () => {
-        this.logMsg(LogLevel.DEBUG, "get_daily_review tool executed.");
-        const userCfg = this.userConfig || this.getDefaultUserConfig();
-        if (!userCfg.isDailyReviewEnabled && !userCfg.hasCompletedInitialSetup) {
-            return JSON.stringify({
-                message: "Your Daily Review is not yet enabled or fully configured. To get started, ask Wooster: 'help with daily review' or 'what is the daily review?'",
-                status: "not_configured"
-            });
+    // Example of checking for the GetOpenNextActionsService during initialization
+    const nextActionsServiceCheck = this.coreServices.getService("GetOpenNextActionsService");
+    if (!nextActionsServiceCheck && this.userConfig?.contentModules.nextActions) {
+        this.logMsg(LogLevel.WARN, "'GetOpenNextActionsService' not found, but the 'nextActions' module is enabled in dailyReview.json. Next actions might not appear in the review.");
     }
-        const data = await this.getDailyReviewContentInternal();
-    return JSON.stringify(data);
-  },
-});
+  }
 
-    this.getDailyReviewHelpToolInstance = new DynamicTool({
-      name: "get_daily_review_help",
-      description: "Provides detailed help on configuring the Daily Review feature, including relevant config files and environment variables.",
-      func: async () => {
-        this.logMsg(LogLevel.DEBUG, "get_daily_review_help tool executed.");
-        const cfg = this.userConfig || this.getDefaultUserConfig(); // Ensure we have a config object
-
-        let helpText = `
-**Wooster Daily Review - Configuration Guide**
----------------------------------------------
-
-The Daily Review is a customizable summary designed to help you plan and stay informed.
-Configuration is managed by editing the JSON configuration file and setting relevant environment variables.
-
-**Primary Configuration File:** \`config/dailyReview.json\`
-
-This file stores your personal settings for the Daily Review. It is not included in Git and will be created with default values if it doesn't exist.
-
-**Initial Setup:**
-To get started, or if you want to reset to a standard configuration, you can use the example file provided:
-1. Copy the example configuration: \`cp config/dailyReview.example.json config/dailyReview.json\`
-2. Customize \`config/dailyReview.json\` to your preferences.
-   The \`config/dailyReview.example.json\` file serves as a template.
-
-**Key Settings in \`config/dailyReview.json\`:**
-
-*   **\`scheduleCron\`** (string):
-    *   Defines when the daily review is automatically generated and delivered (if a delivery channel is enabled).
-    *   Uses standard cron syntax (e.g., "0 8 * * *" for 8:00 AM daily).
-    *   Current value: \`"${cfg.scheduleCron}"\`
-
-*   **\`isDailyReviewEnabled\`** (boolean):
-    *   Master switch to enable or disable the entire Daily Review feature.
-    *   If \`false\`, the review won't be generated, and scheduled delivery won't occur.
-    *   Current value: \`${cfg.isDailyReviewEnabled}\`
-
-*   **\`hasCompletedInitialSetup\`** (boolean):
-    *   Indicates if you have reviewed and saved your configuration at least once.
-    *   Typically set to \`true\` automatically after the first successful save if you set a schedule or enable the review.
-    *   You can manually set this to \`true\` in \`config/dailyReview.json\` once configured.
-    *   Current value: \`${cfg.hasCompletedInitialSetup}\`
-
-*   **\`contentModules\`** (object):
-    *   Controls which sections appear in your daily review. Set to \`true\` to include, \`false\` to exclude.
-`;
-
-        for (const [moduleKey, isEnabled] of Object.entries(cfg.contentModules)) {
-          let moduleDescription = "";
-          switch (moduleKey) {
-            case 'calendar': moduleDescription = "(Events from your primary calendar via Calendar plugin)"; break;
-            case 'projectActions': moduleDescription = "(Next actions from actions.txt in 'home' and recent projects)"; break;
-            case 'weather': moduleDescription = "(Forecast for your configured city via Weather plugin)"; break;
-            case 'healthLog': moduleDescription = "(Summary of yesterday\'s health events from the Personal Health plugin)"; break;
-            case 'inspirationalQuote': moduleDescription = "(Daily wisdom - Coming Soon!)"; break;
-            case 'chineseWordOfTheDay': moduleDescription = "(Learn a new word - Coming Soon!)"; break;
-            default: moduleDescription = "(User-defined module)";
-          }
-          helpText += `    *   **\`${moduleKey}\`**: \`${isEnabled}\` ${moduleDescription}\n`;
-        }
-
-        helpText += `
-*   **\`deliveryChannels\`** (object):
-    *   Configures how and where the daily review is delivered.
-    *   Channels are auto-detected based on installed plugins/services that provide delivery capabilities.
-`;
-
-        if (Object.keys(cfg.deliveryChannels).length === 0) {
-            helpText += "    *   No delivery channel services currently detected or configured.\n";
-        }
-
-        // Email Channel
-        if (cfg.deliveryChannels.email || this.coreServices?.getService("EmailService")) {
-          const emailCfg = cfg.deliveryChannels.email;
-          helpText += `
-    *   **Email Delivery (\`email\`):** (Requires Gmail Plugin and \`EmailService\`)
-        *   **\`enabled\`** (boolean): Set to \`true\` to send the review via email.
-            *   Current value: \`${emailCfg?.enabled ?? false}\`
-        *   **\`recipient\`** (string, optional): Email address to send the review to.
-            *   If not set, defaults to the \`GMAIL_USER_PERSONAL_EMAIL_ADDRESS\` from your \`.env\` file.
-            *   Current value: \`"${emailCfg?.recipient || '(uses .env default)'}"\`
-`;
-    }
-    
-        // Placeholder for Discord
-        if (cfg.deliveryChannels.discord || this.coreServices?.getService("DiscordService")) { // Assuming a "DiscordService"
-            const discordCfg = cfg.deliveryChannels.discord; // Removed 'as any'
-            helpText += `
-    *   **Discord Delivery (\`discord\`):** (Requires a Discord Plugin/Service - Coming Soon!)
-        *   **\`enabled\`** (boolean): Set to \`true\` to send via Discord.
-            *   Current value: \`${discordCfg?.enabled ?? false}\`
-        *   **\`webhookUrl\`** (string): The Discord webhook URL.
-            *   Current value: \`"${discordCfg?.webhookUrl || '(not set)'}"\`
-`;
-        }
-        // Add more delivery channels (Telegram, etc.) here as they are developed.
-
-        helpText += `
-**Relevant Environment Variables (\`.env\` file):**
-
-These settings are configured in your main \`.env\` file at the root of the Wooster project.
-
-*   **\`GMAIL_USER_PERSONAL_EMAIL_ADDRESS\`**:
-    *   Used as the default recipient for email delivery if not specified in \`config/dailyReview.json\`.
-    *   Current value: \`"${this.appConfig.gmail?.userPersonalEmailAddress || '(not set in .env or appConfig)'}"\`
-
-*   **(Future) API Keys for Content Modules:**
-    *   Some future content modules (e.g., a premium weather service, specific quote APIs) might require API keys to be set in the \`.env\` file. These will be documented as they are added.
-
-**Applying Changes:**
-*   Changes to \`config/dailyReview.json\` for content modules or delivery channel enablement/recipient usually take effect for the next generated review.
-*   Changes to \`scheduleCron\` or enabling/disabling the entire review (\`isDailyReviewEnabled\`) typically require a Wooster restart for the scheduler to pick up the new settings.
-*   Changes to \`.env\` variables always require a Wooster restart.
-
-For any issues or to reset to defaults, you can delete \`config/dailyReview.json\`. It will be recreated on the next run.
-`;
-        return helpText.trim();
-      }
-    });
-
-    this.logMsg(LogLevel.DEBUG, "Initialization complete. User config loaded. Agent tools instantiated.");
+  async shutdown(): Promise<void> {
+    this.logMsg(LogLevel.INFO, "Plugin shutdown.");
   }
 
   getAgentTools?(): any[] {
-    const tools: any[] = [];
-    if (this.dailyReviewAgentToolInstance) tools.push(this.dailyReviewAgentToolInstance);
-    if (this.getDailyReviewHelpToolInstance) tools.push(this.getDailyReviewHelpToolInstance);
-    return tools;
+    if (!this.getDailyReviewHelpToolInstance) {
+      this.getDailyReviewHelpToolInstance = new DynamicTool({
+        name: "get_daily_review_help",
+        description: "Provides detailed help and current configuration status for the Daily Review plugin, including content modules, delivery channels, and scheduling.",
+        func: async () => {
+          this.logMsg(LogLevel.DEBUG, "get_daily_review_help tool executed.");
+          const cfg = this.userConfig || this.getDefaultUserConfig();
+
+          let helpText = `
+**Wooster Daily Review Configuration & Help**
+
+**Current Schedule:** \`${cfg.scheduleCron}\` (Enabled: ${cfg.isDailyReviewEnabled})
+**Initial Setup Completed:** ${cfg.hasCompletedInitialSetup}
+
+**Content Modules (what's in your review):**
+`;
+          for (const key of Object.keys(cfg.contentModules) as Array<keyof DailyReviewUserConfig['contentModules']>) {
+            let moduleDescription = "";
+            switch (key) {
+              case 'calendar': moduleDescription = "(Events from your primary calendar via Calendar plugin)"; break;
+              case 'nextActions': moduleDescription = "(Tasks from your main \`next_actions.md\` file)"; break; // Updated description
+              case 'weather': moduleDescription = "(Forecast for your configured city via Weather plugin)"; break;
+              case 'healthLog': moduleDescription = "(Summary of yesterday's health events from the Personal Health plugin)"; break;
+              case 'inspirationalQuote': moduleDescription = "(A daily dose of inspiration)"; break;
+              case 'chineseWordOfTheDay': moduleDescription = "(Learn a new Chinese word)"; break;
+              default: moduleDescription = "(Unknown module)";
+            }
+            helpText += `  - ${key}: ${cfg.contentModules[key] ? '✅ Enabled' : '❌ Disabled'} ${moduleDescription}\n`;
+          }
+
+          helpText += `
+**Delivery Channels (how you get your review):**
+`;
+          if (cfg.deliveryChannels.email || this.coreServices?.getService("EmailService")) {
+            const emailCfg = cfg.deliveryChannels.email;
+            helpText += `  - Email: ${emailCfg.enabled ? '✅ Enabled' : '❌ Disabled'}\n`;
+            if (emailCfg.enabled) {
+              helpText += `    - Recipient: ${emailCfg.recipient || this.appConfig?.gmail?.userPersonalEmailAddress || '(Not Set - Defaults to GMAIL_USER_PERSONAL_EMAIL_ADDRESS env var)'}\n`;
+            }
+          }
+
+          if (cfg.deliveryChannels.discord || this.coreServices?.getService("DiscordService")) {
+              const discordCfg = (cfg.deliveryChannels as any).discord; // Needs proper typing if Discord becomes official
+              helpText += `
+  *   **Discord Delivery (\`discord\`):** (Requires a Discord Plugin/Service - Coming Soon!)
+      - Enabled: ${discordCfg?.enabled ? '✅' : '❌'}
+      - Channel ID: ${discordCfg?.channelId || '(Not Set)'}
+`;
+          }
+
+          helpText += `
+To configure, edit \`config/dailyReview.json\`. 
+Wooster automatically creates this file with defaults if it's missing. 
+It checks for available services (Calendar, Weather, etc.) on first setup to auto-enable relevant modules.
+`;
+          return helpText;
+        },
+      });
+    }
+    // Add other tools like manual trigger if needed here
+    return [this.getDailyReviewHelpToolInstance];
   }
 
   getScheduledTaskSetups?(): ScheduledTaskSetupOptions | ScheduledTaskSetupOptions[] | undefined {
     let isEnabled = false;
-    let effectiveSchedule = this.getDefaultUserConfig().scheduleCron; // Fallback schedule
+    let effectiveSchedule = this.getDefaultUserConfig().scheduleCron;
     let scheduleSource = "Plugin Default";
 
     if (this.userConfig) {
       isEnabled = this.userConfig.isDailyReviewEnabled && 
-                  (this.userConfig.deliveryChannels.email?.enabled ?? false); // Ensure email channel is considered
+                  (this.userConfig.deliveryChannels.email?.enabled ?? false);
       
       if (this.userConfig.isDailyReviewEnabled) {
         scheduleSource = "User Config: dailyReview.json (isDailyReviewEnabled=true)";
         if (this.userConfig.scheduleCron) {
           effectiveSchedule = this.userConfig.scheduleCron;
-          // scheduleSource can be more specific if scheduleCron is from userConfig vs appConfig default
         }
       } else {
         scheduleSource = "User Config: dailyReview.json (isDailyReviewEnabled=false)";
@@ -525,24 +529,20 @@ For any issues or to reset to defaults, you can delete \`config/dailyReview.json
         scheduleSource += " (Email delivery disabled in dailyReview.json)";
       }
     } else {
-      // Should not happen if initialize ran correctly, but as a fallback:
       scheduleSource = "Error: User config not loaded";
       isEnabled = false;
     }
     
-    // AppConfig can also provide a cron schedule, which userConfig might override or fall back to
     const appConfigDefaultCron = this.appConfig?.dailyReview?.scheduleCronExpression;
     if (this.userConfig && !this.userConfig.scheduleCron && appConfigDefaultCron) {
-        // If userConfig exists but doesn't specify a cron, and appConfig has one
         effectiveSchedule = appConfigDefaultCron;
-        if (scheduleSource === "User Config: dailyReview.json (isDailyReviewEnabled=true)") { // only if enabled by user
+        if (scheduleSource === "User Config: dailyReview.json (isDailyReviewEnabled=true)") {
             scheduleSource = "AppConfig: dailyReview.scheduleCronExpression (via User Config)";
         }
     }
 
     if (!isEnabled) {
       this.logMsg(LogLevel.INFO, "Daily review email task not scheduled: disabled by user configuration or email channel disabled.");
-      // Return definition so it can be listed as defined but disabled
     } else {
       this.logMsg(LogLevel.INFO, `Daily review email task will be scheduled. Effective Cron: ${effectiveSchedule}, Source: ${scheduleSource}`);
     }
@@ -550,18 +550,15 @@ For any issues or to reset to defaults, you can delete \`config/dailyReview.json
     return {
       taskKey: "dailyReview.sendEmail",
       description: "Sends the Daily Review email based on user configuration.",
-      defaultScheduleExpression: this.getDefaultUserConfig().scheduleCron, // Plugin's ultimate fallback default
+      defaultScheduleExpression: this.getDefaultUserConfig().scheduleCron,
       effectiveScheduleExpression: effectiveSchedule,
       isEnabledByPlugin: isEnabled,
-      scheduleConfigSource: scheduleSource,
-      functionToExecute: this.sendDailyReviewEmail.bind(this), 
-      executionPolicy: "RUN_ONCE_PER_PERIOD_CATCH_UP",
-      initialPayload: {}
+      functionToExecute: this.sendDailyReviewEmail.bind(this),
+      executionPolicy: 'RUN_ONCE_PER_PERIOD_CATCH_UP'
     };
   }
 }
 
-// Helper function for date
 function getYesterdayDateString(): string {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);

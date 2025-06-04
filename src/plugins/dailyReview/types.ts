@@ -1,33 +1,13 @@
-export interface ProjectActionItem {
-  projectName: string;
-  actions: string[];
-}
+import { TaskItem } from '../../types/task';
 
-export interface DailyReviewData {
-  greeting: string;
-  calendarEventsSummary?: string;
-  projectActions?: ProjectActionItem[];
-  weatherSummary?: string;
-  previousDayHealthLog?: string;
-  inspirationalQuote?: string;
-  chineseWordOfTheDay?: { char: string; pinyin: string; translation: string };
-  closing?: string;
-}
-
-// Types for the functions the daily review plugin expects for its dependencies.
-// These might be provided by other plugins (Weather, Calendar) in the future.
-export type GetWeatherForecastType = () => Promise<string>;
-export type GetCalendarEventsType = () => Promise<string>;
-
-// --- New User Configuration ---
 export interface DailyReviewUserConfig {
-  scheduleCron: string; // User-defined cron string
-  isDailyReviewEnabled: boolean; // Overall toggle for the daily review
-  hasCompletedInitialSetup: boolean; // Added this flag
+  scheduleCron: string;
+  isDailyReviewEnabled: boolean;
+  hasCompletedInitialSetup: boolean;
   deliveryChannels: {
     email: {
       enabled: boolean;
-      recipient?: string; // Defaults to GMAIL_USER_PERSONAL_EMAIL_ADDRESS if not set
+      recipient?: string;
     };
     discord?: { // Optional Discord channel
       enabled: boolean;
@@ -37,11 +17,37 @@ export interface DailyReviewUserConfig {
   };
   contentModules: {
     calendar: boolean;
-    projectActions: boolean;
+    // projectActions: boolean; // Old field for actions.txt
+    nextActions: boolean; // New field for next_actions.md
     weather: boolean;
     healthLog: boolean;
     inspirationalQuote: boolean;
     chineseWordOfTheDay: boolean;
     // Add more as they become available
   };
-} 
+}
+
+// Removed ProjectActionItem as it's related to the old actions.txt logic
+
+export interface DailyReviewData {
+  greeting: string;
+  calendarEventsSummary?: string;
+  // projectActions?: ProjectActionItem[]; // Old field
+  nextActionsList?: TaskItem[]; // New field for tasks from next_actions.md
+  weatherSummary?: string;
+  previousDayHealthLog?: string;
+  inspirationalQuote?: string;
+  chineseWordOfTheDay?: {
+    word?: string;
+    pinyin?: string;
+    translation?: string;
+  };
+  closing: string;
+}
+
+// For services injected by other plugins
+export type GetWeatherForecastType = () => Promise<string>;
+
+// Types for the functions the daily review plugin expects for its dependencies.
+// These might be provided by other plugins (Weather, Calendar) in the future.
+export type GetCalendarEventsType = () => Promise<string>; 
