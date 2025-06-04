@@ -94,6 +94,76 @@ Wooster is a TypeScript project. Your plugin's TypeScript code will be compiled 
 -   Ensure your TypeScript code is free of compilation errors.
 -   The build process (e.g., `pnpm build`) handles the compilation.
 
+## Development Environment and Linting
+
+A correctly configured development environment is crucial for smooth plugin development, especially for catching errors early.
+
+### ESLint Setup (v9+)
+
+Wooster uses ESLint for code linting. As of ESLint v9.0.0, the default configuration file is `eslint.config.js`. Ensure this file exists at the root of the project.
+
+**Example `eslint.config.js` for TypeScript:**
+
+```javascript
+// eslint.config.js
+import eslintJs from "@eslint/js";
+import tseslint from "typescript-eslint";
+
+export default tseslint.config(
+  eslintJs.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    // Optional: custom rules or overrides can go here
+    // For example, to ignore specific files or directories:
+    ignores: ["dist/**", "node_modules/**", "*.log", "coverage/**"], // Added coverage
+  },
+  {
+    // Ensure TS files are linted
+    files: ["**/*.ts", "**/*.tsx"], // Can also include .js, .jsx if needed
+    rules: {
+      // Add any project-specific rule overrides here
+      // e.g., "@typescript-eslint/no-explicit-any": "warn"
+    }
+  }
+);
+```
+
+### Required ESLint Packages
+
+Ensure you have the necessary ESLint packages installed as development dependencies:
+
+```bash
+pnpm install -D eslint typescript-eslint @typescript-eslint/parser @typescript-eslint/eslint-plugin
+```
+
+-   `eslint`: The core ESLint library.
+-   `typescript-eslint`: Provides TypeScript support for ESLint (especially for the `eslint.config.js` format).
+-   `@typescript-eslint/parser`: Allows ESLint to parse TypeScript code.
+-   `@typescript-eslint/eslint-plugin`: Provides TypeScript-specific linting rules.
+
+### Verifying LangChain JS/TS Imports
+
+When using LangChain libraries (e.g., `@langchain/community`, `@langchain/core`):
+-   Always refer to the latest official LangChain JS/TS documentation for correct import paths and class/member names for the specific version you are using.
+-   Incorrect imports are a common source of errors. A properly configured linter (as set up above) should help catch these.
+
+### Managing Peer Dependencies
+
+Some LangChain modules, especially those interacting with external libraries or native bindings, may have peer dependencies.
+-   For example, `@langchain/community/vectorstores/faiss` requires `faiss-node` to be installed.
+-   Ensure these peer dependencies are listed in your `package.json` and correctly installed.
+-   If you encounter issues related to peer dependencies with `pnpm`, running `pnpm install` usually resolves them. In more complex workspace setups or if linking issues are suspected, `pnpm install --shamefully-hoist` might be considered, but use it judiciously as it alters the standard `node_modules` structure.
+
+### Recommended Workflow for Errors
+
+If you encounter import errors, build failures, or unexpected runtime behavior with your plugin:
+1.  **Check Dependencies:** Ensure all project and plugin-specific dependencies (including peer dependencies) are correctly installed (`pnpm install`).
+2.  **Lint Your Code:** Run the linter (e.g., `pnpm eslint .`) to identify syntax errors, incorrect imports, or type issues.
+3.  **Clean and Rebuild:**
+    *   Delete the `dist/` directory.
+    *   Execute a clean build (`pnpm build`).
+4.  **Review Wooster Logs:** Check the application logs for detailed error messages from the `PluginManager` or the plugin itself.
+
 ## Troubleshooting Plugin Loading
 
 If your plugin isn't loading or you see warnings in the console:
@@ -115,5 +185,8 @@ If your plugin isn't loading or you see warnings in the console:
     *   Is the class being correctly exported via `exports.default = ...;` (or the ESM equivalent if your tsconfig targets that)?
 6.  **Configuration:**
     *   Ensure your plugin is enabled in the configuration (usually via environment variables like `PLUGIN_YOURPLUGINNAME_ENABLED=true`, which are mapped in `config/custom-environment-variables.json`). Check `.env.example` for patterns.
+7.  **Dependency and Linter Checks (Recap from above):**
+    *   Are all necessary npm packages, including LangChain modules and any peer dependencies (like `faiss-node` for `FaissStore`), installed correctly?
+    *   Is your ESLint configuration (`eslint.config.js`) set up correctly for TypeScript, and are there any linting errors related to your plugin's imports or code? Run `pnpm eslint .` to check.
 
 By following these guidelines, you can create robust and well-integrated plugins for Wooster. 
