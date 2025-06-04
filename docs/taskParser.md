@@ -40,6 +40,18 @@ This class contains static methods for parsing and serializing tasks.
     *   Uses a series of regular expressions to identify and extract the checkbox status (`- [ ]` or `- [x]`), context, project, due date, captured date, completed date, and any other parenthesized metadata.
     *   The remaining text is considered the core `description`.
     *   If a persistent ID was not found in `rawText`, a new UUID is generated for the task.
+
+    > **IMPORTANT NOTE ON TASK FORMATTING:** The ability of `TaskParser.parse()` to correctly extract these components (context, project, due date, ID, etc.) and populate the `TaskItem` object is **entirely dependent on the specific formatting of the `rawText` line**. This includes using:
+    >    *   `@<context_name>` for contexts (e.g., `@home`, `@work`).
+    >    *   `+<project_name>` for projects (e.g., `+ProjectAlpha`, `+FamilyChores`).
+    >    *   `due:YYYY-MM-DD` for due dates (e.g., `due:2024-07-25`).
+    >    *   `(id:uuid-string-here)` for persistent task identifiers.
+    >    *   `(Captured: ...)` for capture timestamps.
+    >    *   `(Completed: ...)` for completion timestamps.
+    >    *   Other general metadata enclosed in parentheses `(...)`.
+    >
+    > Deviations from this expected format may lead to incorrect parsing, with information being missed or wrongly assigned to the `description` field rather than their specific metadata fields in the `TaskItem`.
+
 *   **Output**: A `TaskItem` object populated with the extracted data (including the persistent ID), or `null` if the line does not conform to the expected task format.
 
 #### `public static serialize(task: TaskItem): string`
