@@ -1,6 +1,6 @@
 import { WoosterPlugin, CoreServices, AppConfig } from '../../types/plugin';
-import { DynamicTool } from '@langchain/core/tools';
-import { log, LogLevel } from '../../logger';
+import { DynamicTool } from 'langchain/tools';
+import { LogLevel } from '../../logger';
 import { PersonalHealthService, HealthSummaryOptions, GetHealthLogLinesOptions, HealthReportOptions } from './types';
 import { appendHealthEvent, getHealthLogLines, setPaths, writeHealthReport } from './fileManager';
 import { ScheduledTaskSetupOptions } from '../../types/scheduler';
@@ -13,31 +13,44 @@ const HUMAN_READABLE_REPORT_FILENAME = 'health.md';
 const DEFAULT_HEALTH_DIR = './health/'; // Default directory for health files
 
 class PersonalHealthPluginDefinition implements WoosterPlugin, PersonalHealthService {
-  readonly name = "personalHealth";
-  readonly version = '2.1.0'; // Version increment for configurable health directory
-  readonly description = 'Manages personal health data by logging events to a configurable health directory.';
+  static readonly pluginName = "personalHealth";
+  static readonly version = '2.1.0';
+  static readonly description = 'Manages personal health data by logging events to a configurable health directory.';
+
+  readonly name = PersonalHealthPluginDefinition.pluginName;
+  readonly version = PersonalHealthPluginDefinition.version;
+  readonly description = PersonalHealthPluginDefinition.description;
   
   private coreServices!: CoreServices;
   private appConfig!: AppConfig;
   private workspaceRoot!: string;
   private healthDir!: string;
 
+  private logMsg(level: LogLevel, message: string, metadata?: object) {
+    if (this.coreServices && this.coreServices.log) {
+      this.coreServices.log(level, `[${PersonalHealthPluginDefinition.pluginName} Plugin v${PersonalHealthPluginDefinition.version}] ${message}`, metadata);
+    } else {
+      // Fallback if coreServices or log is not yet available (e.g. very early init)
+      console.log(`[${level}][${PersonalHealthPluginDefinition.pluginName} Plugin v${PersonalHealthPluginDefinition.version}] ${message}`, metadata || '');
+    }
+  }
+
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
     this.coreServices = services;
     this.appConfig = config;
     this.workspaceRoot = process.cwd();
-    log(LogLevel.INFO, `[${this.name}] Initializing (v${this.version})...`);
+    this.logMsg(LogLevel.INFO, `Initializing...`);
 
     this.healthDir = config.personalHealth?.healthDir ?? DEFAULT_HEALTH_DIR;
-    log(LogLevel.INFO, `[${this.name}] Using health directory: ${this.healthDir}`);
+    this.logMsg(LogLevel.INFO, `Using health directory: ${this.healthDir}`);
 
     setPaths(this.workspaceRoot, this.healthDir); // Pass both workspace and specific health dir
-    log(LogLevel.INFO, `[${this.name}] Paths for health log file manager configured.`);
+    this.logMsg(LogLevel.INFO, `Paths for health log file manager configured.`);
 
     this.ensureDirExists(this.getFullPath(this.healthDir));
 
     this.coreServices.registerService('PersonalHealthService', this);
-    log(LogLevel.INFO, `[${this.name}] Service 'PersonalHealthService' registered.`);
+    this.logMsg(LogLevel.INFO, `Service 'PersonalHealthService' registered.`);
   }
 
   private getFullPath(relativePath: string): string {
@@ -52,38 +65,38 @@ class PersonalHealthPluginDefinition implements WoosterPlugin, PersonalHealthSer
     // However, ensureDirExists is called with getFullPath(this.healthDir), which is already absolute.
     if (!fs.existsSync(dirPath)) {
       fs.mkdirSync(dirPath, { recursive: true });
-      log(LogLevel.INFO, `[${this.name}] Created directory ${dirPath}`);
+      this.logMsg(LogLevel.INFO, `Created directory ${dirPath}`);
     }
   }
 
   async logHealthEvent(text: string): Promise<void> {
     if (!text || text.trim() === '') {
-      log(LogLevel.WARN, `[${this.name}] logHealthEvent called with empty text.`);
+      this.logMsg(LogLevel.WARN, `logHealthEvent called with empty text.`);
       return Promise.resolve();
     }
 
     try {
       await appendHealthEvent(text);
-      log(LogLevel.INFO, `[${this.name}] Health event logged: ${text}`);
+      this.logMsg(LogLevel.INFO, `Health event logged: ${text}`);
     } catch (error: any) {
-      log(LogLevel.ERROR, `[${this.name}] Error logging health event: ${text}`, { error: error.message });
+      this.logMsg(LogLevel.ERROR, `Error logging health event: ${text}`, { error: error.message });
       throw error;
     }
   }
 
   async getHealthEvents(options?: GetHealthLogLinesOptions): Promise<string[]> {
-    log(LogLevel.DEBUG, `[${this.name}] getHealthEvents called`, { options });
+    this.logMsg(LogLevel.DEBUG, `getHealthEvents called`, { options });
     try {
       const effectiveOptions = { sort: 'desc' as 'desc' | 'asc', ...options }; 
       return await getHealthLogLines(effectiveOptions);
     } catch (error: any) {
-      log(LogLevel.ERROR, `[${this.name}] Error in getHealthEvents`, { error: error.message });
+      this.logMsg(LogLevel.ERROR, `Error in getHealthEvents`, { error: error.message });
       return [];
     }
   }
 
   async getLatestHealthSummaryForReview(options?: HealthSummaryOptions): Promise<string | null> {
-    log(LogLevel.DEBUG, `[${this.name}] getLatestHealthSummaryForReview called`, { options });
+    this.logMsg(LogLevel.DEBUG, `getLatestHealthSummaryForReview called`, { options });
     const linesToFetch = options?.numberOfLines || DEFAULT_SUMMARY_LINES;
     const filterText = options?.containsText;
     const sortOrder = options?.sort || 'desc'; 
@@ -103,13 +116,13 @@ class PersonalHealthPluginDefinition implements WoosterPlugin, PersonalHealthSer
       }
       return relevantLines.join('\n'); 
     } catch (error: any) {
-      log(LogLevel.ERROR, `[${this.name}] Error in getLatestHealthSummaryForReview`, { error: error.message });
+      this.logMsg(LogLevel.ERROR, `Error in getLatestHealthSummaryForReview`, { error: error.message });
       return "Error retrieving health summary.";
     }
   }
 
   async generateHealthReport(options?: HealthReportOptions): Promise<string> {
-    log(LogLevel.INFO, `[${this.name}] Generating health report...`, { options });
+    this.logMsg(LogLevel.INFO, `Generating health report...`, { options });
     try {
       const allEvents = await getHealthLogLines({ sort: 'asc' });
 
@@ -118,7 +131,7 @@ class PersonalHealthPluginDefinition implements WoosterPlugin, PersonalHealthSer
       if (allEvents.length === 0) {
         // Use template literal for multi-line string
         await writeHealthReport(`# Personal Health Log\n\nNo health events recorded yet.`, reportFilePath);
-        log(LogLevel.INFO, `[${this.name}] No health events to report. Empty report generated at ${reportFilePath}`);
+        this.logMsg(LogLevel.INFO, `No health events to report. Empty report generated at ${reportFilePath}`);
         return `Health report generated. No events. Report at: ${reportFilePath}`;
       }
 
@@ -146,11 +159,11 @@ class PersonalHealthPluginDefinition implements WoosterPlugin, PersonalHealthSer
       
       // const reportPath = `${this.appConfig.fileSystem.basePath}/${HUMAN_READABLE_REPORT_FILENAME}`; // Old way
       await writeHealthReport(reportContent.trim(), reportFilePath); // trim potential trailing newline from content
-      log(LogLevel.INFO, `[${this.name}] Health report successfully generated at ${reportFilePath}`);
+      this.logMsg(LogLevel.INFO, `Health report successfully generated at ${reportFilePath}`);
       return `Health report generated successfully. Report at: ${reportFilePath}`;
 
     } catch (error: any) {
-      log(LogLevel.ERROR, `[${this.name}] Error generating health report`, { error: error.message });
+      this.logMsg(LogLevel.ERROR, `Error generating health report`, { error: error.message });
       throw new Error(`Failed to generate health report: ${error.message}`);
     }
   }
@@ -164,6 +177,8 @@ class PersonalHealthPluginDefinition implements WoosterPlugin, PersonalHealthSer
           await this.logHealthEvent(input);
           return `Health event "${input}" logged successfully.`;
         } catch (error: any) {
+          // Log using the class method for consistency, though it might be redundant if logHealthEvent already logged
+          this.logMsg(LogLevel.ERROR, `Error in logHealthEvent tool execution for input: ${input}`, { error: error.message });
           return `Error logging health event: ${error.message || 'Unknown error'}`;
         }
       },
@@ -177,6 +192,7 @@ class PersonalHealthPluginDefinition implements WoosterPlugin, PersonalHealthSer
           // We can pass options here in the future if needed based on user input
           return await this.generateHealthReport();
         } catch (error: any) {
+          this.logMsg(LogLevel.ERROR, "Error in generateHealthReport tool execution", { error: error.message });
           return `Error generating health report: ${error.message || 'Unknown error'}`;
         }
       },
@@ -191,15 +207,15 @@ class PersonalHealthPluginDefinition implements WoosterPlugin, PersonalHealthSer
     let configSource = "Plugin Default (Enabled)";
 
     if (envVarToggle && envVarToggle.toLowerCase() === 'false') {
-      log(LogLevel.INFO, `[${this.name}] Scheduled daily report generation is DISABLED via PLUGIN_PERSONALHEALTH_DAILY_MARKDOWN_ENABLED environment variable.`);
+      this.logMsg(LogLevel.INFO, `Scheduled daily report generation is DISABLED via PLUGIN_PERSONALHEALTH_DAILY_MARKDOWN_ENABLED environment variable.`);
       // We still return the definition so it can be listed in the manifest as "Defined but Disabled"
       isEnabled = false;
       configSource = "Env: PLUGIN_PERSONALHEALTH_DAILY_MARKDOWN_ENABLED=false";
     } else if (envVarToggle && envVarToggle.toLowerCase() === 'true') {
-      log(LogLevel.INFO, `[${this.name}] Scheduled daily report generation is ENABLED via PLUGIN_PERSONALHEALTH_DAILY_MARKDOWN_ENABLED environment variable.`);
+      this.logMsg(LogLevel.INFO, `Scheduled daily report generation is ENABLED via PLUGIN_PERSONALHEALTH_DAILY_MARKDOWN_ENABLED environment variable.`);
       configSource = "Env: PLUGIN_PERSONALHEALTH_DAILY_MARKDOWN_ENABLED=true";
     } else {
-      log(LogLevel.INFO, `[${this.name}] Scheduled daily report generation is ENABLED (PLUGIN_PERSONALHEALTH_DAILY_MARKDOWN_ENABLED is not set, defaults to enabled).`);
+      this.logMsg(LogLevel.INFO, `Scheduled daily report generation is ENABLED (PLUGIN_PERSONALHEALTH_DAILY_MARKDOWN_ENABLED is not set, defaults to enabled).`);
       // Default state, configSource remains "Plugin Default (Enabled)"
     }
 
@@ -218,7 +234,7 @@ class PersonalHealthPluginDefinition implements WoosterPlugin, PersonalHealthSer
       }
     }
 
-    log(LogLevel.INFO, `[${this.name}] Setting up scheduled task for health report. Effective Cron: ${effectiveSchedule}, Enabled: ${isEnabled}, Source: ${configSource}`);
+    this.logMsg(LogLevel.INFO, `Setting up scheduled task for health report. Effective Cron: ${effectiveSchedule}, Enabled: ${isEnabled}, Source: ${configSource}`);
 
     return {
       taskKey: "personalHealth.generateDailyReport",
@@ -231,7 +247,7 @@ class PersonalHealthPluginDefinition implements WoosterPlugin, PersonalHealthSer
         try {
           await this.generateHealthReport(); // Call original function, ignore string result
         } catch (error: any) {
-          log(LogLevel.ERROR, `[${this.name}] Error during scheduled health report generation.`, { error: error.message });
+          this.logMsg(LogLevel.ERROR, `Error during scheduled health report generation.`, { error: error.message });
           // Optionally, rethrow or handle as per scheduler error policies
         }
       },
@@ -241,4 +257,4 @@ class PersonalHealthPluginDefinition implements WoosterPlugin, PersonalHealthSer
   }
 }
 
-export default new PersonalHealthPluginDefinition(); 
+export default PersonalHealthPluginDefinition; 
