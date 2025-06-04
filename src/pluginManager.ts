@@ -16,9 +16,9 @@ const registeredServices: Map<string, any> = new Map()
 
 // Implementation of CoreServices
 const coreServicesInstance: CoreServices = {
-  config: getConfig(), // Provide access to the current global config
+  getConfig: getConfig, // Provide access to the current global config
   log: (level: LogLevel, message: string, metadata?: object) => log(level, message, metadata),
-  createService: (name: string, service: any): void => { // Renamed from registerService for clarity
+  registerService: (name: string, service: any): void => {
     if (registeredServices.has(name)) {
       log(LogLevel.WARN, `PluginManager: Service with name "${name}" is already registered. Overwriting.`)
     }

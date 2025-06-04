@@ -208,9 +208,9 @@ export class ProjectManagerPlugin implements WoosterPlugin {
 
     const listFilesInActiveProjectTool = new DynamicTool({
       name: 'listFilesInActiveProject',
-      description: 'Lists files and directories in the currently active project. Ignores common system files (like .DS_Store) and the project\'s vector store directory (\'vectorStore\', \'faiss.index\', \'docstore.json\').',
-      func: async () => {
-        this.logMsg(LogLevel.INFO, `listFilesInActiveProject tool called.`);
+      description: 'Lists files and directories in the currently active project. Ignores common system files (like .DS_Store) and the project\'s vector store directory (\'vectorStore\', \'faiss.index\', \'docstore.json\'). This tool takes no functional parameters; any \'input\' provided by the agent (e.g., { input: {} } or { input: \'\' }) will be ignored.',
+      func: async (args?: string | object) => {
+        this.logMsg(LogLevel.INFO, `listFilesInActiveProject tool called. Received args (ignored):`, { args });
         if (!this.services || typeof this.services.getActiveProjectPath !== 'function') {
           const errorMsg = 'Error: Core services for getting active project path are not available.';
           this.logMsg(LogLevel.ERROR, errorMsg);
