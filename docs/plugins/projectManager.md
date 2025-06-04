@@ -1,8 +1,10 @@
 # Wooster Plugin: Project Manager (`projectManager`)
 
+**Version: 0.1.4**
+
 ## 1. Purpose
 
-The `ProjectManagerPlugin` provides tools for managing projects within Wooster. Its key capabilities include creating new projects and opening existing ones, automatically setting them as the active project within Wooster's core system.
+The `ProjectManagerPlugin` provides tools for managing projects within Wooster. Its key capabilities include creating new projects, opening existing ones (automatically setting them as the active project), renaming projects, and listing files within the active project.
 
 Future enhancements could include listing projects or other project-specific operations.
 
@@ -75,6 +77,49 @@ The plugin relies on the `projects` base directory (typically `projects/` relati
     Agent: I couldn't find a project named "nonExistent".
     ```
 
+### 3.3. `renameProject`
+
+*   **Name:** `renameProject`
+*   **Description:** Renames an existing project. Input must be a JSON string with 'currentName' (the project to rename) and 'newName' (the desired new name). Example: `{"currentName": "old-project-name", "newName": "new-project-name"}`
+*   **Input:** `jsonInput: string` - A JSON string containing `currentName` and `newName`.
+*   **Functionality:**
+    *   Parses the JSON input to get `currentName` and `newName`.
+    *   Performs validation on the names.
+    *   Calls the `performRenameProject` utility which handles the actual directory renaming and updates to the project's main markdown file if necessary.
+    *   If the renamed project was the active project, it attempts to update the active project context in Wooster's core.
+*   **Output:** A message indicating success or failure, e.g., `"Project 'old-name' renamed to 'new-name' successfully."` or an error message.
+*   **Example Agent Interaction:**
+    ```
+    User: rename project "old docs" to "current documentation"
+    Agent: (Calls `renameProject` tool with '{"currentName": "old docs", "newName": "current documentation"}')
+    Tool Response: Project 'old docs' renamed to 'current documentation' successfully.
+    Agent: Okay, I've renamed the project "old docs" to "current documentation".
+    ```
+
+### 3.4. `listFilesInActiveProject`
+
+*   **Name:** `listFilesInActiveProject`
+*   **Description:** Lists files and directories in the currently active project. Ignores common system files (like `.DS_Store`) and the project's vector store directory (`vectorStore`, `faiss.index`, `docstore.json`).
+*   **Input:** This tool takes no direct input from the agent.
+*   **Functionality:**
+    *   Retrieves the path of the currently active project using `CoreServices.getActiveProjectPath()`.
+    *   If no project is active, it returns a message indicating so.
+    *   If a project is active, it reads the contents of the project directory.
+    *   Filters out predefined ignored items (e.g., `.DS_Store`, `vectorStore`, `faiss.index`, `docstore.json`).
+    *   Returns a list of the remaining file and directory names.
+*   **Output:**
+    *   If successful and files are found: `"Files in active project '[ProjectName]':\nfile1.md\ndirectoryA\nnotes.txt"`
+    *   If the project directory is empty or only contains ignored files: `"The active project directory '[ProjectName]' is empty or contains only ignored files."`
+    *   If no project is active: `"No project is currently active. Please open or create a project first."`
+    *   On error (e.g., project path doesn't exist): An error message detailing the issue.
+*   **Example Agent Interaction:**
+    ```
+    User: list the files in my current project
+    Agent: (Calls `listFilesInActiveProject` tool)
+    Tool Response: Files in active project 'MyNotes':\nmain_notes.md\nideas.txt\nresearch_links.md
+    Agent: Okay, here are the files in your active project "MyNotes":\n- main_notes.md\n- ideas.txt\n- research_links.md
+    ```
+
 ## 4. Dependencies
 
 *   `createNewProject` utility from `src/plugins/projectManager/createNewProject.ts` for project creation logic.
@@ -83,8 +128,10 @@ The plugin relies on the `projects` base directory (typically `projects/` relati
 *   Application Configuration (`AppConfig`) to determine project paths.
 *   Logger (`src/logger.ts`).
 *   `fs` module for file system interactions.
+*   `performRenameProject` utility from `src/plugins/projectManager/renameProject.ts`.
+*   Relies on the `CoreServices.getActiveProjectPath` method being available from Wooster's core.
 
 ## 5. Future Enhancements
 
-*   Tool to list existing projects.
+*   Tool to list existing projects (distinct from files in active project).
 *   Tools for archiving or deleting projects.

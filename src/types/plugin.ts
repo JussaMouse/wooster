@@ -32,6 +32,7 @@ export interface CoreServices {
   getService: (serviceName: string) => any | undefined;
   /** Allows a plugin or the core to set the active project context. */
   setActiveProject: (projectName: string) => Promise<void>;
+  getActiveProjectPath: () => string | null;
 
   // Specific, commonly used services can be explicitly typed for convenience
   emailService?: EmailService; // This will be populated by pluginManager if an email service is registered

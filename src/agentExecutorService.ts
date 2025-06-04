@@ -28,8 +28,8 @@ let appConfig: AppConfig;
 let agentLlm: ChatOpenAI;
 
 // New module-level variables for active project management
-let currentActiveProjectName: string = 'home'; // Default
-let currentActiveProjectPath: string = ''; 
+let currentActiveProjectName: string | null = null;
+let currentActiveProjectPath: string | null = null;
 let embeddingsInstance: OpenAIEmbeddings | null = null;
 let projectStoreAppConfig: AppConfig | null = null; // To be used by initializeProjectVectorStore
 const projectBasePath = path.join(process.cwd(), 'projects');
@@ -119,7 +119,7 @@ async function initializeTools() {
     if (!allToolsMap.has(tool.name)) {
       allToolsMap.set(tool.name, tool);
     } else {
-      log(LogLevel.WARN, `Plugin tool \"${tool.name}\" conflicts with a core tool name. Core tool \"${allToolsMap.get(tool.name)?.description.substring(0,50)}...\" will be used.`)
+      log(LogLevel.WARN, `Plugin tool \"${tool.name}\" conflicts with a core tool name. Core tool \"${allToolsMap.get(tool.name)?.description.substring(0,50)}...\" will be used.`);
     }
   });
 
@@ -233,53 +233,59 @@ export async function initializeAgentExecutorService(
   initialProjectStore: FaissStore,
   initialEmbeddings: OpenAIEmbeddings,
   configForProjectStore: AppConfig
-): Promise<void> {
+): Promise<void> { // This function's primary purpose is to set module-level state.
   currentActiveProjectName = initialProjectName;
   currentActiveProjectPath = initialProjectPath;
   projectVectorStoreInstance = initialProjectStore;
-  embeddingsInstance = initialEmbeddings; // Store the embeddings instance
-  projectStoreAppConfig = configForProjectStore; // Store the appConfig for project store use
-
-  // appConfig for agent tools and LLM is still loaded via getConfig() in initializeTools if needed
-  // Or, if configForProjectStore is the same appConfig, we can assign it to the module 'appConfig' here too.
-  // For now, let's assume initializeTools will fetch its own appConfig as it does currently.
+  embeddingsInstance = initialEmbeddings; 
+  projectStoreAppConfig = configForProjectStore; 
 
   log(LogLevel.INFO, `AgentExecutorService: Initialized with project "${initialProjectName}". Vector Store ready.`);
+  // This service exposes its functions (like executeAgent, setActiveProject, getActiveProjectPath)
+  // as direct module exports, which pluginManager.ts then collects into the CoreServices object.
+  // So, no explicit return of these functions is needed here.
 }
 
 export async function setActiveProject(newProjectName: string): Promise<void> {
-  if (!embeddingsInstance || !projectStoreAppConfig) {
-    log(LogLevel.ERROR, "AgentExecutorService.setActiveProject: Embeddings or AppConfig for project store not initialized.");
-    // This might happen if initializeAgentExecutorService was not called correctly.
-    // Or if this is called before Wooster main startup has set these.
-    // Consider throwing an error or specific handling if this state is critical.
+  if (currentActiveProjectName === newProjectName) {
+    log(LogLevel.INFO, `Project "${newProjectName}" is already active.`);
     return;
   }
 
-  const newProjectPath = path.join(projectBasePath, newProjectName);
-
-  if (!fs.existsSync(newProjectPath) || !fs.statSync(newProjectPath).isDirectory()) {
-    log(LogLevel.ERROR, `AgentExecutorService.setActiveProject: Project directory not found at ${newProjectPath}`);
-    // Maybe throw an error to signal failure to the caller
-    throw new Error(`Project '${newProjectName}' not found at ${newProjectPath}.`);
+  log(LogLevel.INFO, `Attempting to set active project to: "${newProjectName}"`);
+  const projectDir = path.join(projectBasePath, newProjectName);
+  if (!fs.existsSync(projectDir) || !fs.statSync(projectDir).isDirectory()) {
+    log(LogLevel.ERROR, `Project directory ${projectDir} not found for project "${newProjectName}".`);
+    // Decide if we should throw an error or just log and not switch
+    // For now, just log and don't switch, keep the current active project.
+    // Or, should we switch to a "no project" state or a default "home" state?
+    // For now, we prevent switching to a non-existent project.
+    throw new Error(`Project '${newProjectName}' not found. Cannot set as active.`);
   }
 
-  log(LogLevel.INFO, `AgentExecutorService: Attempting to set active project to "${newProjectName}"`);
   try {
-    projectVectorStoreInstance = await initializeProjectVectorStore(
-      newProjectName,
-      newProjectPath,
-      embeddingsInstance,
-      projectStoreAppConfig
-    );
+    // Ensure projectStoreAppConfig and embeddingsInstance are available (should be from initializeAgentExecutorService)
+    if (!projectStoreAppConfig || !embeddingsInstance) {
+        log(LogLevel.ERROR, "Project store config or embeddings not available for setActiveProject.");
+        throw new Error("Cannot switch project: Core components for vector store not initialized.");
+    }
+    const vectorStore = await initializeProjectVectorStore(newProjectName, projectDir, embeddingsInstance, projectStoreAppConfig);
+    projectVectorStoreInstance = vectorStore;
     currentActiveProjectName = newProjectName;
-    currentActiveProjectPath = newProjectPath;
-    agentExecutorInstance = null; // Force re-creation of agent with new project context in prompt
-    log(LogLevel.INFO, `AgentExecutorService: Active project successfully set to "${newProjectName}". Vector store updated.`);
-  } catch (error) {
-    log(LogLevel.ERROR, `AgentExecutorService: Failed to set active project to "${newProjectName}".`, { error });
-    // Re-throw or handle as appropriate. The project was not changed.
-    throw error; 
+    currentActiveProjectPath = projectDir; // Update the path
+    log(LogLevel.INFO, `Successfully set active project to "${newProjectName}". Vector store loaded.`);
+
+    // Re-initialize or update agent/tools if necessary, especially if project context affects tool behavior
+    // For now, let's assume the agent's system prompt (which includes active project name) will be updated on next getAgentExecutor call.
+    // And tools that depend on active project will use the getters.
+    agentExecutorInstance = null; // Force re-creation of agent executor with new project context in prompt.
+    await getAgentExecutor(); // Re-initialize agent executor
+    log(LogLevel.INFO, `Agent executor re-initialized for project "${newProjectName}".`);
+
+  } catch (error: any) {
+    log(LogLevel.ERROR, `Failed to set active project to "${newProjectName}". Error: ${error.message}`, { stack: error.stack });
+    // Optionally, re-throw the error if the switch is critical or handle gracefully
+    throw error; // Re-throw to make the caller aware of the failure
   }
 }
 
@@ -287,59 +293,38 @@ export async function executeAgent(
   userInput: string,
   chatHistory: BaseMessage[],
 ): Promise<string> {
-  log(LogLevel.INFO, "AgentExecutorService: Executing agent", { userInput, chatHistoryLength: chatHistory.length });
-  
-  const executor = await getAgentExecutor(); // This will now build with currentActiveProjectName in prompt
-  const currentDateTime = new Date().toLocaleString();
+  if (!agentExecutorInstance) {
+    log(LogLevel.INFO, "Agent executor not initialized. Initializing now.");
+    agentExecutorInstance = await getAgentExecutor();
+  }
+
+  const currentDateTime = new Date().toISOString();
+  const formattedDateTime = parseDateString(currentDateTime) || currentDateTime;
 
   try {
-    const processedChatHistory = chatHistory.map(msg => {
-      if (msg._getType() === 'human' && typeof msg.content === 'string') {
-        return new HumanMessage({ content: [{ type: "text", text: msg.content }], name: msg.name, id: msg.id });
-      }
-      if (msg._getType() === 'ai' && typeof msg.content === 'string') {
-        const aiMsg = msg as AIMessage;
-        return new AIMessage({ 
-          content: [{ type: "text", text: aiMsg.content }], 
-          name: aiMsg.name, 
-          id: aiMsg.id,
-          tool_calls: aiMsg.tool_calls, 
-          invalid_tool_calls: aiMsg.invalid_tool_calls,
-          additional_kwargs: aiMsg.additional_kwargs,
-          response_metadata: aiMsg.response_metadata,
-        });
-      }
-      if (msg._getType() === 'tool' && typeof msg.content === 'string') {
-        const toolMsg = msg as ToolMessage;
-        return new ToolMessage({ 
-            content: [{ type: "text", text: toolMsg.content }], 
-            tool_call_id: toolMsg.tool_call_id,
-            name: toolMsg.name, 
-            id: toolMsg.id,
-            additional_kwargs: toolMsg.additional_kwargs,
-         });
-      }
-      return msg;
-    });
-
-    log(LogLevel.DEBUG, "executeAgent: Processed chat history", { processedChatHistory });
-
-    const result = await executor.invoke({
+    log(LogLevel.INFO, "Executing agent with input and chat history", { userInput, chatHistoryLength: chatHistory.length });
+    const result = await agentExecutorInstance.invoke({
       input: userInput,
-      chat_history: processedChatHistory,
-      current_date_time: currentDateTime,
-      current_project_name: currentActiveProjectName, // Use dynamic project name
+      chat_history: chatHistory,
+      current_date_time: formattedDateTime,
     });
-
-    log(LogLevel.DEBUG, "AgentExecutorService: Raw execution result", { result });
-    if (result && typeof result.output === 'string') {
-      log(LogLevel.INFO, "AgentExecutorService: Agent execution successful", { output: result.output });
-      return result.output;
-    }
-    log(LogLevel.ERROR, "AgentExecutorService: Agent execution did not return a string output", { result });
-    return "I received an unexpected response structure from the agent.";
-  } catch (error) {
-    log(LogLevel.ERROR, "AgentExecutorService: Error during agent execution", { error });
-    return `An error occurred while processing your request: ${error instanceof Error ? error.message : String(error)}`;
+    log(LogLevel.DEBUG, "Agent execution result:", { result });
+    return result.output;
+  } catch (error: any) {
+    log(LogLevel.ERROR, "Error during agent execution:", { error: error.message, stack: error.stack });
+    return `An error occurred: ${error.message}`;
   }
+}
+
+// Getters for CoreServices
+export function getCurrentActiveProjectName(): string | null {
+  return currentActiveProjectName;
+}
+
+export function getCurrentActiveProjectPath(): string | null {
+  return currentActiveProjectPath;
+}
+
+export function getActiveProjectPath(): string | null { // This is the new function
+  return currentActiveProjectPath;
 }

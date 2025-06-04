@@ -5,7 +5,10 @@ import { log, LogLevel } from './logger'
 import { WoosterPlugin, CoreServices, EmailService } from './types/plugin'
 import { ensureScheduleIsManaged } from './scheduler/schedulerService'
 import type { NextActionsService } from './plugins/nextActions/types'
-import { setActiveProject as coreSetActiveProject } from './agentExecutorService'
+import { 
+  setActiveProject as coreSetActiveProject,
+  getActiveProjectPath as coreGetActiveProjectPath
+} from './agentExecutorService'
 
 const loadedPlugins: WoosterPlugin[] = []
 const pluginProvidedAgentTools: any[] = []
@@ -13,21 +16,22 @@ const registeredServices: Map<string, any> = new Map()
 
 // Implementation of CoreServices
 const coreServicesInstance: CoreServices = {
-  getConfig: () => getConfig(), // Provide access to the current global config
-  log: (level: LogLevel, message: string, ...args: any[]) => log(level, message, ...args),
-  registerService: (name: string, service: any): void => {
+  config: getConfig(), // Provide access to the current global config
+  log: (level: LogLevel, message: string, metadata?: object) => log(level, message, metadata),
+  createService: (name: string, service: any): void => { // Renamed from registerService for clarity
     if (registeredServices.has(name)) {
       log(LogLevel.WARN, `PluginManager: Service with name "${name}" is already registered. Overwriting.`)
     }
     registeredServices.set(name, service)
     log(LogLevel.INFO, `PluginManager: Service "${name}" registered.`)
 
-    if (name === 'EmailService') {
-      coreServicesInstance.emailService = service as EmailService
-    }
-    if (name === 'NextActionsService') {
-      coreServicesInstance.NextActionsService = service as NextActionsService
-    }
+    // Example of how specific services could be directly assigned if CoreServices interface had them explicitly
+    // if (name === 'EmailService') {
+    //   (coreServicesInstance as any).emailService = service as EmailService;
+    // }
+    // if (name === 'NextActionsService') {
+    //   (coreServicesInstance as any).NextActionsService = service as NextActionsService;
+    // }
   },
   getService: (name: string): any | undefined => {
     const service = registeredServices.get(name)
@@ -37,7 +41,8 @@ const coreServicesInstance: CoreServices = {
     return service
   },
   setActiveProject: coreSetActiveProject,
-  // emailService and NextActionsService will be populated by registerService
+  getActiveProjectPath: coreGetActiveProjectPath, // Added service accessor
+  // emailService and NextActionsService are examples; actual access is via getService
 }
 
 async function processPlugin(plugin: WoosterPlugin, config: AppConfig, actualEntryPoint: string) {

@@ -39,8 +39,8 @@ function findMatchingProjectName(requestedName: string, actualProjectNames: stri
 
 export class ProjectManagerPlugin implements WoosterPlugin {
   static readonly pluginName = 'projectManager';
-  static readonly version = '0.1.3'; // Incremented version due to new tool
-  static readonly description = 'Manages projects: creation, opening (with fuzzy matching), renaming, and setting active project.';
+  static readonly version = '0.1.4'; // Incremented version due to new tool
+  static readonly description = 'Manages projects: creation, opening (with fuzzy matching), renaming, setting active project, and listing files in the active project.';
 
   readonly name = ProjectManagerPlugin.pluginName;
   readonly version = ProjectManagerPlugin.version;
@@ -205,6 +205,53 @@ export class ProjectManagerPlugin implements WoosterPlugin {
       },
     });
     tools.push(renameProjectTool);
+
+    const listFilesInActiveProjectTool = new DynamicTool({
+      name: 'listFilesInActiveProject',
+      description: 'Lists files and directories in the currently active project. Ignores common system files (like .DS_Store) and the project\'s vector store directory (\'vectorStore\', \'faiss.index\', \'docstore.json\').',
+      func: async () => {
+        this.logMsg(LogLevel.INFO, `listFilesInActiveProject tool called.`);
+        if (!this.services || typeof this.services.getActiveProjectPath !== 'function') {
+          const errorMsg = 'Error: Core services for getting active project path are not available.';
+          this.logMsg(LogLevel.ERROR, errorMsg);
+          return errorMsg;
+        }
+
+        const activeProjectPath = this.services.getActiveProjectPath();
+
+        if (!activeProjectPath) {
+          const infoMsg = 'No project is currently active. Please open or create a project first.';
+          this.logMsg(LogLevel.INFO, infoMsg);
+          return infoMsg;
+        }
+
+        try {
+          // Check if path exists asynchronously
+          await fs.promises.stat(activeProjectPath);
+
+          const files = await fs.promises.readdir(activeProjectPath);
+          const ignoredItems = ['.DS_Store', 'vectorStore', 'faiss.index', 'docstore.json'];
+          const filteredFiles = files.filter(file => !ignoredItems.includes(file));
+
+          if (filteredFiles.length === 0) {
+            return `The active project directory "${path.basename(activeProjectPath)}" is empty or contains only ignored files.`;
+          }
+
+          return `Files in active project "${path.basename(activeProjectPath)}":\n${filteredFiles.join('\n')}`;
+        } catch (error: any) {
+          // Handle specific error for path not existing if stat fails for that reason
+          if (error.code === 'ENOENT') {
+            const errorMsg = `Error: Active project path does not exist: ${activeProjectPath}`;
+            this.logMsg(LogLevel.ERROR, errorMsg);
+            return errorMsg;
+          }
+          const errorMsg = `Error listing files in active project path ${activeProjectPath}: ${error.message}`;
+          this.logMsg(LogLevel.ERROR, errorMsg, { stack: error.stack });
+          return errorMsg;
+        }
+      },
+    });
+    tools.push(listFilesInActiveProjectTool);
 
     return tools;
   }
