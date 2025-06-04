@@ -35,7 +35,7 @@ class TimeManagementPluginDefinition implements WoosterPlugin, TimeManagementSer
   readonly description = TimeManagementPluginDefinition.description;
 
   private coreServices!: CoreServices;
-  private createEventService: CreateCalendarEventService | null = null;
+  private calendarService: ({ createEvent: CreateCalendarEventService }) | null = null;
 
   private logMsg(level: LogLevel, message: string, metadata?: object) {
     if (this.coreServices && this.coreServices.log) {
@@ -49,9 +49,9 @@ class TimeManagementPluginDefinition implements WoosterPlugin, TimeManagementSer
     this.coreServices = services;
     this.logMsg(LogLevel.INFO, `Initializing...`);
 
-    this.createEventService = this.coreServices.getService("CreateCalendarEventService") as CreateCalendarEventService | null;
-    if (!this.createEventService) {
-      this.logMsg(LogLevel.WARN, "CreateCalendarEventService (from GCalPlugin) not found. Scheduling features will be unavailable.");
+    this.calendarService = this.coreServices.getService("CalendarService") as ({ createEvent: CreateCalendarEventService }) | null;
+    if (!this.calendarService) {
+      this.logMsg(LogLevel.WARN, "CalendarService (from GCalPlugin) not found. Scheduling features will be unavailable.");
     }
     
     services.registerService("TimeManagementService", this);
@@ -60,8 +60,8 @@ class TimeManagementPluginDefinition implements WoosterPlugin, TimeManagementSer
 
   async scheduleTimeBlock(blockDetails: TimeBlock): Promise<TimeManagementGCalCreateEventResponse | string | null> {
     this.logMsg(LogLevel.DEBUG, "scheduleTimeBlock called", { blockDetails });
-    if (!this.createEventService) {
-      this.logMsg(LogLevel.ERROR, "CreateCalendarEventService is not available.");
+    if (!this.calendarService || typeof this.calendarService.createEvent !== 'function') {
+      this.logMsg(LogLevel.ERROR, "CalendarService or its createEvent method is not available.");
       return "Error: Calendar creation service is not available.";
     }
 
@@ -124,22 +124,22 @@ class TimeManagementPluginDefinition implements WoosterPlugin, TimeManagementSer
     };
 
     try {
-      this.logMsg(LogLevel.DEBUG, "Calling CreateCalendarEventService with:", { eventOptions });
-      const result = await this.createEventService(eventOptions);
+      this.logMsg(LogLevel.DEBUG, "Calling CalendarService.createEvent with:", { eventOptions });
+      const result = await this.calendarService.createEvent(eventOptions);
 
       if (typeof result === 'string') { 
-        this.logMsg(LogLevel.WARN, "CreateCalendarEventService returned an error string.", { error: result });
+        this.logMsg(LogLevel.WARN, "CalendarService.createEvent returned an error string.", { error: result });
         return result;
       }
       if (result && result.id) { 
         this.logMsg(LogLevel.INFO, `Successfully scheduled time block via GCal. Event ID: ${result.id}`);
         return result; 
       } else {
-        this.logMsg(LogLevel.ERROR, "CreateCalendarEventService returned unexpected result.", { result });
+        this.logMsg(LogLevel.ERROR, "CalendarService.createEvent returned unexpected result.", { result });
         return "Error: Failed to schedule time block, calendar service returned an unexpected result.";
       }
     } catch (error: any) {
-      this.logMsg(LogLevel.ERROR, "Exception calling CreateCalendarEventService.", { error: error.message, stack: error.stack });
+      this.logMsg(LogLevel.ERROR, "Exception calling CalendarService.createEvent.", { error: error.message, stack: error.stack });
       return `Error: An unexpected error occurred while scheduling with calendar service: ${error.message}`;
     }
   }
