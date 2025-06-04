@@ -41,8 +41,8 @@ interface CalendarService {
 
 class SortInboxPluginDefinition implements WoosterPlugin {
   static readonly pluginName = "sortInbox";
-  static readonly version = "1.4.0"; // Version bump for calendar event creation
-  static readonly description = "Processes items from inbox.md with an interactive, detailed workflow, including calendar event creation.";
+  static readonly version = "1.5.0"; // Version bump for addWaitingForItem tool
+  static readonly description = "Processes items from inbox.md with an interactive, detailed workflow, including calendar event creation and adding 'waiting for' items.";
 
   readonly name = SortInboxPluginDefinition.pluginName;
   readonly version = SortInboxPluginDefinition.version;
@@ -600,16 +600,53 @@ Enter code: `;
   getAgentTools?(): DynamicTool[] {
     const sortInboxTool = new DynamicTool({
       name: "sortInboxInteractively",
-      description: "Starts an interactive session to process items in the inbox.md file. Each item will be presented with options to defer, delegate, delete, make it a next action, add to a project, or make it a someday/maybe item.",
+      description: "Starts an interactive session to process items in the inbox.md file. Each item can be converted to a next action, scheduled, delegated, archived, or deleted.",
       func: async () => {
-        this.logMsg(LogLevel.INFO, "sortInboxInteractively tool invoked.");
-        // No try-catch here, as sortInbox method has its own comprehensive try-finally.
-        // The `await` ensures that if sortInbox throws before its try-finally, it propagates.
-        await this.sortInbox(); 
-        return "Interactive inbox sorting session completed.";
+        try {
+          // Ensure mainReplManager is available
+          if (!mainReplManager) {
+            const msg = "Main REPL manager is not available. Cannot run interactive inbox sorting.";
+            this.logMsg(LogLevel.ERROR, msg);
+            return msg;
+          }
+          await this.sortInbox(); // Call the existing sortInbox method
+          return "Interactive inbox sorting session completed.";
+        } catch (error: any) {
+          this.logMsg(LogLevel.ERROR, "Error during interactive inbox sorting tool execution.", { error: error.message, stack: error.stack });
+          return "Error during interactive inbox sorting: " + error.message;
+        }
       },
     });
-    return [sortInboxTool];
+
+    const addWaitingForItemTool = new DynamicTool({
+      name: "addWaitingForItem",
+      description: "Adds an item to the 'Waiting For' list (waiting_for.md). This tool MUST be called with an object containing a single key: 'input'. The value for this 'input' key MUST be a JSON string. This JSON string ITSELF MUST represent an object with a required 'description' key (string: what you are waiting for) and an optional 'waitingFor' key (string: the person/entity you are waiting on). Example agent call: addWaitingForItemTool({ input: '{\"description\": \"feedback on proposal\", \"waitingFor\": \"Alice\"}' })",
+      func: async (jsonInput: string) => {
+        this.logMsg(LogLevel.DEBUG, "addWaitingForItemTool executed", { jsonInput });
+        try {
+          const { description, waitingFor } = JSON.parse(jsonInput);
+          if (!description) {
+            return "Error: description is required for addWaitingForItem.";
+          }
+
+          const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+          let taskString = "- [ ] @Waiting ";
+          if (waitingFor) {
+            taskString += `${waitingFor} re: `;
+          }
+          taskString += `${description} (Logged: ${today})`;
+
+          this.appendToMdFile(this.waitingForFilePath, taskString);
+          this.logMsg(LogLevel.INFO, "Item added to waiting_for.md", { description, waitingFor });
+          return `Added to Waiting For list: "${description}"` + (waitingFor ? ` (waiting for ${waitingFor})` : "");
+        } catch (e: any) {
+          this.logMsg(LogLevel.ERROR, "Error in addWaitingForItemTool", { error: e.message, jsonInput });
+          return `Error adding waiting for item: ${e.message}`;
+        }
+      },
+    });
+
+    return [sortInboxTool, addWaitingForItemTool];
   }
 }
 

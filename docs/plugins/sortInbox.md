@@ -144,3 +144,22 @@ If `./inbox.md` contains no unprocessed items, the plugin prints a message like 
     *   `./logs/inboxArchive/` (if it doesn't exist)
 
 This plugin relies on file system operations like reading files, listing directories, appending to files, creating files, and creating directories. It may leverage core Wooster file system tools or implement these directly. 
+
+## 5. Agent Tools
+
+The `sortInbox` plugin provides the following tools for the agent:
+
+*   **`sortInboxInteractively`**:
+    *   **Description**: Starts an interactive command-line session to process items currently in the `inbox.md` file. Each item will be presented one by one, and the user will be prompted to choose an action (e.g., convert to next action, schedule, delegate, archive, delete, add to waiting for, etc.).
+    *   **Input**: This tool does not take any direct input from the agent, as it initiates an interactive session with the user in the terminal.
+    *   **Output**: A message indicating the session has started and another when it's completed (e.g., "Interactive inbox sorting session completed."). The actual processing and output happen in the user's terminal.
+
+*   **`addWaitingForItem`**:
+    *   **Version**: Introduced in `1.5.0`
+    *   **Description**: Directly adds an item to the 'Waiting For' list (`waiting_for.md`) without needing to go through the full interactive inbox sorting process.
+    *   **Input Structure**: This tool **MUST** be called with an object containing a single key: `'input'`. The value for this `'input'` key **MUST** be a JSON string. This JSON string **ITSELF MUST** represent an object with the following keys:
+        *   `'description'` (string, required): What you are waiting for.
+        *   `'waitingFor'` (string, optional): The person, entity, or event you are waiting on.
+    *   **Example Agent Call**: `agent.callTool('addWaitingForItem', { input: '{"description": "approval on the Q3 budget", "waitingFor": "Finance Department"}' })`
+    *   **Output**: A confirmation message, e.g., "Added to Waiting For list: 'approval on the Q3 budget' (waiting for Finance Department)".
+    *   **File Interaction**: Appends a formatted line to `waiting_for.md`. The typical format is: `- [ ] @Waiting [Person/Entity, if provided] re: [Description] (Logged: YYYY-MM-DD)`. 
