@@ -32,8 +32,14 @@ The `nextActions` plugin provides the following tools for the agent to interact 
 
 *   **`viewNextActions`**:
     *   Views current next actions.
-    *   Supports optional JSON input for filtering (by context, project, due date, status) and sorting (by file order, due date, project, context; ascending or descending).
-    *   Example: `viewNextActions {"filters": {"context": "@work"}, "sortOptions": {"sortBy": "dueDate", "sortOrder": "asc"}}`
+    *   This tool expects to be called with an object, which should contain a single key: `'input'`.
+    *   The value for the `'input'` key must be a JSON string defining filters and/or sortOptions.
+    *   To provide NO filters or sort options, the `'input'` key's value should be an **empty string** (e.g., called as `toolName({ input: '' })`) or the `'input'` key can be omitted entirely from the object passed to the tool.
+    *   The JSON string, if provided and not empty, should represent an object like: `{ filters?: NextActionFilters, sortOptions?: NextActionSortOptions }`.
+    *   Supported filters include `context`, `project`, `dueDate` ('today', 'tomorrow', 'YYYY-MM-DD'), `status` ('all', 'open', 'completed').
+    *   Supported `sortBy` options are 'fileOrder', 'dueDate', 'project', 'context'. `sortOrder` can be 'asc' or 'desc'.
+    *   Example of calling with filters: `toolName({ input: '{"filters": {"context": "@work"}, "sortOptions": {"sortBy": "dueDate"}}' })`
+    *   Example of calling with no options (will list all): `toolName({ input: '' })` or just `toolName({})` if the agent can omit the input key when its value would be empty/undefined.
 
 *   **`addNextAction`**:
     *   Adds a new next action.
