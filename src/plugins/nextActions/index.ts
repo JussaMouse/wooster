@@ -9,8 +9,6 @@ import { TaskParser } from '../../taskParser';
 import { mainReplManager } from '../../index'; // For interactive mode pausing
 import crypto from 'crypto';
 
-let core: CoreServices;
-
 // Default file names, paths will be taken from config
 const DEFAULT_NEXT_ACTIONS_FILENAME = 'next_actions.md';
 const DEFAULT_ARCHIVE_DIR_PATH = './logs/inboxArchive/'; // Consistent with sortInbox
@@ -28,32 +26,45 @@ interface NextActionSortOptions {
 }
 
 class NextActionsPluginDefinition implements WoosterPlugin {
-  readonly name = "nextActions";
-  readonly version = "0.1.0";
-  readonly description = "Manages and processes the Next Actions list.";
+  static readonly pluginName = "nextActions";
+  static readonly version = "0.1.0";
+  static readonly description = "Manages and processes the Next Actions list.";
+
+  readonly name = NextActionsPluginDefinition.pluginName;
+  readonly version = NextActionsPluginDefinition.version;
+  readonly description = NextActionsPluginDefinition.description;
 
   private workspaceRoot = '';
   private nextActionsFilePath!: string;
   private archiveDirPath!: string;
+  private coreServices!: CoreServices; // Renamed and properly typed
+
+  private logMsg(level: LogLevel, message: string, metadata?: object) {
+    if (this.coreServices && this.coreServices.log) {
+      this.coreServices.log(level, `[${NextActionsPluginDefinition.pluginName} Plugin v${NextActionsPluginDefinition.version}] ${message}`, metadata);
+    } else {
+      console.log(`[${level}][${NextActionsPluginDefinition.pluginName} Plugin v${NextActionsPluginDefinition.version}] ${message}`, metadata || '');
+    }
+  }
 
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
-    core = services;
+    this.coreServices = services; // Use instance member
     this.workspaceRoot = process.cwd();
-    core.log(LogLevel.INFO, `NextActionsPlugin (v${this.version}): Initializing...`);
+    this.logMsg(LogLevel.INFO, `Initializing...`);
 
     const gtdConfig = config.gtd;
     this.nextActionsFilePath = gtdConfig?.nextActionsPath ?? path.join(gtdConfig?.basePath || './gtd/', DEFAULT_NEXT_ACTIONS_FILENAME);
     this.archiveDirPath = gtdConfig?.archiveDir ?? DEFAULT_ARCHIVE_DIR_PATH;
 
-    core.log(LogLevel.INFO, `NextActionsPlugin: Using Next Actions file: ${this.nextActionsFilePath}`);
-    core.log(LogLevel.INFO, `NextActionsPlugin: Using Archive directory: ${this.archiveDirPath}`);
+    this.logMsg(LogLevel.INFO, `Using Next Actions file: ${this.nextActionsFilePath}`);
+    this.logMsg(LogLevel.INFO, `Using Archive directory: ${this.archiveDirPath}`);
 
     this.ensureDirExists(this.getFullPath(path.dirname(this.nextActionsFilePath)));
     this.ensureDirExists(this.getFullPath(this.archiveDirPath));
   }
 
   async shutdown(): Promise<void> {
-    core.log(LogLevel.INFO, `NextActionsPlugin (v${this.version}): Shutdown.`);
+    this.logMsg(LogLevel.INFO, `Shutdown.`);
   }
 
   private getFullPath(relativePath: string): string {
@@ -67,14 +78,14 @@ class NextActionsPluginDefinition implements WoosterPlugin {
     const fullPath = this.getFullPath(dirPath);
     if (!fs.existsSync(fullPath)) {
       fs.mkdirSync(fullPath, { recursive: true });
-      core.log(LogLevel.INFO, `NextActionsPlugin: Created directory ${fullPath}`);
+      this.logMsg(LogLevel.INFO, `Created directory ${fullPath}`);
     }
   }
 
   private async readNextActionsFromFile(): Promise<TaskItem[]> {
     const fullPath = this.getFullPath(this.nextActionsFilePath);
     if (!fs.existsSync(fullPath)) {
-      core.log(LogLevel.INFO, `NextActionsPlugin: Next Actions file not found at ${fullPath}. Returning empty list.`);
+      this.logMsg(LogLevel.INFO, `Next Actions file not found at ${fullPath}. Returning empty list.`);
       return [];
     }
     const fileContent = fs.readFileSync(fullPath, 'utf-8');
@@ -280,8 +291,10 @@ class NextActionsPluginDefinition implements WoosterPlugin {
       // Remove from active list
       tasks.splice(taskIndex, 1);
       await this.writeNextActionsToFile(tasks);
+      this.logMsg(LogLevel.INFO, "Task completed and archived", { taskId: taskToComplete.id });
       return taskToComplete;
     }
+    this.logMsg(LogLevel.WARN, "Task not found or already completed for completion.", { identifier });
         return null;
     }
 
@@ -290,7 +303,7 @@ class NextActionsPluginDefinition implements WoosterPlugin {
     const taskIndex = tasks.findIndex(t => t.id === identifier);
 
     if (taskIndex === -1) {
-      core.log(LogLevel.WARN, `NextActionsPlugin: editTask - Task with ID "${identifier}" not found.`);
+      this.logMsg(LogLevel.WARN, `editTask - Task with ID "${identifier}" not found.`);
       return null;
     }
 
@@ -340,7 +353,7 @@ class NextActionsPluginDefinition implements WoosterPlugin {
 
     tasks[taskIndex] = finalUpdatedTask;
     await this.writeNextActionsToFile(tasks);
-    core.log(LogLevel.INFO, `NextActionsPlugin: Task "${finalUpdatedTask.id}" updated.`);
+    this.logMsg(LogLevel.INFO, `Task "${finalUpdatedTask.id}" updated.`);
     return finalUpdatedTask;
   }
 
@@ -362,45 +375,29 @@ Archived: ${new Date().toISOString()}
 ${archivedTaskString}
 `;
     fs.writeFileSync(archiveFilePath, archiveContent, 'utf-8');
-    core.log(LogLevel.INFO, `NextActionsPlugin: Task '${task.description}' archived to ${archiveFilePath}`);
+    this.logMsg(LogLevel.INFO, `Task '${task.description}' archived to ${archiveFilePath}`);
   }
 
   // --- Agent Tools ---
   getAgentTools?(): DynamicTool[] {
     const viewNextActionsTool = new DynamicTool({
-        name: "viewNextActions",
-        description: "Displays the current list of tasks from your 'next_actions.md' file. Use this to see your upcoming tasks. This is different from sorting the inbox. Supports filtering and sorting via optional JSON input.",
-        func: async (jsonInput?: string) => {
+      name: "viewNextActions",
+      description: "Views current next actions. Optional JSON input: { filters?: NextActionFilters, sortOptions?: NextActionSortOptions } " +
+                   "Filters include context, project, dueDate (\'today\', \'tomorrow\', \'YYYY-MM-DD\'), status (\'all\', \'open\', \'completed\'). " +
+                   "SortBy can be \'fileOrder\', \'dueDate\', \'project\', \'context\'. sortOrder can be \'asc\' or \'desc\'.",
+      func: async (jsonInput?: string) => {
+        this.logMsg(LogLevel.DEBUG, "viewNextActionsTool executed", { jsonInput });
+        try {
             let filters: NextActionFilters | undefined;
             let sortOptions: NextActionSortOptions | undefined;
-
             if (jsonInput) {
-                try {
-                    const parsedInput = JSON.parse(jsonInput);
-                    // Basic validation: ensure parsedInput is an object before trying to destructure
-                    if (typeof parsedInput === 'object' && parsedInput !== null) {
-                        filters = parsedInput.filters; // Assuming filters and sortOptions are top-level keys
-                        sortOptions = parsedInput.sortOptions;
-                    } else {
-                        core.log(LogLevel.WARN, "viewNextActionsTool: Invalid non-object JSON input provided.");
-                        // Potentially return an error message or proceed with defaults
-                    }
-                } catch (e) {
-                    core.log(LogLevel.WARN, `viewNextActionsTool: Invalid JSON input for parsing: ${jsonInput}`, { parseError: String(e) });
-                    return "Invalid JSON input for filtering/sorting next actions. Please provide valid JSON or no input for default view.";
-                }
+                const input = JSON.parse(jsonInput);
+                filters = input.filters;
+                sortOptions = input.sortOptions;
             }
-
             const tasks = await this.getTasks(filters, sortOptions);
-
-            if (tasks.length === 0) {
-                if (filters && Object.keys(filters).length > 0) {
-                    return "No next actions match your criteria.";
-                }
-                return "You have no pending next actions.";
-            }
-
-            let responseLines = ["Here are your next actions:"];
+            if (tasks.length === 0) return "No next actions found matching criteria.";
+            const responseLines: string[] = ["Current Next Actions:"];
             tasks.forEach((task, index) => {
                 const taskString = TaskParser.serialize(task);
                 // Remove the ID part for display for a cleaner look
@@ -408,46 +405,90 @@ ${archivedTaskString}
                 responseLines.push(`${index + 1}. ${displayString}`);
             });
             return responseLines.join('\n');
-        },
+        } catch (e: any) {
+            this.logMsg(LogLevel.ERROR, "Error in viewNextActionsTool", { error: e.message, jsonInput });
+            return `Error processing request: ${e.message}`;
+        }
+      },
     });
 
     const addNextActionTool = new DynamicTool({
         name: "addNextAction",
         description: "Adds a new next action. Input JSON: { description: string, context?: string, project?: string, dueDate?: string (YYYY-MM-DD) }",
         func: async (jsonInput: string) => {
+            this.logMsg(LogLevel.DEBUG, "addNextActionTool executed", { jsonInput });
             try {
                 const { description, context, project, dueDate } = JSON.parse(jsonInput);
                 if (!description) return "Error: description is required.";
                 const addedTask = await this.addTask(description, context, project, dueDate);
                 return `Task added: ${TaskParser.serialize(addedTask)}`;
-            } catch (e: any) { return `Error adding task: ${e.message}`; }
+            } catch (e: any) {
+                this.logMsg(LogLevel.ERROR, "Error in addNextActionTool", { error: e.message, jsonInput });
+                return `Error adding task: ${e.message}`;
+            }
         },
     });
     
     const completeNextActionTool = new DynamicTool({
         name: "completeNextAction",
-        description: "Completes a next action. Input JSON: { identifier: string | number } where identifier is a unique phrase from task or line number (if recently viewed).",
+        description: "Completes a next action. Input JSON: { identifier: string | number } where identifier is a unique task ID, or a unique phrase from task description, or line number (if recently viewed via viewNextActions).",
         func: async (jsonInput: string) => {
+            this.logMsg(LogLevel.DEBUG, "completeNextActionTool executed", { jsonInput });
             try {
                 const { identifier } = JSON.parse(jsonInput);
                 if (!identifier) return "Error: identifier is required.";
                 const completed = await this.completeTask(identifier);
-                return completed ? `Task completed: ${completed.description}` : "Task not found or already completed.";
-            } catch (e: any) { return `Error completing task: ${e.message}`; }
+                const taskDescription = completed ? TaskParser.serialize(completed).replace(/\s*\(id: [a-f0-9\-]+\)/i, '').trim() : "Unknown task";
+                return completed ? `Task completed: ${taskDescription}` : "Task not found or already completed.";
+            } catch (e: any) {
+                this.logMsg(LogLevel.ERROR, "Error in completeNextActionTool", { error: e.message, jsonInput });
+                return `Error completing task: ${e.message}`;
+            }
         },
     });
 
-    // TODO: Add editNextActionTool
+    const editNextActionTool = new DynamicTool({
+      name: "editNextAction",
+      description: "Edits an existing next action. Input JSON: { identifier: string (must be task ID), updates: Partial<TaskItem> }. " +
+                   "Updates can include description, context, project, dueDate, isCompleted, etc. ID cannot be changed.",
+      func: async (jsonInput: string) => {
+        this.logMsg(LogLevel.DEBUG, "editNextActionTool executed", { jsonInput });
+        try {
+          const { identifier, updates } = JSON.parse(jsonInput);
+          if (!identifier) return "Error: task identifier (ID) is required.";
+          if (!updates || typeof updates !== 'object' || Object.keys(updates).length === 0) {
+            return "Error: updates object is required and must not be empty.";
+          }
+          if (updates.id) return "Error: Task ID cannot be changed via updates.";
 
-    return [viewNextActionsTool, addNextActionTool, completeNextActionTool];
+          const editedTask = await this.editTask(identifier, updates as Partial<TaskItem>);
+          if (editedTask) {
+            return `Task updated: ${TaskParser.serialize(editedTask)}`;
+          } else {
+            return "Error: Task not found or update failed.";
+          }
+        } catch (e: any) {
+          this.logMsg(LogLevel.ERROR, "Error in editNextActionTool", { error: e.message, jsonInput });
+          return `Error editing task: ${e.message}`;
+        }
+      },
+    });
+
+    return [viewNextActionsTool, addNextActionTool, completeNextActionTool, editNextActionTool];
   }
 
   // --- Interactive Mode ---
+  // Keep S_currentListedTasks as a static or module-level variable if it needs to persist across calls within the interactive session outside of class instance context.
+  // For now, assuming it's managed within the scope of runInteractiveSession or passed around if needed.
+  // Let's make S_currentListedTasks an instance variable for better encapsulation if the interactive session is tied to an instance.
+  private S_currentListedTasks: TaskItem[] = [];
+
   private displayTasks(tasks: TaskItem[]): void {
     if (tasks.length === 0) {
       console.log("No next actions found.");
       return;
     }
+    this.logMsg(LogLevel.DEBUG, "Displaying tasks in interactive mode.", { count: tasks.length});
     tasks.forEach((task, index) => {
       const taskString = TaskParser.serialize(task); // Get the full string representation
       // Remove the ID part for display if we want a cleaner look, but keep for full serialization
@@ -457,31 +498,36 @@ ${archivedTaskString}
   }
 
   public async runInteractiveSession(): Promise<void> {
-    core.log(LogLevel.INFO, "NextActionsPlugin: Starting interactive session...");
-    await mainReplManager.pauseInput();
+    this.logMsg(LogLevel.INFO, "Starting interactive session...");
+    if (mainReplManager) {
+      mainReplManager.pauseInput(); // Corrected method name
+      this.logMsg(LogLevel.DEBUG, "Main REPL paused for interactive session.");
+    }
+
+    console.log("\nNext Actions Interactive Mode");
+    console.log("-----------------------------");
+    console.log("Available commands: list (l), add (a), done (d), edit (e), help (h), quit (q)");
+    
+    this.S_currentListedTasks = await this.getTasks({ status: 'open' }); // Load initial open tasks
+    this.displayTasks(this.S_currentListedTasks);
 
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
-      prompt: 'nextActions> ',
+      prompt: 'next> '
     });
 
-    const displayHelp = () => {
-      console.log("\nNext Actions Commands:");
-      console.log("  l, list [filter_string]  - List tasks (e.g., l @home, l +projectX, l due:today)");
-      console.log("  a, add <description>     - Add a new task");
-      console.log("  d, done <task_#>         - Mark task as done by its number from the list");
-      console.log("  e, edit <task_#>         - Edit a task by its number from the list (Not yet implemented)");
-      console.log("  h, help                  - Show this help message");
-      console.log("  q, quit                  - Quit interactive session");
-      console.log("\n");
-    };
-
-    displayHelp();
     rl.prompt();
 
-    // Store currently listed tasks for easy access by number for done/edit
-    let S_currentListedTasks: TaskItem[] = []; 
+    const displayHelp = () => {
+      console.log("\nCommands:");
+      console.log("  list (l) [filter]      - List tasks. Optional filter: @context, +project, due:today/tomorrow/YYYY-MM-DD");
+      console.log("  add (a) <description>  - Add a new task.");
+      console.log("  done (d) <number>      - Mark task # from last 'list' as done.");
+      console.log("  edit (e) <number>      - Edit task # from last 'list'. (Prompts for new description)");
+      console.log("  help (h)               - Show this help message.");
+      console.log("  quit (q)               - Exit interactive mode.");
+    };
 
     rl.on('line', async (line) => {
       const parts = line.trim().split(' ');
@@ -492,19 +538,19 @@ ${archivedTaskString}
         switch (command) {
           case 'l':
           case 'list':
-            // Basic filter parsing: assume args join to a simple string for now
-            // TODO: More sophisticated filter string parsing for getTasks
             const filterArg = args.join(' ');
-            let filters: NextActionFilters | undefined;
-            if (filterArg.startsWith('@')) filters = { context: filterArg };
-            else if (filterArg.startsWith('+')) filters = { project: filterArg };
-            else if (filterArg.startsWith('due:')) filters = { dueDate: filterArg.substring(4) };
+            let filters: NextActionFilters | undefined = { status: 'open' }; // Default to open
+            if (filterArg.startsWith('@')) filters = { context: filterArg, status: 'open' };
+            else if (filterArg.startsWith('+')) filters = { project: filterArg, status: 'open' };
+            else if (filterArg.toLowerCase().startsWith('due:')) filters = { dueDate: filterArg.substring(4), status: 'open' };
+            else if (filterArg.toLowerCase() === 'all') filters = { status: 'all' };
+            else if (filterArg.toLowerCase() === 'completed') filters = { status: 'completed' }; // Note: readNextActionsFromFile only gets open ones. This needs adjustment if we want to list completed from file.
             else if (filterArg) {
-                console.log(`Unrecognized filter format: ${filterArg}. Listing all open tasks.`);
+                this.logMsg(LogLevel.WARN, `Unrecognized filter format in interactive mode: ${filterArg}. Listing all open tasks.`);
             }
             
-            S_currentListedTasks = await this.getTasks(filters);
-            this.displayTasks(S_currentListedTasks);
+            this.S_currentListedTasks = await this.getTasks(filters);
+            this.displayTasks(this.S_currentListedTasks);
             break;
           case 'a':
           case 'add':
@@ -513,40 +559,70 @@ ${archivedTaskString}
               break;
             }
             const description = args.join(' ');
-            // For now, we won't parse context/project/due from the add command here.
-            // The user can add them, and TaskParser will pick them up. 
-            // Or they can edit the task later to add them explicitly.
-            // The addTask method will handle default context if none is provided in the description.
             const newTask = await this.addTask(description);
+            this.logMsg(LogLevel.INFO, "Task added interactively.", { task: newTask.id });
             console.log("Task added:");
-            this.displayTasks([newTask]); // Display just the added task
-            // Optionally, re-list all tasks or just the new one with its number in the full list
-            S_currentListedTasks = await this.getTasks(); // Refresh the main list for numbering consistency
+            // Display just the added task, then refresh S_currentListedTasks for correct numbering
+            this.displayTasks([newTask]); 
+            this.S_currentListedTasks = await this.getTasks({ status: 'open' });
             break;
           case 'd':
           case 'done':
             if (args.length !== 1) {
-              console.log("Usage: done <task_number>");
+              console.log("Usage: done <task number from list>");
               break;
             }
             const taskNumberDone = parseInt(args[0], 10);
-            if (isNaN(taskNumberDone) || taskNumberDone <= 0 || taskNumberDone > S_currentListedTasks.length) {
-              console.log(`Invalid task number. Please provide a number between 1 and ${S_currentListedTasks.length}.`);
+            if (isNaN(taskNumberDone) || taskNumberDone <= 0 || taskNumberDone > this.S_currentListedTasks.length) {
+              console.log("Invalid task number.");
               break;
             }
-            const taskToComplete = S_currentListedTasks[taskNumberDone - 1];
-            const completedTask = await this.completeTask(taskToComplete.id); // Use persistent ID
-            if (completedTask) {
-              console.log(`Task "${completedTask.description}" marked as done and archived.`);
+            const taskToComplete = this.S_currentListedTasks[taskNumberDone - 1];
+            if (taskToComplete) {
+              await this.completeTask(taskToComplete.id); // Use ID for robustness
+              console.log(`Task "${taskToComplete.description}" marked as done and archived.`);
+              this.S_currentListedTasks = await this.getTasks({ status: 'open' }); // Refresh list
+              this.displayTasks(this.S_currentListedTasks);
             } else {
-              console.log("Failed to mark task as done. It might have been already processed or an error occurred.");
+              console.log("Task not found (should not happen if taskNumber is valid).");
             }
-            S_currentListedTasks = await this.getTasks(); // Refresh the list
-            this.displayTasks(S_currentListedTasks); // Display the updated list
             break;
           case 'e':
           case 'edit':
-            console.log("Edit command not yet implemented.");
+            if (args.length !== 1) {
+              console.log("Usage: edit <task number from list>");
+              break;
+            }
+            const taskNumberEdit = parseInt(args[0], 10);
+            if (isNaN(taskNumberEdit) || taskNumberEdit <= 0 || taskNumberEdit > this.S_currentListedTasks.length) {
+              console.log("Invalid task number.");
+              break;
+            }
+            const taskToEdit = this.S_currentListedTasks[taskNumberEdit - 1];
+            if (taskToEdit) {
+              // Store rl in a variable accessible by the callback to call prompt correctly
+              const currentRl = rl; 
+              currentRl.question(`Current: ${TaskParser.serialize(taskToEdit)}\nNew description (or press Enter to keep): `, async (newDescription) => {
+                try { // Add try-catch within async callback
+                  if (newDescription.trim() !== '') {
+                    await this.editTask(taskToEdit.id, { description: newDescription.trim() });
+                    console.log("Task updated.");
+                  } else {
+                    console.log("Edit cancelled or no change.");
+                  }
+                  this.S_currentListedTasks = await this.getTasks({ status: 'open' }); // Refresh
+                  this.displayTasks(this.S_currentListedTasks);
+                } catch (e: any) {
+                  this.logMsg(LogLevel.ERROR, "Error during interactive task edit", { error: e.message });
+                  console.error(`Error updating task: ${e.message}`);
+                } finally {
+                  currentRl.prompt(); // Call prompt here, after async op is done
+                }
+              });
+            } else {
+              console.log("Task not found.");
+              rl.prompt(); // Ensure prompt is called if task not found
+            }
             break;
           case 'h':
           case 'help':
@@ -555,21 +631,30 @@ ${archivedTaskString}
           case 'q':
           case 'quit':
             rl.close();
-            return; // Exit before prompt
+            return; // Exit the handler
           default:
-            console.log(`Unknown command: ${command}. Type 'help' for commands.`);
-            break;
+            console.log(`Unknown command: ${command}. Type 'h' for help.`);
         }
       } catch (error: any) {
-        core.log(LogLevel.ERROR, `Error in interactive command ${command}: ${error.message}`, error);
-        console.error(`An error occurred: ${error.message}`);
+        this.logMsg(LogLevel.ERROR, "Error in interactive command processing", { command, args, error: error.message });
+        console.error(`Error: ${error.message}`);
       }
-      rl.prompt();
-    }).on('close', async () => {
-      core.log(LogLevel.INFO, "NextActionsPlugin: Exiting interactive session.");
-      await mainReplManager.resumeInput();
+      if (command !== 'q') { // Avoid prompting again if quitting
+        rl.prompt();
+      }
+    });
+
+    rl.on('close', () => {
+      this.logMsg(LogLevel.INFO, "Exiting interactive session.");
+      if (mainReplManager) {
+        mainReplManager.resumeInput(); // Corrected method name
+        this.logMsg(LogLevel.DEBUG, "Main REPL resumed.");
+      }
+      // Resolve the promise when the session ends.
+      // Consider if this needs to be linked to a promise returned by runInteractiveSession.
+      // For now, it just signals the end of the readline interface.
     });
   }
 }
 
-export default new NextActionsPluginDefinition(); 
+export default NextActionsPluginDefinition; 
