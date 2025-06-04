@@ -207,66 +207,67 @@ class NextActionsPluginDefinition implements WoosterPlugin {
     let effectiveProject = projectFromInput;
     let effectiveContext = contextFromInput;
 
-    // Default context to @home if not provided and not in description
     const descriptionAlreadyHasContext = /(?:^|\s)@\w+/.test(description.trim());
     if (!effectiveContext && !descriptionAlreadyHasContext) {
       effectiveContext = '@home';
       this.logMsg(LogLevel.DEBUG, `Defaulting context to @home for new next action.`);
     }
 
-    // Determine active project name
     const activeProjectName = (this.coreServices && typeof this.coreServices.getActiveProjectName === 'function') 
                               ? this.coreServices.getActiveProjectName() 
                               : null;
-    this.logMsg(LogLevel.DEBUG, `addTask - Values at decision point for project tagging:`, {
+
+    // Use a regex similar to TaskParser's for checking if a project tag is already in the description.
+    // This regex looks for +ProjectName, +Project Name (subsequent capitalized), or +Project 123.
+    const taskParserProjectRegex = /(?:^|\s)(\+[\w-]+(?:(?:\s[A-Z][\w-]*)+)?(?:\s\d+)?)/;
+    const descriptionHasProjectTag = taskParserProjectRegex.test(description.trim());
+
+    this.logMsg(LogLevel.DEBUG, `addTask - Initial decision values:`, {
       initialDescription: description,
       projectFromInput,
       contextFromInput,
       activeProjectNameFromServices: activeProjectName,
+      descriptionHasProjectTag,
     });
-                              
-    const descriptionAlreadyHasProject = /(?:^|\s)(\+[\w-]+(?:\s[\w-]+)*)/.test(description.trim());
+
+    // Clear effectiveProject, it will be set based on priority
+    effectiveProject = null; 
 
     if (projectFromInput) {
-      // User explicitly provided a project in the tool call
-      this.logMsg(LogLevel.DEBUG, `addTask - Project provided directly in input: '${projectFromInput}'`);
-      if (projectFromInput.startsWith('+')) {
-        effectiveProject = projectFromInput;
-      } else {
-        effectiveProject = `+${projectFromInput}`;
+      // 1. Project explicitly passed in tool input JSON
+      this.logMsg(LogLevel.DEBUG, `addTask - Priority 1: Project from input JSON: '${projectFromInput}'`);
+      let proj = projectFromInput.trim();
+      if (!proj.startsWith('+')) {
+        proj = `+${proj}`;
       }
-      effectiveProject = effectiveProject.replace(/^\+\s*(['"])(.*)\1$/, '+$2');
-      this.logMsg(LogLevel.DEBUG, `addTask - Effective project after processing projectFromInput: '${effectiveProject}'`);
-    } else if (!descriptionAlreadyHasProject && activeProjectName && activeProjectName.toLowerCase() !== 'home') {
-      // Auto-tag with the current non-home active project
-      this.logMsg(LogLevel.DEBUG, `addTask - Auto-prepending active project '+${activeProjectName}' from services.`);
+      // Strip quotes like +'Project Name' or +"Project Name" to +Project Name
+      effectiveProject = proj.replace(/^\+\s*(['"])(.*)\1$/, '+$2');
+      this.logMsg(LogLevel.DEBUG, `addTask - Effective project from input JSON: '${effectiveProject}'`);
+    } else if (descriptionHasProjectTag) {
+      // 2. Project tag is typed directly in the description string.
+      // Let TaskParser.parse() extract it. Don't prepend anything here.
+      this.logMsg(LogLevel.DEBUG, `addTask - Priority 2: Project tag found in description. Parser will extract. No prepending.`);
+      // effectiveProject remains null, signaling no prepending
+    } else if (activeProjectName && activeProjectName.toLowerCase() !== 'home') {
+      // 3. No project from input, no tag in description. Auto-tag with active (non-home) project.
+      this.logMsg(LogLevel.DEBUG, `addTask - Priority 3: Auto-prepending active project: '+${activeProjectName}'`);
       effectiveProject = `+${activeProjectName}`;
-    } else if (!descriptionAlreadyHasProject) {
-      // If no project from input, not in description, and active project is home or null (or not set),
-      // default to +home.
-      this.logMsg(LogLevel.DEBUG, `addTask - Defaulting project to '+home'. Conditions: no projectFromInput, not in description. Active project: '${activeProjectName || "null"}'.`);
-      effectiveProject = '+home';
     } else {
-      // Project is in description, or some other case where we don't auto-tag / default to home.
-      // TaskParser will attempt to extract it from the description if present.
-      this.logMsg(LogLevel.DEBUG, `addTask - Project likely in description or no default applicable. Effective project will be determined by parser or remain null if not found.`, {
-        projectFromInput,
-        descriptionAlreadyHasProject,
-        activeProjectName,
-      });
-      effectiveProject = null; // Let parser handle if in description; otherwise, it's truly no project for prepending.
+      // 4. No project from input, no tag in description, active project is 'home' or null. Default to '+home'.
+      this.logMsg(LogLevel.DEBUG, `addTask - Priority 4: Defaulting project to '+home'.`);
+      effectiveProject = '+home';
     }
 
-    this.logMsg(LogLevel.DEBUG, `addTask - Final effective context: '${effectiveContext}', effective project for prepending: '${effectiveProject || "null"}'`);
+    this.logMsg(LogLevel.DEBUG, `addTask - Final effective context: '${effectiveContext}', effective project for prepending: '${effectiveProject || "null (parser will handle if in desc)"}'`);
 
     // Construct the task string for TaskParser.parse
-    // Order: context, project, description
+    // Order: context, project (if prepending), description
     let taskStringParts: string[] = [description.trim()];
-    if (effectiveProject) {
-        taskStringParts.unshift(effectiveProject); // e.g., ["+ProjectName", "description"]
+    if (effectiveProject) { // Only prepend if effectiveProject is determined by steps 1, 3, or 4
+        taskStringParts.unshift(effectiveProject);
     }
     if (effectiveContext) { 
-        taskStringParts.unshift(effectiveContext); // e.g., ["@context", "+ProjectName", "description"]
+        taskStringParts.unshift(effectiveContext);
     }
     
     let combinedDescriptionForParser = taskStringParts.join(' ');
