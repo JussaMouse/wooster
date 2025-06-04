@@ -11,7 +11,7 @@ export class TaskParser {
   // Regexes for specific metadata components
   private static idRegex = /\(id:\s*([a-f0-9\-]+)\)/i; // Regex for (id: UUID)
   private static contextRegex = /(?:^|\s)(@\w+)/;
-  private static projectRegex = /(?:^|\s)(\+[^@()]+?(?=\s(?:@|\(|\bdue:)|$))/;
+  private static projectRegex = /(?:^|\s)(\+[\w-]+(?:\s[\w-]+)*)/;
   private static dueDateRegex = /due:(\d{4}-\d{2}-\d{2})\b/i;
   // More specific capture for dates, e.g., YYYY-MM-DD HH:MM:SS or YYYY-MM-DD
   private static capturedDateRegex = /\(Captured:\s*([^)]+)\)/i;
