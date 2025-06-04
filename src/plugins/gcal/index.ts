@@ -158,13 +158,17 @@ const createCalendarEventTool = new DynamicTool({
 });
 
 class GCalPluginDefinition implements WoosterPlugin {
-  readonly name = "gcal";
-  readonly version = "1.1.0"; // Updated version
-  readonly description = "Provides Google Calendar event listing and creation.";
+  static readonly pluginName = "gcal";
+  static readonly version = "1.1.0";
+  static readonly description = "Provides Google Calendar event listing and creation.";
+
+  readonly name = GCalPluginDefinition.pluginName;
+  readonly version = GCalPluginDefinition.version;
+  readonly description = GCalPluginDefinition.description;
 
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
     core = services;
-    core.log(LogLevel.INFO, `GCalPlugin (v${this.version}): Initializing...`);
+    core.log(LogLevel.INFO, `GCalPlugin (v${GCalPluginDefinition.version}): Initializing...`);
     const initialized = await initializeInternalClient(config);
     if (initialized) {
         services.registerService("ListCalendarEventsService", listCalendarEventsServiceFunction);
@@ -189,4 +193,4 @@ class GCalPluginDefinition implements WoosterPlugin {
   }
 }
 
-export default new GCalPluginDefinition(); 
+export default GCalPluginDefinition; 

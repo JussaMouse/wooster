@@ -4,9 +4,14 @@ import { log, LogLevel } from '../../logger';
 import { createNewProject } from '../../newProject'; // Utility to create project files
 
 export class ProjectManagerPlugin implements WoosterPlugin {
-  readonly name = 'projectManager';
-  readonly version = '0.1.0';
-  readonly description = 'Manages projects, including creation, listing, and setting active project (future).';
+  static readonly pluginName = 'projectManager'; // Renamed to avoid conflict with Function.name
+  static readonly version = '0.1.0';
+  static readonly description = 'Manages projects, including creation, listing, and setting active project (future).';
+
+  // Instance properties for WoosterPlugin interface if it expects them on instance
+  readonly name = ProjectManagerPlugin.pluginName;
+  readonly version = ProjectManagerPlugin.version;
+  readonly description = ProjectManagerPlugin.description;
 
   private config!: AppConfig;
   // private services!: CoreServices; // Uncomment if core services are needed
@@ -14,16 +19,16 @@ export class ProjectManagerPlugin implements WoosterPlugin {
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
     this.config = config;
     // this.services = services; // Uncomment if core services are needed
-    log(LogLevel.INFO, `ProjectManagerPlugin (v${this.version}): Initializing...`);
+    log(LogLevel.INFO, `ProjectManagerPlugin (v${ProjectManagerPlugin.version}): Initializing...`);
 
     if (!this.config.gtd || !this.config.gtd.projectsDir) {
       log(LogLevel.WARN, `ProjectManagerPlugin: GTD_PROJECTS_DIR is not configured. Project creation might fail or use defaults.`);
     }
-    log(LogLevel.INFO, `ProjectManagerPlugin (v${this.version}): Initialized successfully.`);
+    log(LogLevel.INFO, `ProjectManagerPlugin (v${ProjectManagerPlugin.version}): Initialized successfully.`);
   }
 
   async shutdown(): Promise<void> {
-    log(LogLevel.INFO, `ProjectManagerPlugin (v${this.version}): Shutting down.`);
+    log(LogLevel.INFO, `ProjectManagerPlugin (v${ProjectManagerPlugin.version}): Shutting down.`);
   }
 
   getAgentTools?(): DynamicTool[] {

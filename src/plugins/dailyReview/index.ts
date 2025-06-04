@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { DynamicTool, StructuredTool } from '@langchain/core/tools';
+import { DynamicTool, StructuredTool } from 'langchain/tools';
 import { z } from 'zod';
 import { log, LogLevel } from '../../logger';
 import { AppConfig } from '../../configLoader';
@@ -10,16 +10,20 @@ import type { DailyReviewData, ProjectActionItem, GetWeatherForecastType, DailyR
 import type { ListCalendarEventsService } from '../gcal/types';
 import type { NextActionsService, NextActionItem } from '../nextActions/types';
 import type { GmailPluginEmailArgs } from '../gmail/types';
-import type { PersonalHealthService } from '../personalHealth/types';
+import type { PersonalHealthService } from '../personalHealth/types.ts';
 
 const PROJECTS_DIR = path.join(__dirname, '../../../projects');
 const USER_CONFIG_DIR = path.join(process.cwd(), 'config');
 const USER_CONFIG_FILE_PATH = path.join(USER_CONFIG_DIR, 'dailyReview.json');
 
 class DailyReviewPluginDefinition implements WoosterPlugin {
-  readonly name = "dailyReview";
-  readonly version = "1.0.0";
-  readonly description = "Provides a daily review summary including calendar, project actions, and weather. Also schedules a daily email with this summary based on user configuration.";
+  static readonly pluginName = "dailyReview";
+  static readonly version = "1.0.0";
+  static readonly description = "Provides a daily review summary including calendar, project actions, and weather. Also schedules a daily email with this summary based on user configuration.";
+
+  readonly name = DailyReviewPluginDefinition.pluginName;
+  readonly version = DailyReviewPluginDefinition.version;
+  readonly description = DailyReviewPluginDefinition.description;
 
   private coreServices!: CoreServices;
   public appConfig!: AppConfig;
@@ -28,11 +32,11 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
   private dailyReviewAgentToolInstance!: DynamicTool;
   private getDailyReviewHelpToolInstance!: DynamicTool;
 
-  private logMsg(level: LogLevel, message: string, metadata?: object) { // Renamed to avoid conflict with imported 'log'
+  private logMsg(level: LogLevel, message: string, metadata?: object) {
     if (this.coreServices && this.coreServices.log) {
-      this.coreServices.log(level, `[DailyReviewPlugin] ${message}`, metadata);
+      this.coreServices.log(level, `[${DailyReviewPluginDefinition.pluginName} Plugin v${DailyReviewPluginDefinition.version}] ${message}`, metadata);
     } else {
-      console.log(`[${level}][DailyReviewPlugin] ${message}`, metadata || '');
+      console.log(`[${level}][${DailyReviewPluginDefinition.pluginName} Plugin v${DailyReviewPluginDefinition.version}] ${message}`, metadata || '');
     }
   }
   
@@ -74,7 +78,7 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
       if (error.code === 'ENOENT') {
         this.logMsg(LogLevel.INFO, 'No user config file found. Initializing with default.', { path: USER_CONFIG_FILE_PATH });
         this.userConfig = this.getDefaultUserConfig();
-        isNewConfig = true; // Flag that this is a new configuration setup
+        isNewConfig = true;
       } else {
         this.logMsg(LogLevel.ERROR, 'Error loading user config. Using default.', { error: error.message, path: USER_CONFIG_FILE_PATH });
         this.userConfig = this.getDefaultUserConfig();
@@ -89,13 +93,6 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
 
     let configModified = false;
 
-    // 1. Auto-populate delivery channels (for both new and existing configs if channel missing)
-    // REMOVED: Block that checked for EmailService here
-    // if (this.coreServices?.getService("EmailService")) { ... }
-    // Users will need to ensure their dailyReview.json is configured for email if they want it,
-    // or this auto-config can be revisited with a post-initialization hook later.
-
-    // 2. Auto-enable content modules IF it's a new config AND services are present
     if (isNewConfig) {
       this.logMsg(LogLevel.INFO, 'Performing first-time setup for content modules based on detected services.');
       if (this.coreServices?.getService("getWeatherForecastFunction")) {
@@ -112,7 +109,6 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
             configModified = true;
         }
       }
-      // Auto-enable healthLog if PersonalHealthService is available
       if (this.coreServices?.getService("PersonalHealthService")) {
         if (this.userConfig.contentModules.healthLog === false) { 
             this.logMsg(LogLevel.INFO, 'PersonalHealthService detected. Auto-enabling healthLog content module for new config.');
@@ -120,8 +116,7 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
             configModified = true;
         }
       }
-      // Note: projectActions is true by default in getDefaultUserConfig()
-      if (configModified) { // If modules were auto-enabled, mark setup as potentially complete
+      if (configModified) { 
         this.userConfig.hasCompletedInitialSetup = true; 
       }
     }
@@ -148,7 +143,7 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
 
   private async getDailyReviewContentInternal(): Promise<DailyReviewData> {
     if (!this.coreServices) {
-      this.logMsg(LogLevel.ERROR, "DailyReviewPlugin Critical Error: Core services not available.");
+      this.logMsg(LogLevel.ERROR, "Critical Error: Core services not available.");
       return { 
         greeting: "Error: Daily review content generation failed (core services missing).", 
         calendarEventsSummary: "- Error -", 
@@ -248,10 +243,11 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
                 this.logMsg(LogLevel.INFO, 'Previous day health log fetched via PersonalHealthService.', { date: yesterdayStr, count: healthEvents?.length || 0 });
             } catch (error: any) {
                 this.logMsg(LogLevel.ERROR, "Error fetching health log from PersonalHealthService.", { error: error.message });
-                previousDayHealthLogData = "- Error fetching health log.";
+                previousDayHealthLogData = "- Error fetching health log from PersonalHealthService.";
             }
         } else {
-            this.logMsg(LogLevel.WARN, "PersonalHealthService not found. Cannot fetch health log.");
+            this.logMsg(LogLevel.WARN, "PersonalHealthService service not found.");
+            previousDayHealthLogData = "- (PersonalHealthService not available)";
         }
     }
 
@@ -575,4 +571,4 @@ function getYesterdayDateString(): string {
   return `${year}-${month}-${day}`;
 }
 
-export default new DailyReviewPluginDefinition(); 
+export default DailyReviewPluginDefinition; 

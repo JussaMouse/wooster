@@ -1,7 +1,7 @@
 import { WoosterPlugin, CoreServices, AppConfig } from '../../types/plugin';
 import { LogLevel } from '../../logger';
 import { z } from 'zod';
-import { DynamicTool } from '@langchain/core/tools';
+import { DynamicTool } from 'langchain/tools';
 import { CapturedItem, CaptureService } from './types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -16,9 +16,13 @@ const DEFAULT_INBOX_FILENAME = 'inbox.md';
 const itemTextSchema = z.string().min(1, { message: "Item text cannot be empty." });
 
 class CapturePluginDefinition implements WoosterPlugin, CaptureService {
-  readonly name = "capture";
-  readonly version = "1.1.0"; // Version bump for configurable inbox path
-  readonly description = "Captures items or notes to a configurable inbox.md file (shared with sortInbox plugin).";
+  static readonly pluginName = "capture";
+  static readonly version = "1.1.0"; // Version bump for configurable inbox path
+  static readonly description = "Captures items or notes to a configurable inbox.md file (shared with sortInbox plugin).";
+
+  readonly name = CapturePluginDefinition.pluginName;
+  readonly version = CapturePluginDefinition.version;
+  readonly description = CapturePluginDefinition.description;
 
   private workspaceRoot!: string;
   private inboxFilePath!: string;
@@ -46,7 +50,7 @@ class CapturePluginDefinition implements WoosterPlugin, CaptureService {
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
     core = services;
     this.workspaceRoot = process.cwd();
-    core.log(LogLevel.INFO, `CapturePlugin (v${this.version}): Initializing...`);
+    core.log(LogLevel.INFO, `CapturePlugin (v${CapturePluginDefinition.version}): Initializing...`);
 
     // Determine inbox file path using gtd config, similar to sortInbox
     const gtdBasePath = config.gtd?.basePath ?? DEFAULT_GTD_BASE_PATH;
@@ -122,4 +126,4 @@ class CapturePluginDefinition implements WoosterPlugin, CaptureService {
   }
 }
 
-export default new CapturePluginDefinition(); 
+export default CapturePluginDefinition; 

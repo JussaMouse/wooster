@@ -12,13 +12,17 @@ let httpServer: http.Server | null = null;
 const API_BASE_PATH = '/api/v1';
 
 class ApiPluginDefinition implements WoosterPlugin {
-  readonly name = "api";
-  readonly version = "1.0.0";
-  readonly description = "Provides a unified HTTP API for Wooster services.";
+  static readonly pluginName = "api";
+  static readonly version = "1.0.0";
+  static readonly description = "Provides a unified HTTP API for Wooster services.";
+
+  readonly name = ApiPluginDefinition.pluginName;
+  readonly version = ApiPluginDefinition.version;
+  readonly description = ApiPluginDefinition.description;
 
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
     core = services;
-    core.log(LogLevel.INFO, `ApiPlugin (v${this.version}): Initializing...`);
+    core.log(LogLevel.INFO, `ApiPlugin (v${ApiPluginDefinition.version}): Initializing...`);
 
     if (!config.apiPlugin) {
       core.log(LogLevel.WARN, "ApiPlugin: Configuration (apiPlugin) is missing. API will not start.");
@@ -67,9 +71,6 @@ class ApiPluginDefinition implements WoosterPlugin {
           core.log(LogLevel.DEBUG, `ApiPlugin: IP ${clientIp} whitelisted, granting access to ${req.path}.`);
           return next(); // IP whitelisted, bypass API key check for this request
         }
-        // If whitelist is enabled and IP is not in it, *and* there's no API key to fall back to, deny.
-        // Or, if we decide whitelisting is an OR condition with API Key, we might not return here yet.
-        // For now, if IP not whitelisted, proceed to API key check. Stricter logic could deny here.
       }
 
       // API Key Check (Bearer Token)
@@ -84,20 +85,16 @@ class ApiPluginDefinition implements WoosterPlugin {
         }
       }
       
-      // If neither IP whitelist nor API key granted access (and an API key is configured)
-      if (apiConfig?.apiKey || (apiConfig?.globalIpWhitelistEnabled && (apiConfig.globalAllowedIps || []).length > 0) ) { // Only error if auth methods are configured
+      if (apiConfig?.apiKey || (apiConfig?.globalIpWhitelistEnabled && (apiConfig.globalAllowedIps || []).length > 0) ) { 
         core.log(LogLevel.WARN, `ApiPlugin: Unauthorized access attempt to ${req.path}. Client IP: ${req.ip || 'unknown_ip'}`);
         res.status(401).json({ error: 'Unauthorized' });
         return;
       }
 
-      // If no auth methods are configured at all, but endpoint is protected (i.e. starts with API_BASE_PATH)
-      // This state should have produced a warning at startup. For safety, deny access.
       core.log(LogLevel.WARN, `ApiPlugin: Access to ${req.path} denied. No authentication methods are effectively configured, but endpoint requires auth.`);
       res.status(403).json({ error: 'Forbidden: API access not configured.' });
     });
 
-    // Define the handler function INSIDE initialize, where core and apiConfig are in scope
     const handleCaptureRequest = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
       try {
         const { text } = req.body;
@@ -133,11 +130,8 @@ class ApiPluginDefinition implements WoosterPlugin {
       }
     };
 
-    // --- Routes (to be added here) ---
-    // Task Capture Endpoint
     app.post(`${API_BASE_PATH}/capture`, handleCaptureRequest);
 
-    // --- New Health Event Logging Endpoint ---
     const handleLogHealthEventRequest = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
       try {
         const { text } = req.body;
@@ -162,13 +156,12 @@ class ApiPluginDefinition implements WoosterPlugin {
 
       } catch (error: any) {
         core.log(LogLevel.ERROR, `ApiPlugin: Error in POST ${API_BASE_PATH}/health/events: ${error.message}`, { error });
-        next(error); // Pass to centralized error handler
+        next(error); 
       }
     };
 
     app.post(`${API_BASE_PATH}/health/events`, handleLogHealthEventRequest);
 
-    // --- Centralized Error Handler ---
     app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
       core.log(LogLevel.ERROR, `ApiPlugin: Unhandled error in API request: ${err.message}`, { path: req.path, error: err });
       if (!res.headersSent) {
@@ -176,7 +169,6 @@ class ApiPluginDefinition implements WoosterPlugin {
       }
     });
 
-    // --- Start Server ---
     const port = apiConfig.port || 3000;
     httpServer = app.listen(port, () => {
       core.log(LogLevel.INFO, `ApiPlugin: Unified API server listening on http://localhost:${port}`);
@@ -190,9 +182,6 @@ class ApiPluginDefinition implements WoosterPlugin {
         core.log(LogLevel.ERROR, `ApiPlugin: Failed to start API server on port ${port}.`, { error: err });
       }
     });
-
-    // Register the Express app instance if other plugins might want to add routes (advanced use case)
-    // services.registerService("SharedExpressApp", app);
   }
 
   async shutdown(): Promise<void> {
@@ -213,8 +202,6 @@ class ApiPluginDefinition implements WoosterPlugin {
     }
     return Promise.resolve();
   }
-
-  // This plugin does not provide agent tools itself; it provides an API gateway.
 }
 
-export default new ApiPluginDefinition(); 
+export default ApiPluginDefinition; 
