@@ -1,12 +1,15 @@
 import { WoosterPlugin, AppConfig, CoreServices } from '../../types/plugin';
 import { DynamicTool } from 'langchain/tools';
 import { createNewProject } from '../../newProject'; // Utility to create project files
+import { setActiveProjectInCore, SetActiveProjectResult } from '../../setActiveProject'; // Import new utility
 import { LogLevel } from '../../logger'; // Keep for LogLevel enum
+import * as fs from 'fs'; // Import fs for checking directory existence
+import * as path from 'path'; // Import path for constructing paths
 
 export class ProjectManagerPlugin implements WoosterPlugin {
   static readonly pluginName = 'projectManager'; // Renamed to avoid conflict with Function.name
-  static readonly version = '0.1.0';
-  static readonly description = 'Manages projects, including creation, listing, and setting active project (future).';
+  static readonly version = '0.1.1'; // Incremented version due to new tool and refactor
+  static readonly description = 'Manages projects, including creation, opening, and setting active project.';
 
   // Instance properties for WoosterPlugin interface if it expects them on instance
   readonly name = ProjectManagerPlugin.pluginName;
@@ -32,7 +35,7 @@ export class ProjectManagerPlugin implements WoosterPlugin {
     this.logMsg(LogLevel.INFO, 'Initializing...');
 
     if (!this.config.gtd || !this.config.gtd.projectsDir) {
-      this.logMsg(LogLevel.WARN, 'GTD_PROJECTS_DIR is not configured. Project creation might fail or use defaults.');
+      this.logMsg(LogLevel.WARN, 'GTD_PROJECTS_DIR is not configured. Project operations might fail or use defaults.');
     }
     this.logMsg(LogLevel.INFO, 'Initialized successfully.');
   }
@@ -55,29 +58,18 @@ export class ProjectManagerPlugin implements WoosterPlugin {
         this.logMsg(LogLevel.INFO, `createProject tool called with project name: "${trimmedProjectName}"`);
 
         try {
-          const result = await createNewProject(trimmedProjectName, this.config);
-          if (result.success) {
-            this.logMsg(LogLevel.INFO, `Project "${trimmedProjectName}" created successfully at ${result.projectFilePath}`);
+          const createResult = await createNewProject(trimmedProjectName, this.config);
+          if (createResult.success) {
+            this.logMsg(LogLevel.INFO, `Project "${trimmedProjectName}" created successfully at ${createResult.projectFilePath}`);
             
-            let setActiveMessage = '';
-            try {
-              if (typeof (this.services as any).setActiveProject === 'function') {
-                await (this.services as any).setActiveProject(trimmedProjectName);
-                setActiveMessage = `Project '${trimmedProjectName}' is now the active project.`;
-                this.logMsg(LogLevel.INFO, `User success: ${setActiveMessage}`);
-              } else {
-                setActiveMessage = `Project '${trimmedProjectName}' created. Active project management not fully available.`;
-                this.logMsg(LogLevel.WARN, 'setActiveProject method not found on core services. User info: ' + setActiveMessage);
-              }
-            } catch (setActiveError: any) {
-              setActiveMessage = `Project '${trimmedProjectName}' created, but failed to set as active: ${setActiveError.message}`;
-              this.logMsg(LogLevel.ERROR, `Failed to set project "${trimmedProjectName}" as active. User warning: ${setActiveMessage}`, { error: setActiveError.message });
-            }
-            return result.message + (result.projectFilePath ? ` Path: ${result.projectFilePath}. ` : '. ') + setActiveMessage;
+            const setActiveResult = await setActiveProjectInCore(trimmedProjectName, this.services, this.logMsg.bind(this));
+            this.logMsg(setActiveResult.success ? LogLevel.INFO : LogLevel.WARN, `User feedback: ${setActiveResult.messageForUser}`);
+
+            return `${createResult.message} ${setActiveResult.messageForUser}` + (createResult.projectFilePath ? ` Path: ${createResult.projectFilePath}.` : '.');
           } else {
-            this.logMsg(LogLevel.WARN, `Failed to create project "${trimmedProjectName}". Reason: ${result.message}`);
-            this.logMsg(LogLevel.ERROR, `User error: Error creating project '${trimmedProjectName}': ${result.message}`);
-            return `Error creating project: ${result.message}`;
+            this.logMsg(LogLevel.WARN, `Failed to create project "${trimmedProjectName}". Reason: ${createResult.message}`);
+            this.logMsg(LogLevel.ERROR, `User error: Error creating project '${trimmedProjectName}': ${createResult.message}`);
+            return `Error creating project: ${createResult.message}`;
           }
         } catch (error: any) {
           this.logMsg(LogLevel.ERROR, `Unexpected error in createProject tool for project "${trimmedProjectName}"`, { error: error.message, stack: error.stack });
@@ -87,7 +79,42 @@ export class ProjectManagerPlugin implements WoosterPlugin {
       },
     });
 
-    return [createProjectTool];
+    const openProjectTool = new DynamicTool({
+      name: 'openProject',
+      description: 'Opens an existing project and sets it as the active project. Usage: openProject project_name',
+      func: async (projectName: string) => {
+        if (!projectName || typeof projectName !== 'string' || projectName.trim() === '') {
+          const errorMsg = 'Error: Project name must be a non-empty string for opening.';
+          this.logMsg(LogLevel.ERROR, `User error: ${errorMsg}`);
+          return errorMsg;
+        }
+        const trimmedProjectName = projectName.trim();
+        this.logMsg(LogLevel.INFO, `openProject tool called with project name: "${trimmedProjectName}"`);
+
+        if (!this.config.gtd || !this.config.gtd.projectsDir) {
+          const errorMsg = 'Error: GTD_PROJECTS_DIR is not configured. Cannot locate projects.';
+          this.logMsg(LogLevel.ERROR, `Configuration error: ${errorMsg}`);
+          return errorMsg;
+        }
+
+        const projectsBasePath = path.resolve(this.config.gtd.projectsDir);
+        const projectDir = path.join(projectsBasePath, trimmedProjectName);
+
+        if (!fs.existsSync(projectDir)) {
+          const errorMsg = `Error: Project '${trimmedProjectName}' not found at ${projectDir}.`;
+          this.logMsg(LogLevel.WARN, `User error: ${errorMsg}`);
+          return errorMsg;
+        }
+
+        this.logMsg(LogLevel.INFO, `Project "${trimmedProjectName}" found at ${projectDir}. Attempting to set as active.`);
+        const setActiveResult = await setActiveProjectInCore(trimmedProjectName, this.services, this.logMsg.bind(this));
+        this.logMsg(setActiveResult.success ? LogLevel.INFO : LogLevel.WARN, `User feedback: ${setActiveResult.messageForUser}`);
+        
+        return setActiveResult.messageForUser; // Return the user-facing message directly to the agent/user
+      },
+    });
+
+    return [createProjectTool, openProjectTool];
   }
 
   // Add other plugin methods if needed, e.g., for listing projects, setting active project, etc.
