@@ -5,6 +5,7 @@ import { setActiveProjectInCore, SetActiveProjectResult } from '../../setActiveP
 import { LogLevel } from '../../logger'; // Keep for LogLevel enum
 import * as fs from 'fs'; // Import fs for checking directory existence
 import * as path from 'path'; // Import path for constructing paths
+import { performRenameProject, RenameProjectResult } from './renameProject'; // Import the new utility
 
 // Helper function to find a matching project name
 function findMatchingProjectName(requestedName: string, actualProjectNames: string[]): string | string[] | null {
@@ -37,20 +38,18 @@ function findMatchingProjectName(requestedName: string, actualProjectNames: stri
 }
 
 export class ProjectManagerPlugin implements WoosterPlugin {
-  static readonly pluginName = 'projectManager'; // Renamed to avoid conflict with Function.name
-  static readonly version = '0.1.2'; // Incremented version due to new tool and refactor
-  static readonly description = 'Manages projects: creation, opening (with fuzzy matching), and setting active project.';
+  static readonly pluginName = 'projectManager';
+  static readonly version = '0.1.3'; // Incremented version due to new tool
+  static readonly description = 'Manages projects: creation, opening (with fuzzy matching), renaming, and setting active project.';
 
-  // Instance properties for WoosterPlugin interface if it expects them on instance
   readonly name = ProjectManagerPlugin.pluginName;
   readonly version = ProjectManagerPlugin.version;
   readonly description = ProjectManagerPlugin.description;
 
   private config!: AppConfig;
-  private services!: CoreServices; // Uncommented
+  private services!: CoreServices;
 
   private logMsg(level: LogLevel, message: string, details?: object) {
-    // Basic logger, assuming services might not be ready during early init or if something goes wrong
     const fullMessage = `[${ProjectManagerPlugin.pluginName} Plugin v${ProjectManagerPlugin.version}] ${message}`;
     if (this.services && this.services.log) {
       this.services.log(level, fullMessage, details);
@@ -61,11 +60,10 @@ export class ProjectManagerPlugin implements WoosterPlugin {
 
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
     this.config = config;
-    this.services = services; // Uncommented
+    this.services = services;
     this.logMsg(LogLevel.INFO, 'Initializing...');
-
     if (!this.config.gtd || !this.config.gtd.projectsDir) {
-      this.logMsg(LogLevel.WARN, 'GTD_PROJECTS_DIR is not configured. Project operations might fail or use defaults.');
+      this.logMsg(LogLevel.WARN, 'GTD_PROJECTS_DIR is not configured. Project operations might use defaults or fail if base project path is derived from it.');
     }
     this.logMsg(LogLevel.INFO, 'Initialized successfully.');
   }
@@ -75,6 +73,8 @@ export class ProjectManagerPlugin implements WoosterPlugin {
   }
 
   getAgentTools?(): DynamicTool[] {
+    const tools: DynamicTool[] = [];
+    
     const createProjectTool = new DynamicTool({
       name: 'createProject',
       description: 'Creates a new project with the given name and attempts to set it as the active project. Usage: createProject project_name',
@@ -108,6 +108,7 @@ export class ProjectManagerPlugin implements WoosterPlugin {
         }
       },
     });
+    tools.push(createProjectTool);
 
     const openProjectTool = new DynamicTool({
       name: 'openProject',
@@ -121,27 +122,30 @@ export class ProjectManagerPlugin implements WoosterPlugin {
         const trimmedRequestedName = requestedProjectName.trim();
         this.logMsg(LogLevel.INFO, `openProject tool called with requested project name: "${trimmedRequestedName}"`);
 
-        if (!this.config.gtd || !this.config.gtd.projectsDir) {
-          const errorMsg = 'Error: GTD_PROJECTS_DIR is not configured. Cannot locate projects.';
-          this.logMsg(LogLevel.ERROR, `Configuration error: ${errorMsg}`);
-          return errorMsg;
+        // Assuming projectBasePath is now defined in renameProject.ts or globally accessible
+        // For consistency, let's define a base path for projects, e.g., from config or process.cwd()
+        const projectsBaseDir = (this.config.gtd && this.config.gtd.projectsDir) ? path.resolve(this.config.gtd.projectsDir) : path.join(process.cwd(), 'projects');
+        
+        if (!fs.existsSync(projectsBaseDir)) {
+             const errorMsg = `Error: Projects base directory '${projectsBaseDir}' not found. Cannot locate projects.`;
+             this.logMsg(LogLevel.ERROR, `Configuration error: ${errorMsg}`);
+             return errorMsg;
         }
 
-        const projectsBasePath = path.resolve(this.config.gtd.projectsDir);
         let actualProjectNames: string[];
         try {
-          actualProjectNames = fs.readdirSync(projectsBasePath).filter(name => 
-            fs.statSync(path.join(projectsBasePath, name)).isDirectory()
+          actualProjectNames = fs.readdirSync(projectsBaseDir).filter(name => 
+            fs.statSync(path.join(projectsBaseDir, name)).isDirectory()
           );
         } catch (err: any) {
-          this.logMsg(LogLevel.ERROR, `Error reading project directories from ${projectsBasePath}: ${err.message}`);
+          this.logMsg(LogLevel.ERROR, `Error reading project directories from ${projectsBaseDir}: ${err.message}`);
           return `Error: Could not list project directories.`;
         }
 
         const matched = findMatchingProjectName(trimmedRequestedName, actualProjectNames);
 
         if (!matched) {
-          const errorMsg = `Error: Project like '${trimmedRequestedName}' not found in ${projectsBasePath}.`;
+          const errorMsg = `Error: Project like '${trimmedRequestedName}' not found in ${projectsBaseDir}.`;
           this.logMsg(LogLevel.WARN, `User error: ${errorMsg}`);
           return errorMsg;
         }
@@ -152,9 +156,8 @@ export class ProjectManagerPlugin implements WoosterPlugin {
           return ambiguousMsg;
         }
 
-        // At this point, 'matched' is a string (the confirmed project name)
         const actualProjectName = matched;
-        const projectDir = path.join(projectsBasePath, actualProjectName);
+        const projectDir = path.join(projectsBaseDir, actualProjectName);
 
         this.logMsg(LogLevel.INFO, `Project "${actualProjectName}" (matched from "${trimmedRequestedName}") found at ${projectDir}. Attempting to set as active.`);
         const setActiveResult = await setActiveProjectInCore(actualProjectName, this.services, this.logMsg.bind(this));
@@ -163,12 +166,48 @@ export class ProjectManagerPlugin implements WoosterPlugin {
         return setActiveResult.messageForUser;
       },
     });
+    tools.push(openProjectTool);
 
-    return [createProjectTool, openProjectTool];
+    const renameProjectTool = new DynamicTool({
+      name: 'renameProject',
+      description: `Renames an existing project. Input must be a JSON string with 'currentName' (the project to rename) and 'newName' (the desired new name). Example: {"currentName": "old-project-name", "newName": "new-project-name"}`,
+      func: async (input: string): Promise<string> => {
+        this.logMsg(LogLevel.INFO, `renameProject tool called with input: "${input}"`);
+        let currentName: string;
+        let newName: string;
+
+        try {
+          const parsedInput = JSON.parse(input);
+          currentName = parsedInput.currentName;
+          newName = parsedInput.newName;
+          if (typeof currentName !== 'string' || typeof newName !== 'string' || !currentName.trim() || !newName.trim()) {
+            throw new Error("Invalid input: 'currentName' and 'newName' must be non-empty strings.");
+          }
+        } catch (e: any) {
+          const errorMessage = `Error: Invalid input format for renameProject. Expected JSON with "currentName" and "newName". Input received: ${input}. Details: ${e.message}`;
+          this.logMsg(LogLevel.ERROR, errorMessage);
+          return errorMessage;
+        }
+        
+        if (!this.services) {
+            const errorMsg = "Core services not available to renameProject tool.";
+            this.logMsg(LogLevel.ERROR, errorMsg);
+            return `Error: Core services not available. Cannot rename project.`;
+        }
+
+        const result: RenameProjectResult = await performRenameProject(
+          currentName.trim(),
+          newName.trim(),
+          this.services,
+          this.logMsg.bind(this)
+        );
+        return result.message;
+      },
+    });
+    tools.push(renameProjectTool);
+
+    return tools;
   }
-
-  // Add other plugin methods if needed, e.g., for listing projects, setting active project, etc.
 }
 
-// Export the plugin class as the default export
 export default ProjectManagerPlugin; 
