@@ -234,13 +234,13 @@ export async function initializeAgentExecutorService(
   initialEmbeddings: OpenAIEmbeddings,
   configForProjectStore: AppConfig
 ): Promise<void> { // This function's primary purpose is to set module-level state.
-  currentActiveProjectName = initialProjectName;
-  currentActiveProjectPath = initialProjectPath;
+  currentActiveProjectName = initialProjectName.trim();
+  currentActiveProjectPath = initialProjectPath.trim(); // Also good practice to trim paths
   projectVectorStoreInstance = initialProjectStore;
   embeddingsInstance = initialEmbeddings; 
   projectStoreAppConfig = configForProjectStore; 
 
-  log(LogLevel.INFO, `AgentExecutorService: Initialized with project "${initialProjectName}". Vector Store ready.`);
+  log(LogLevel.INFO, `AgentExecutorService: Initialized with project "${currentActiveProjectName}". Vector Store ready.`);
   // This service exposes its functions (like executeAgent, setActiveProject, getActiveProjectPath)
   // as direct module exports, which pluginManager.ts then collects into the CoreServices object.
   // So, no explicit return of these functions is needed here.
@@ -269,18 +269,18 @@ export async function setActiveProject(newProjectName: string): Promise<void> {
         log(LogLevel.ERROR, "Project store config or embeddings not available for setActiveProject.");
         throw new Error("Cannot switch project: Core components for vector store not initialized.");
     }
-    const vectorStore = await initializeProjectVectorStore(newProjectName, projectDir, embeddingsInstance, projectStoreAppConfig);
+    const vectorStore = await initializeProjectVectorStore(newProjectName.trim(), projectDir, embeddingsInstance, projectStoreAppConfig);
     projectVectorStoreInstance = vectorStore;
-    currentActiveProjectName = newProjectName;
+    currentActiveProjectName = newProjectName.trim();
     currentActiveProjectPath = projectDir; // Update the path
-    log(LogLevel.INFO, `Successfully set active project to "${newProjectName}". Vector store loaded.`);
+    log(LogLevel.INFO, `Successfully set active project to "${currentActiveProjectName}". Vector store loaded.`);
 
     // Re-initialize or update agent/tools if necessary, especially if project context affects tool behavior
     // For now, let's assume the agent's system prompt (which includes active project name) will be updated on next getAgentExecutor call.
     // And tools that depend on active project will use the getters.
     agentExecutorInstance = null; // Force re-creation of agent executor with new project context in prompt.
     await getAgentExecutor(); // Re-initialize agent executor
-    log(LogLevel.INFO, `Agent executor re-initialized for project "${newProjectName}".`);
+    log(LogLevel.INFO, `Agent executor re-initialized for project "${currentActiveProjectName}".`);
 
   } catch (error: any) {
     log(LogLevel.ERROR, `Failed to set active project to "${newProjectName}". Error: ${error.message}`, { stack: error.stack });
