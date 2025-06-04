@@ -40,38 +40,44 @@ const coreServicesInstance: CoreServices = {
 
 async function processPlugin(plugin: WoosterPlugin, config: AppConfig, actualEntryPoint: string) {
   log(LogLevel.INFO, `PluginManager: processPlugin started for plugin candidate from entry point: "${actualEntryPoint}"`);
-  if (plugin && typeof plugin.name === 'string' && plugin.name &&
-      typeof plugin.version === 'string' && plugin.version &&
-      typeof plugin.description === 'string' && plugin.description) {
 
-    const isEnabled = config.plugins[plugin.name];
+  const pluginStatic = plugin as any; // Type assertion to access potential static members
+  const pName = pluginStatic.pluginName || pluginStatic.name; // Prefer pluginName
+  const pVersion = pluginStatic.version;
+  const pDescription = pluginStatic.description;
+
+  if (plugin && typeof pName === 'string' && pName &&
+      typeof pVersion === 'string' && pVersion &&
+      typeof pDescription === 'string' && pDescription) {
+
+    const isEnabled = config.plugins[pName];
     if (isEnabled === false) {
-      log(LogLevel.INFO, 'Plugin "%s" (v%s) is disabled via configuration. Skipping load.', plugin.name, plugin.version);
-      return; // Return instead of continue as this is now a helper function
+      log(LogLevel.INFO, 'Plugin "%s" (v%s) is disabled via configuration. Skipping load.', pName, pVersion);
+      return;
     }
 
-    log(LogLevel.INFO, 'Loading plugin: "%s" v%s (Path: %s)', plugin.name, plugin.version, actualEntryPoint);
+    log(LogLevel.INFO, 'Loading plugin: "%s" v%s (Path: %s)', pName, pVersion, actualEntryPoint);
 
     if (typeof plugin.initialize === 'function') {
       try {
         await plugin.initialize(config, coreServicesInstance);
-        log(LogLevel.INFO, 'Plugin "%s" initialized successfully.', plugin.name);
+        log(LogLevel.INFO, 'Plugin "%s" initialized successfully.', pName);
       } catch (initError: any) {
-        log(LogLevel.ERROR, 'Error initializing plugin "%s": %s. Plugin will not be fully active.', plugin.name, initError.message, { error: initError });
-        return; // Skip this plugin if initialization fails
+        log(LogLevel.ERROR, 'Error initializing plugin "%s": %s. Plugin will not be fully active.', pName, initError.message, { error: initError });
+        return;
       }
     }
 
-    log(LogLevel.DEBUG, `PluginManager: Checking getScheduledTaskSetups for plugin "${plugin.name}"`);
+    log(LogLevel.DEBUG, `PluginManager: Checking getScheduledTaskSetups for plugin "${pName}"`);
     if (typeof plugin.getScheduledTaskSetups === 'function') {
-      log(LogLevel.DEBUG, `PluginManager: Plugin "${plugin.name}" implements getScheduledTaskSetups. Calling it.`);
+      log(LogLevel.DEBUG, `PluginManager: Plugin "${pName}" implements getScheduledTaskSetups. Calling it.`);
       try {
         const setups = plugin.getScheduledTaskSetups();
-        log(LogLevel.DEBUG, `PluginManager: Raw setups from "${plugin.name}":`, { setups });
+        log(LogLevel.DEBUG, `PluginManager: Raw setups from "${pName}":`, { setups });
         const setupArray = Array.isArray(setups) ? setups : (setups ? [setups] : []);
 
         for (const setup of setupArray) {
-          log(LogLevel.DEBUG, `PluginManager: Processing a setup object from "${plugin.name}":`, { setup });
+          log(LogLevel.DEBUG, `PluginManager: Processing a setup object from "${pName}":`, { setup });
           if (setup &&
               typeof setup.taskKey === 'string' && setup.taskKey &&
               typeof setup.description === 'string' && setup.description &&
@@ -79,14 +85,14 @@ async function processPlugin(plugin: WoosterPlugin, config: AppConfig, actualEnt
               typeof setup.functionToExecute === 'function' &&
               typeof setup.executionPolicy === 'string' && setup.executionPolicy
              ) {
-            log(LogLevel.INFO, `PluginManager: Plugin "${plugin.name}" provides valid scheduled task setup for: "${setup.taskKey}". Preparing to manage with scheduler.`);
+            log(LogLevel.INFO, `PluginManager: Plugin "${pName}" provides valid scheduled task setup for: "${setup.taskKey}". Preparing to manage with scheduler.`);
             await ensureScheduleIsManaged(setup, config);
           } else {
-            log(LogLevel.WARN, `PluginManager: Plugin "${plugin.name}" provided an invalid or incomplete ScheduledTaskSetupOptions object. Skipping this setup.`, { setup });
+            log(LogLevel.WARN, `PluginManager: Plugin "${pName}" provided an invalid or incomplete ScheduledTaskSetupOptions object. Skipping this setup.`, { setup });
           }
         }
       } catch (scheduleSetupError: any) {
-        log(LogLevel.ERROR, `Error getting or processing scheduled task setups from plugin "${plugin.name}": ${scheduleSetupError.message}`, { error: scheduleSetupError });
+        log(LogLevel.ERROR, `Error getting or processing scheduled task setups from plugin "${pName}": ${scheduleSetupError.message}`, { error: scheduleSetupError });
       }
     }
 
@@ -95,18 +101,23 @@ async function processPlugin(plugin: WoosterPlugin, config: AppConfig, actualEnt
         const toolsFromPlugin = plugin.getAgentTools();
         if (Array.isArray(toolsFromPlugin)) {
           pluginProvidedAgentTools.push(...toolsFromPlugin);
-          log(LogLevel.INFO, 'Plugin "%s" provided %d agent tool(s): %s', plugin.name, toolsFromPlugin.length, toolsFromPlugin.map(t => t.name).join(', '));
+          log(LogLevel.INFO, 'Plugin "%s" provided %d agent tool(s): %s', pName, toolsFromPlugin.length, toolsFromPlugin.map(t => t.name).join(', '));
         } else if (toolsFromPlugin) {
-          log(LogLevel.WARN, 'Plugin "%s" getAgentTools() did not return an array or was empty. Tools not loaded from this plugin.', plugin.name);
+          log(LogLevel.WARN, 'Plugin "%s" getAgentTools() did not return an array or was empty. Tools not loaded from this plugin.', pName);
         }
       } catch (toolError: any) {
-        log(LogLevel.ERROR, 'Error calling getAgentTools() on plugin "%s": %s. Tools not loaded from this plugin.', plugin.name, toolError.message, { error: toolError });
+        log(LogLevel.ERROR, 'Error calling getAgentTools() on plugin "%s": %s. Tools not loaded from this plugin.', pName, toolError.message, { error: toolError });
       }
     }
-    loadedPlugins.push(plugin);
+    loadedPlugins.push(plugin); // Still pushing the constructor
 
   } else {
-    log(LogLevel.WARN, 'Module at "%s" does not export a valid Wooster plugin (missing default export, or name/description/version properties).', actualEntryPoint);
+    let missingDetails = [];
+    if (!plugin) missingDetails.push("plugin definition");
+    if (typeof pName !== 'string' || !pName) missingDetails.push("name (pluginName or name property)");
+    if (typeof pVersion !== 'string' || !pVersion) missingDetails.push("version property");
+    if (typeof pDescription !== 'string' || !pDescription) missingDetails.push("description property");
+    log(LogLevel.WARN, 'Module at "%s" does not export a valid Wooster plugin class. Missing or invalid static properties: %s.', actualEntryPoint, missingDetails.join(', '));
   }
 }
 
@@ -115,25 +126,120 @@ async function processPlugin(plugin: WoosterPlugin, config: AppConfig, actualEnt
  * Initializes them and collects any agent tools or scheduled tasks they provide.
  */
 export async function loadPlugins() {
-  log(LogLevel.INFO, 'PluginManager: loadPlugins started.'); // Log start of loadPlugins
-  const pluginsRootPath = path.join(__dirname, 'plugins')
-  const config = getConfig()
+  log(LogLevel.INFO, 'PluginManager: loadPlugins started.');
+  const pluginsRootPath = path.join(__dirname, 'plugins');
+  const config = getConfig();
   
-  loadedPlugins.length = 0
-  pluginProvidedAgentTools.length = 0
-  registeredServices.clear()
-  delete coreServicesInstance.emailService
-  delete coreServicesInstance.NextActionsService
+  loadedPlugins.length = 0;
+  pluginProvidedAgentTools.length = 0;
+  registeredServices.clear();
+  delete coreServicesInstance.emailService;
+  delete coreServicesInstance.NextActionsService;
+
+  // Helper function to process each plugin
+  async function processPlugin(pluginConstructor: WoosterPlugin, appConfig: AppConfig, entryPoint: string) {
+    log(LogLevel.INFO, `PluginManager: processPlugin started for plugin candidate from entry point: "${entryPoint}"`);
+
+    const PluginClass = pluginConstructor as any; // pluginConstructor is the class itself
+
+    const pName = PluginClass.pluginName || PluginClass.name;
+    const pVersion = PluginClass.version;
+    const pDescription = PluginClass.description;
+
+    if (PluginClass && typeof pName === 'string' && pName &&
+        typeof pVersion === 'string' && pVersion &&
+        typeof pDescription === 'string' && pDescription) {
+
+      const isEnabled = appConfig.plugins[pName];
+      if (isEnabled === false) {
+        log(LogLevel.INFO, 'Plugin "%s" (v%s) is disabled via configuration. Skipping load.', pName, pVersion);
+        return;
+      }
+
+      log(LogLevel.INFO, 'Loading plugin: "%s" v%s (Path: %s)', pName, pVersion, entryPoint);
+      
+      let instance: WoosterPlugin;
+      try {
+        // Instantiate the plugin class
+        instance = new PluginClass(); 
+      } catch (instantiationError: any) {
+        log(LogLevel.ERROR, `Failed to instantiate plugin "${pName}" from "${entryPoint}": %s`, instantiationError.message, { error: instantiationError });
+        return;
+      }
+
+      if (typeof instance.initialize === 'function') {
+        try {
+          await instance.initialize(appConfig, coreServicesInstance);
+          log(LogLevel.INFO, 'Plugin "%s" initialized successfully.', pName);
+        } catch (initError: any) {
+          log(LogLevel.ERROR, 'Error initializing plugin instance "%s": %s. Plugin will not be fully active.', pName, initError.message, { error: initError });
+          return; 
+        }
+      }
+
+      log(LogLevel.DEBUG, `PluginManager: Checking getScheduledTaskSetups for plugin instance "${pName}"`);
+      if (typeof instance.getScheduledTaskSetups === 'function') {
+        log(LogLevel.DEBUG, `PluginManager: Plugin instance "${pName}" implements getScheduledTaskSetups. Calling it.`);
+        try {
+          // Type assertion as WoosterPlugin's getScheduledTaskSetups is optional
+          const setups = (instance as any).getScheduledTaskSetups(); 
+          log(LogLevel.DEBUG, `PluginManager: Raw setups from plugin instance "${pName}":`, { setups });
+          const setupArray = Array.isArray(setups) ? setups : (setups ? [setups] : []);
+
+          for (const setup of setupArray) {
+            log(LogLevel.DEBUG, `PluginManager: Processing a setup object from plugin instance "${pName}":`, { setup });
+            if (setup &&
+                typeof setup.taskKey === 'string' && setup.taskKey &&
+                typeof setup.description === 'string' && setup.description &&
+                typeof setup.defaultScheduleExpression === 'string' && setup.defaultScheduleExpression &&
+                typeof setup.functionToExecute === 'function' &&
+                typeof setup.executionPolicy === 'string' && setup.executionPolicy
+               ) {
+              log(LogLevel.INFO, `PluginManager: Plugin instance "${pName}" provides valid scheduled task setup for: "${setup.taskKey}". Preparing to manage with scheduler.`);
+              await ensureScheduleIsManaged(setup, appConfig);
+            } else {
+              log(LogLevel.WARN, `PluginManager: Plugin instance "${pName}" provided an invalid or incomplete ScheduledTaskSetupOptions object. Skipping this setup.`, { setup });
+            }
+          }
+        } catch (scheduleSetupError: any) {
+          log(LogLevel.ERROR, `Error getting or processing scheduled task setups from plugin instance "${pName}": ${scheduleSetupError.message}`, { error: scheduleSetupError });
+        }
+      }
+
+      if (typeof instance.getAgentTools === 'function') {
+        try {
+          // Type assertion as WoosterPlugin's getAgentTools is optional
+          const toolsFromPlugin = (instance as any).getAgentTools();
+          if (Array.isArray(toolsFromPlugin)) {
+            pluginProvidedAgentTools.push(...toolsFromPlugin);
+            log(LogLevel.INFO, 'Plugin instance "%s" provided %d agent tool(s): %s', pName, toolsFromPlugin.length, toolsFromPlugin.map(t => t.name).join(', '));
+          } else if (toolsFromPlugin) {
+            log(LogLevel.WARN, 'Plugin instance "%s" getAgentTools() did not return an array or was empty. Tools not loaded from this plugin.', pName);
+          }
+        } catch (toolError: any) {
+          log(LogLevel.ERROR, 'Error calling getAgentTools() on plugin instance "%s": %s. Tools not loaded from this plugin.', pName, toolError.message, { error: toolError });
+        }
+      }
+      loadedPlugins.push(instance); // Push the instance
+
+    } else {
+      let missingDetails = [];
+      if (!PluginClass) missingDetails.push("plugin definition");
+      if (typeof pName !== 'string' || !pName) missingDetails.push("name (pluginName or name property)");
+      if (typeof pVersion !== 'string' || !pVersion) missingDetails.push("version property");
+      if (typeof pDescription !== 'string' || !pDescription) missingDetails.push("description property");
+      log(LogLevel.WARN, 'Module at "%s" does not export a valid Wooster plugin class. Missing or invalid static properties: %s.', entryPoint, missingDetails.join(', '));
+    }
+  }
 
   // Scan and load ALL plugins from src/plugins/ directory
-  let pluginDirectories: string[] = []
+  let pluginDirectories: string[] = [];
   try {
     pluginDirectories = fs.readdirSync(pluginsRootPath, { withFileTypes: true })
       .filter(dirent => dirent.isDirectory())
-      .map(dirent => dirent.name)
+      .map(dirent => dirent.name);
   } catch (err: any) {
-    // Log error but continue, as other initialization might be critical or already done.
-    log(LogLevel.WARN, `Error reading plugins directory at ${pluginsRootPath}. No plugins will be loaded from here. Error: %s`, err.message)
+    log(LogLevel.WARN, `Error reading plugins directory at ${pluginsRootPath}. No plugins will be loaded from here. Error: %s`, err.message);
   }
 
   if (pluginDirectories.length > 0) {
@@ -144,33 +250,38 @@ export async function loadPlugins() {
 
   for (const pluginDirName of pluginDirectories) {
     log(LogLevel.INFO, `PluginManager: Processing plugin directory: "${pluginDirName}"`);
-    const pluginEntryPoint = path.join(pluginsRootPath, pluginDirName, 'index.ts')
-    const pluginEntryPointJs = path.join(pluginsRootPath, pluginDirName, 'index.js')
+    const pluginEntryPointTs = path.join(pluginsRootPath, pluginDirName, 'index.ts');
+    const pluginEntryPointJs = path.join(pluginsRootPath, pluginDirName, 'index.js');
     
-    let actualEntryPoint = ''
-    if (fs.existsSync(pluginEntryPoint)) {
-        actualEntryPoint = pluginEntryPoint
+    let actualEntryPoint = '';
+    if (fs.existsSync(pluginEntryPointTs)) { // Prefer .ts for context, though import will use .js from dist
+        actualEntryPoint = pluginEntryPointTs;
     } else if (fs.existsSync(pluginEntryPointJs)) {
-        actualEntryPoint = pluginEntryPointJs
+        actualEntryPoint = pluginEntryPointJs;
     }
 
     if (!actualEntryPoint) {
-      log(LogLevel.WARN, 'PluginManager: Plugin directory "%s" does not contain an index.ts or index.js. Skipping.', pluginDirName)
-      continue
+      log(LogLevel.WARN, 'PluginManager: Plugin directory "%s" does not contain an index.ts or index.js. Skipping.', pluginDirName);
+      continue;
     }
     log(LogLevel.INFO, `PluginManager: Determined entry point for "${pluginDirName}": "${actualEntryPoint}"`);
 
     try {
       log(LogLevel.INFO, `PluginManager: Attempting to import plugin module from "${actualEntryPoint}"`);
-      const mod = await import(actualEntryPoint)
+      // Dynamic import will resolve to .js from the 'dist' folder based on tsconfig output
+      const mod = await import(actualEntryPoint.replace(/^src/, '..\/dist').replace(/\\.[jt]s$/, '.js'));
       log(LogLevel.INFO, `PluginManager: Successfully imported module from "${actualEntryPoint}". Has default export: ${!!mod.default}`);
-      const plugin: WoosterPlugin = mod.default
-      await processPlugin(plugin, config, actualEntryPoint); // Use the helper function
+      
+      if (mod.default) {
+        await processPlugin(mod.default, config, actualEntryPoint);
+      } else {
+        log(LogLevel.WARN, `PluginManager: Module from "${actualEntryPoint}" does not have a default export. Skipping.`);
+      }
     } catch (error: any) {
-      log(LogLevel.ERROR, 'Error loading plugin module from "%s": %s', actualEntryPoint, error.message, { error })
+      log(LogLevel.ERROR, 'Error loading plugin module from "%s": %s', actualEntryPoint, error.message, { error });
     }
   }
-  log(LogLevel.INFO, 'Plugin loading complete. Total active plugins: %d. Total tools provided by plugins: %d.', loadedPlugins.length, pluginProvidedAgentTools.length)
+  log(LogLevel.INFO, 'Plugin loading complete. Total active plugins: %d. Total tools provided by plugins: %d.', loadedPlugins.length, pluginProvidedAgentTools.length);
 }
 
 /**
