@@ -6,10 +6,40 @@ import { LogLevel } from '../../logger'; // Keep for LogLevel enum
 import * as fs from 'fs'; // Import fs for checking directory existence
 import * as path from 'path'; // Import path for constructing paths
 
+// Helper function to find a matching project name
+function findMatchingProjectName(requestedName: string, actualProjectNames: string[]): string | string[] | null {
+  if (actualProjectNames.includes(requestedName)) {
+    return requestedName; // Exact match
+  }
+
+  const lowerRequestedName = requestedName.toLowerCase();
+  const caseInsensitiveMatches = actualProjectNames.filter(name => name.toLowerCase() === lowerRequestedName);
+  if (caseInsensitiveMatches.length === 1) {
+    return caseInsensitiveMatches[0]; // Single case-insensitive match
+  }
+  if (caseInsensitiveMatches.length > 1) {
+    return caseInsensitiveMatches; // Multiple case-insensitive matches (ambiguous)
+  }
+
+  // Normalized matching (lowercase, remove spaces, hyphens, underscores)
+  const normalize = (str: string) => str.toLowerCase().replace(/[-\s_]/g, '');
+  const normalizedRequestedName = normalize(requestedName);
+  
+  const normalizedMatches = actualProjectNames.filter(name => normalize(name) === normalizedRequestedName);
+  if (normalizedMatches.length === 1) {
+    return normalizedMatches[0]; // Single normalized match
+  }
+  if (normalizedMatches.length > 1) {
+    return normalizedMatches; // Multiple normalized matches (ambiguous)
+  }
+  
+  return null; // No suitable match found
+}
+
 export class ProjectManagerPlugin implements WoosterPlugin {
   static readonly pluginName = 'projectManager'; // Renamed to avoid conflict with Function.name
-  static readonly version = '0.1.1'; // Incremented version due to new tool and refactor
-  static readonly description = 'Manages projects, including creation, opening, and setting active project.';
+  static readonly version = '0.1.2'; // Incremented version due to new tool and refactor
+  static readonly description = 'Manages projects: creation, opening (with fuzzy matching), and setting active project.';
 
   // Instance properties for WoosterPlugin interface if it expects them on instance
   readonly name = ProjectManagerPlugin.pluginName;
@@ -47,7 +77,7 @@ export class ProjectManagerPlugin implements WoosterPlugin {
   getAgentTools?(): DynamicTool[] {
     const createProjectTool = new DynamicTool({
       name: 'createProject',
-      description: 'Creates a new project with the given name and sets it as the active project. Usage: createProject project_name',
+      description: 'Creates a new project with the given name and attempts to set it as the active project. Usage: createProject project_name',
       func: async (projectName: string) => {
         if (!projectName || typeof projectName !== 'string' || projectName.trim() === '') {
           const errorMsg = 'Error: Project name must be a non-empty string.';
@@ -81,15 +111,15 @@ export class ProjectManagerPlugin implements WoosterPlugin {
 
     const openProjectTool = new DynamicTool({
       name: 'openProject',
-      description: 'Opens an existing project and sets it as the active project. Usage: openProject project_name',
-      func: async (projectName: string) => {
-        if (!projectName || typeof projectName !== 'string' || projectName.trim() === '') {
+      description: 'Opens an existing project and attempts to set it as the active project. Tries to match project name if not exact. Usage: openProject project_name',
+      func: async (requestedProjectName: string) => {
+        if (!requestedProjectName || typeof requestedProjectName !== 'string' || requestedProjectName.trim() === '') {
           const errorMsg = 'Error: Project name must be a non-empty string for opening.';
           this.logMsg(LogLevel.ERROR, `User error: ${errorMsg}`);
           return errorMsg;
         }
-        const trimmedProjectName = projectName.trim();
-        this.logMsg(LogLevel.INFO, `openProject tool called with project name: "${trimmedProjectName}"`);
+        const trimmedRequestedName = requestedProjectName.trim();
+        this.logMsg(LogLevel.INFO, `openProject tool called with requested project name: "${trimmedRequestedName}"`);
 
         if (!this.config.gtd || !this.config.gtd.projectsDir) {
           const errorMsg = 'Error: GTD_PROJECTS_DIR is not configured. Cannot locate projects.';
@@ -98,19 +128,39 @@ export class ProjectManagerPlugin implements WoosterPlugin {
         }
 
         const projectsBasePath = path.resolve(this.config.gtd.projectsDir);
-        const projectDir = path.join(projectsBasePath, trimmedProjectName);
+        let actualProjectNames: string[];
+        try {
+          actualProjectNames = fs.readdirSync(projectsBasePath).filter(name => 
+            fs.statSync(path.join(projectsBasePath, name)).isDirectory()
+          );
+        } catch (err: any) {
+          this.logMsg(LogLevel.ERROR, `Error reading project directories from ${projectsBasePath}: ${err.message}`);
+          return `Error: Could not list project directories.`;
+        }
 
-        if (!fs.existsSync(projectDir)) {
-          const errorMsg = `Error: Project '${trimmedProjectName}' not found at ${projectDir}.`;
+        const matched = findMatchingProjectName(trimmedRequestedName, actualProjectNames);
+
+        if (!matched) {
+          const errorMsg = `Error: Project like '${trimmedRequestedName}' not found in ${projectsBasePath}.`;
           this.logMsg(LogLevel.WARN, `User error: ${errorMsg}`);
           return errorMsg;
         }
 
-        this.logMsg(LogLevel.INFO, `Project "${trimmedProjectName}" found at ${projectDir}. Attempting to set as active.`);
-        const setActiveResult = await setActiveProjectInCore(trimmedProjectName, this.services, this.logMsg.bind(this));
+        if (Array.isArray(matched)) {
+          const ambiguousMsg = `Multiple projects match '${trimmedRequestedName}': ${matched.join(', ')}. Please be more specific.`;
+          this.logMsg(LogLevel.WARN, `User info: ${ambiguousMsg}`);
+          return ambiguousMsg;
+        }
+
+        // At this point, 'matched' is a string (the confirmed project name)
+        const actualProjectName = matched;
+        const projectDir = path.join(projectsBasePath, actualProjectName);
+
+        this.logMsg(LogLevel.INFO, `Project "${actualProjectName}" (matched from "${trimmedRequestedName}") found at ${projectDir}. Attempting to set as active.`);
+        const setActiveResult = await setActiveProjectInCore(actualProjectName, this.services, this.logMsg.bind(this));
         this.logMsg(setActiveResult.success ? LogLevel.INFO : LogLevel.WARN, `User feedback: ${setActiveResult.messageForUser}`);
         
-        return setActiveResult.messageForUser; // Return the user-facing message directly to the agent/user
+        return setActiveResult.messageForUser;
       },
     });
 
