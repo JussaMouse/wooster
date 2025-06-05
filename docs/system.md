@@ -8,7 +8,7 @@ Wooster is a modular, extensible CLI assistant. This document explains its boot 
   - OpenAI API Key and Model Settings (e.g., `OPENAI_API_KEY`, `OPENAI_MODEL_NAME` for the agent and RAG).
   - Logging settings (e.g., `LOGGING_CONSOLE_LOG_LEVEL`, `LOGGING_LOG_FILE`)
   - Tool enablement and settings (e.g., `TOOLS_EMAIL_ENABLED`, `TOOLS_WEB_SEARCH_ENABLED`, `TAVILY_API_KEY`)
-  - User Profile enablement and prompt (e.g., `USER_PROFILE_ENABLED`, `USER_PROFILE_EXTRACTOR_LLM_PROMPT`)
+  - User Profile enablement and store path (e.g., `USER_PROFILE_ENABLED`, `USER_PROFILE_STORE_PATH`)
   - Plugin activation (e.g., `PLUGIN_MYPLUGIN_ENABLED=false`)
 - You **must copy `.env.example` to `.env` and edit this file**, providing at least your `OPENAI_API_KEY` for Wooster to function.
 - See `06 CONFIG.MD` for a comprehensive list of all environment variables, their purpose, and default values.
@@ -26,17 +26,16 @@ Wooster is a modular, extensible CLI assistant. This document explains its boot 
 5.  Validate `appConfig.openai.apiKey`. Exit if missing or placeholder.
 6.  Initialize LLM for RAG (`llmForRag = new ChatOpenAI(...)`) if RAG is used independently. The primary agent LLM is managed by the `AgentExecutorService`.
 7.  Pass the loaded `AppConfig` to the agent module (`setAgentConfig()` in `src/agent.ts`).
-8.  Initialize User Knowledge Extractor (for User Profile).
-9.  Initialize Web Search Tool (`initializeWebSearchTool()`).
-10. Initialize Scheduler Database and Service (`initSchedulerService(schedulerAgentCallback)`).
-11. Initialize Heartbeat Service.
-12. **Default Project Setup** (create `projects/home/`, set as current, initialize its `vectorStore`).
-13. Initialize User Profile Vector Store if enabled.
-14. Initialize `AgentExecutorService` (`initializeAgentExecutorService()`), passing necessary stores (User Profile store, project vector store).
-15. Initialize RAG chain (`initializeRagChain()`) for the current project (primarily for functionalities outside direct agent tool use, as the agent has its own `queryKnowledgeBase` tool).
-16. Load and initialize plugins.
-17. Initialize Project Metadata Service.
-18. Start interactive REPL (`startREPL()`).
+8.  Initialize Web Search Tool (`initializeWebSearchTool()`).
+9.  Initialize Scheduler Database and Service (`initSchedulerService(schedulerAgentCallback)`).
+10. Initialize Heartbeat Service.
+11. **Default Project Setup** (create `projects/home/`, set as current, initialize its `vectorStore`).
+12. Initialize User Profile Vector Store if enabled.
+13. Initialize `AgentExecutorService` (`initializeAgentExecutorService()`), passing necessary stores (User Profile store, project vector store).
+14. Initialize RAG chain (`initializeRagChain()`) for the current project (primarily for functionalities outside direct agent tool use, as the agent has its own `queryKnowledgeBase` tool).
+15. Load and initialize plugins.
+16. Initialize Project Metadata Service.
+17. Start interactive REPL (`startREPL()`).
 
 ## 4. REPL Loop & Agent Interaction
 - Prompts `> ` using Node's `readline`. Startup message lists available REPL commands.
@@ -54,8 +53,7 @@ Wooster is a modular, extensible CLI assistant. This document explains its boot 
      - See `03 AGENT.MD` for more details on the agent's internal workings.
   4. Project-specific knowledge is primarily accessed by the agent via its `queryKnowledgeBase` tool, which internally uses a RAG chain. An independent `ragChain` might still exist in `src/index.ts` for other specific RAG functionalities not directly invoked by the agent.
   5. The agent's final response is printed and added to `conversationHistory`.
-  6. If User Profile is enabled, `extractUserKnowledge` analyzes the turn.
-  7. Significant interactions may be logged to `projects/[projectName]/[projectName].md`.
+  6. Significant interactions may be logged to `projects/[projectName]/[projectName].md`.
 - On `exit`, `quit`, or Ctrl+C, the application shuts down gracefully.
 
 ## 5. Built-in REPL Commands
@@ -92,8 +90,7 @@ Plugins are for user-driven extensions. Configuration is via `PLUGIN_[PLUGINNAME
 (This section largely remains the same, but emphasizes that the `recall_user_profile` tool is now used by the `AgentExecutor`)
 Wooster can learn user preferences and facts from conversations.
 - **Enablement**: Controlled by `USER_PROFILE_ENABLED`.
-- **Knowledge Extraction**: `userKnowledgeExtractor` analyzes conversations. Facts are stored in `vector_data/user_context_store/`.
-- **Custom Prompt**: `USER_PROFILE_EXTRACTOR_LLM_PROMPT`.
+- **Knowledge Storage**: User facts and preferences are saved when the agent uses the `save_user_profile` tool. Data is stored in the path configured by `USER_PROFILE_STORE_PATH` (default: `vector_data/user_profile_store/`).
 - **Recall**: The agent, via `AgentExecutor`, uses the `recall_user_profile` tool.
 - **Details**: See `02 USER_PROFILE.MD` and `06 CONFIG.MD`.
 
