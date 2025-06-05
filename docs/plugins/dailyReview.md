@@ -13,15 +13,10 @@ The Daily Review email is styled by Wooster with a touch of personality and "cut
    - Fetched from your primary Google Calendar (requires Calendar plugin).
 
 ### b. Next Actions List
-   - Highlights tasks from your active projects.
-   - Compiled from `actions.txt` files (requires Next Actions service).
-   - The list prioritizes actions as follows:
-     1.  **Always Included:** Actions from `projects/home/actions.txt` (if the file exists and contains actions).
-     2.  **Additional Actions:** Actions from the `actions.txt` files of the **3 most recently modified project directories**.
-   - Project directories are expected to be under the `projects/` folder (e.g., `projects/my_novel/`).
-   - For non-home projects, the "most recently modified" status is determined by the last modification timestamp of the project's main Markdown file (e.g., `projects/my_novel/my_novel.md`). If a `[projectName].md` file doesn't exist in the project's root, that project might not be correctly considered for recency.
-   - Each line in an `actions.txt` file is treated as a distinct action item.
-   - Actions in the email will be clearly associated with their respective project names.
+   - Displays your open tasks directly from your main `next_actions.md` file.
+   - This list is fetched via the `NextActionsPlugin` (specifically, a service it provides, like `GetOpenNextActionsService`).
+   - Tasks will be shown with their descriptions, and may include context (e.g., `@home`), project (e.g., `+Chores`), and due dates if specified in `next_actions.md`.
+   - This provides a comprehensive view of all your current next actions as defined in your central GTD task list.
 
 ### c. Weather Forecast
    - Provides the current weather for your configured city (requires Weather plugin).
@@ -46,7 +41,7 @@ To enable and correctly receive the Daily Review, ensure the following are confi
 ### a. User Preferences File (`config/dailyReview.json`)
 
 This file, located at `config/dailyReview.json` in your Wooster project root, stores your personal settings for the Daily Review. This includes:
-*   Which content modules are active (e.g., calendar, weather, fitnessLog).
+*   Which content modules are active (e.g., `calendar`, `weather`, `healthLog`, `nextActions`).
 *   Delivery channel preferences (e.g., email recipient, enabling/disabling email).
 *   The `scheduleCron` expression for when the review is generated and sent. The default schedule if not otherwise configured is **7:30 AM daily** (`"30 7 * * *"`).
 
@@ -81,10 +76,6 @@ This file, located at `config/dailyReview.json` in your Wooster project root, st
    - You can customize this cron expression in `config/dailyReview.json` to change the timing.
    - An environment variable `DAILY_REVIEW_SCHEDULE_CRON` or settings in the main `appConfig` (e.g., `appConfig.dailyReview.scheduleCronExpression`) might influence the *initial default value* that gets written into `config/dailyReview.json` if the file is being created for the first time and those `appConfig` values exist. However, once `config/dailyReview.json` exists, the `scheduleCron` value within it is the definitive source for the plugin's scheduling. Changes to this file are read by the plugin on startup or reload.
 
-### f. Project `actions.txt` Files (for Project Actions Module)
-   - **Location:** Create an `actions.txt` file in the root directory of any project for which you want to track actions (e.g., `projects/your_project_name/actions.txt`).
-   - **Format:** List one action item per line.
-
 ## 5. Triggering Mechanism
 
 - The Daily Review is primarily designed to be an **automated email sent once per day** according to the schedule in `config/dailyReview.json`.
@@ -110,8 +101,7 @@ This feature, depending on enabled content modules, relies on:
     - A Weather Service/Function (e.g., `getWeatherForecastFunction` provided by a Weather Plugin).
     - Correctly configured weather API key and city in `.env`.
 - **Next Actions List:**
-    - The `NextActionsService`.
-    - File system access to find projects and read `actions.txt` files.
+    - The `NextActionsPlugin` must provide a service (e.g., `GetOpenNextActionsService`) that allows fetching all open tasks (`TaskItem[]`) from the `next_actions.md` file.
 - **Latest Fitness Log:**
     - The `PersonalHealthService` (provided by the Personal Health Plugin).
 - **Core System:**

@@ -14,7 +14,7 @@ import type { PersonalHealthService } from '../personalHealth/types.ts';
 
 export type GetOpenNextActionsService = (filters?: any, sortOptions?: any) => Promise<TaskItem[]>;
 
-const PROJECTS_DIR = path.join(__dirname, '../../../projects');
+// const PROJECTS_DIR = path.join(__dirname, '../../../projects'); // No longer used by this plugin
 const USER_CONFIG_DIR = path.join(process.cwd(), 'config');
 const USER_CONFIG_FILE_PATH = path.join(USER_CONFIG_DIR, 'dailyReview.json');
 

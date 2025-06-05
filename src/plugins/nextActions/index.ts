@@ -25,6 +25,25 @@ interface NextActionSortOptions {
   sortOrder?: 'asc' | 'desc';
 }
 
+// Service to be provided by this plugin
+export class GetOpenNextActionsService {
+  static readonly serviceName = "GetOpenNextActionsService";
+  private pluginInstance: NextActionsPluginDefinition;
+
+  constructor(pluginInstance: NextActionsPluginDefinition) {
+    this.pluginInstance = pluginInstance;
+  }
+
+  public async execute(filters?: NextActionFilters, sortOptions?: NextActionSortOptions): Promise<TaskItem[]> {
+    // By default, get open tasks, using default sort
+    const effectiveFilters = filters ?? { status: 'open' };
+    if (!effectiveFilters.status) {
+      effectiveFilters.status = 'open';
+    }
+    return this.pluginInstance.getTasks(effectiveFilters, sortOptions);
+  }
+}
+
 class NextActionsPluginDefinition implements WoosterPlugin {
   static readonly pluginName = "nextActions";
   static readonly version = "0.1.0";
@@ -38,6 +57,7 @@ class NextActionsPluginDefinition implements WoosterPlugin {
   private nextActionsFilePath!: string;
   private archiveDirPath!: string;
   private coreServices!: CoreServices; // Renamed and properly typed
+  private getOpenNextActionsService!: GetOpenNextActionsService; // Added for the service
 
   private logMsg(level: LogLevel, message: string, metadata?: object) {
     if (this.coreServices && this.coreServices.log) {
@@ -73,6 +93,11 @@ class NextActionsPluginDefinition implements WoosterPlugin {
       fs.mkdirSync(fullArchiveDirPath, { recursive: true });
       this.logMsg(LogLevel.INFO, `Created directory ${fullArchiveDirPath}`);
     }
+    
+    // Instantiate services
+    this.getOpenNextActionsService = new GetOpenNextActionsService(this);
+    
+    this.logMsg(LogLevel.INFO, `Service "${GetOpenNextActionsService.serviceName}" initialized.`);
   }
 
   async shutdown(): Promise<void> {
@@ -231,7 +256,7 @@ class NextActionsPluginDefinition implements WoosterPlugin {
         return 0;
       });
     } else {
-      // Default sort (or if 'fileOrder' is specified):
+      // Default sort (or if 'fileOrder' is specified and no other sort option is given):
       // Alpha by context, then project (non-home), then description.
       tasks.sort((a, b) => {
         const keyA = this.getTaskSortKey(a);
@@ -240,7 +265,6 @@ class NextActionsPluginDefinition implements WoosterPlugin {
         return sortOrder === 'desc' ? -comparison : comparison;
       });
     }
-    // Default sort is 'fileOrder' (original order from file), which is already the case.
 
     return tasks;
   }
@@ -837,6 +861,14 @@ ${archivedTaskString}
       // Consider if this needs to be linked to a promise returned by runInteractiveSession.
       // For now, it just signals the end of the readline interface.
     });
+  }
+
+  // --- Plugin Lifecycle and Service/Tool Registration ---
+
+  getServices?(): Record<string, any> {
+    return {
+      [GetOpenNextActionsService.serviceName]: this.getOpenNextActionsService,
+    };
   }
 }
 
