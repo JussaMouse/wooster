@@ -66,7 +66,7 @@ export interface GmailConfig {
 
 export interface UserProfileConfig {
   enabled: boolean;
-  extractorLlmPrompt: string | null;
+  storePath?: string;
 }
 
 export interface GoogleConfig {
@@ -145,7 +145,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   },
   userProfile: {
     enabled: false,
-    extractorLlmPrompt: null,
+    storePath: undefined,
   },
   plugins: {},
   projects: {}, // Kept simple
@@ -248,124 +248,107 @@ function parseUnits(envValue: string | undefined, defaultValue: "C" | "F"): "C" 
 
 // Function to load configuration from environment variables
 export function loadConfig(): AppConfig {
-  currentConfig.openai = {
-    apiKey: getEnvVar('OPENAI_API_KEY') || DEFAULT_CONFIG.openai.apiKey,
-    modelName: parseString(getEnvVar('OPENAI_MODEL_NAME'), DEFAULT_CONFIG.openai.modelName),
-    embeddingModelName: parseString(getEnvVar('OPENAI_EMBEDDING_MODEL_NAME'), DEFAULT_CONFIG.openai.embeddingModelName),
-    temperature: parseNumber(getEnvVar('OPENAI_TEMPERATURE'), DEFAULT_CONFIG.openai.temperature),
-    maxTokens: parseNumber(getEnvVar('OPENAI_MAX_TOKENS'), DEFAULT_CONFIG.openai.maxTokens),
-  };
+  const loadedConfig: AppConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG)); // Deep copy
 
-  const requestedConsoleLogLevel = parseLogLevel(getEnvVar('TOOLS_LOGGING_CONSOLE_LOG_LEVEL'), DEFAULT_CONFIG.logging.consoleLogLevel);
-  const defaultQuietMode = DEFAULT_CONFIG.logging.consoleQuietMode;
-  // If debug is explicitly requested for console, quiet mode should be off.
-  // Otherwise, respect default or a future specific env var.
-  const quietMode = requestedConsoleLogLevel === LogLevel.DEBUG ? false : parseBoolean(getEnvVar('TOOLS_LOGGING_CONSOLE_QUIET_MODE'), defaultQuietMode);
+  // Populate from environment variables
+  loadedConfig.env = getEnvVar('NODE_ENV') || DEFAULT_CONFIG.env;
+  loadedConfig.appName = getEnvVar('APP_NAME') || DEFAULT_CONFIG.appName;
+  loadedConfig.version = getEnvVar('APP_VERSION') || DEFAULT_CONFIG.version;
 
-  currentConfig.logging = {
-    consoleLogLevel: requestedConsoleLogLevel,
-    fileLogLevel: parseLogLevel(getEnvVar('TOOLS_LOGGING_FILE_LOG_LEVEL'), DEFAULT_CONFIG.logging.fileLogLevel),
-    logFile: parseString(getEnvVar('TOOLS_LOGGING_LOG_FILE'), DEFAULT_CONFIG.logging.logFile),
-    logAgentLLMInteractions: parseBoolean(getEnvVar('TOOLS_LOGGING_LOG_AGENT_LLM_INTERACTIONS'), DEFAULT_CONFIG.logging.logAgentLLMInteractions),
-    consoleQuietMode: quietMode,
-  };
-
-  currentConfig.userProfile = {
-    enabled: parseBoolean(getEnvVar('USER_PROFILE_ENABLED'), DEFAULT_CONFIG.userProfile.enabled),
-    extractorLlmPrompt: parseNullableString(getEnvVar('USER_PROFILE_EXTRACTOR_LLM_PROMPT'), DEFAULT_CONFIG.userProfile.extractorLlmPrompt),
-  };
+  // Logging configuration
+  loadedConfig.logging.consoleLogLevel = parseLogLevel(getEnvVar('LOGGING_CONSOLE_LOG_LEVEL'), DEFAULT_CONFIG.logging.consoleLogLevel);
+  loadedConfig.logging.fileLogLevel = parseLogLevel(getEnvVar('LOGGING_FILE_LOG_LEVEL'), DEFAULT_CONFIG.logging.fileLogLevel);
+  loadedConfig.logging.logFile = parseString(getEnvVar('LOGGING_LOG_FILE'), DEFAULT_CONFIG.logging.logFile);
+  loadedConfig.logging.logAgentLLMInteractions = parseBoolean(getEnvVar('LOGGING_LOG_AGENT_LLM_INTERACTIONS'), DEFAULT_CONFIG.logging.logAgentLLMInteractions);
+  loadedConfig.logging.consoleQuietMode = parseBoolean(getEnvVar('LOGGING_CONSOLE_QUIET_MODE'), DEFAULT_CONFIG.logging.consoleQuietMode);
   
-  currentConfig.gmail = {
-    senderEmailAddress: parseNullableString(getEnvVar('GMAIL_SENDER_EMAIL_ADDRESS'), DEFAULT_CONFIG.gmail?.senderEmailAddress || null),
-    userPersonalEmailAddress: parseNullableString(getEnvVar('GMAIL_USER_PERSONAL_EMAIL_ADDRESS'), DEFAULT_CONFIG.gmail?.userPersonalEmailAddress || null),
-    emailAppPassword: parseNullableString(getEnvVar('GMAIL_APP_PASSWORD'), DEFAULT_CONFIG.gmail?.emailAppPassword || null),
-  };
+  // OpenAI configuration
+  loadedConfig.openai.apiKey = getEnvVar('OPENAI_API_KEY') || DEFAULT_CONFIG.openai.apiKey;
+  loadedConfig.openai.modelName = getEnvVar('OPENAI_MODEL_NAME') || DEFAULT_CONFIG.openai.modelName;
+  loadedConfig.openai.embeddingModelName = getEnvVar('OPENAI_EMBEDDING_MODEL_NAME') || DEFAULT_CONFIG.openai.embeddingModelName;
+  loadedConfig.openai.temperature = parseNumber(getEnvVar('OPENAI_TEMPERATURE'), DEFAULT_CONFIG.openai.temperature);
+  loadedConfig.openai.maxTokens = parseNumber(getEnvVar('OPENAI_MAX_TOKENS'), DEFAULT_CONFIG.openai.maxTokens);
 
-  currentConfig.google = {
-    calendar: {
-      clientId: parseNullableString(getEnvVar('GOOGLE_CLIENT_ID'), DEFAULT_CONFIG.google?.calendar?.clientId || null),
-      clientSecret: parseNullableString(getEnvVar('GOOGLE_CLIENT_SECRET'), DEFAULT_CONFIG.google?.calendar?.clientSecret || null),
-      refreshToken: parseNullableString(getEnvVar('GOOGLE_CALENDAR_REFRESH_TOKEN'), DEFAULT_CONFIG.google?.calendar?.refreshToken || null),
-      calendarId: parseString(getEnvVar('GOOGLE_CALENDAR_ID'), DEFAULT_CONFIG.google?.calendar?.calendarId || 'primary'),
-    }
-  };
+  // Tavily configuration
+  loadedConfig.tavily.apiKey = parseNullableString(getEnvVar('TAVILY_API_KEY'), DEFAULT_CONFIG.tavily.apiKey);
 
-  currentConfig.weather = {
-    city: parseNullableString(getEnvVar('WEATHER_CITY'), DEFAULT_CONFIG.weather?.city || null),
-    openWeatherMapApiKey: parseNullableString(getEnvVar('OPENWEATHERMAP_API_KEY'), DEFAULT_CONFIG.weather?.openWeatherMapApiKey || null),
-    units: parseUnits(getEnvVar('WEATHER_UNITS'), DEFAULT_CONFIG.weather?.units || "F"),
-  };
-  
-  currentConfig.dailyReview = {
-    scheduleCronExpression: parseString(getEnvVar('DAILY_REVIEW_SCHEDULE_CRON'), DEFAULT_CONFIG.dailyReview?.scheduleCronExpression || "30 6 * * *"),
-  };
-
-  currentConfig.captureApi = {
-    enabled: parseBoolean(getEnvVar('PLUGIN_CAPTURE_API_ENABLED'), DEFAULT_CONFIG.captureApi?.enabled || false),
-    port: parseNumber(getEnvVar('PLUGIN_CAPTURE_API_PORT'), DEFAULT_CONFIG.captureApi?.port || 3002),
-    apiKey: parseNullableString(getEnvVar('PLUGIN_CAPTURE_API_KEY'), DEFAULT_CONFIG.captureApi?.apiKey || null),
-    ipWhitelistEnabled: parseBoolean(getEnvVar('PLUGIN_CAPTURE_API_WHITELIST_ENABLED'), DEFAULT_CONFIG.captureApi?.ipWhitelistEnabled || false),
-    allowedIps: (getEnvVar('PLUGIN_CAPTURE_API_ALLOWED_IPS')?.split(',').map(ip => ip.trim()).filter(ip => ip) || DEFAULT_CONFIG.captureApi?.allowedIps || []),
-  };
-
-  currentConfig.apiPlugin = {
-    enabled: parseBoolean(getEnvVar('PLUGIN_API_ENABLED'), DEFAULT_CONFIG.apiPlugin?.enabled || false),
-    port: parseNumber(getEnvVar('PLUGIN_API_PORT'), DEFAULT_CONFIG.apiPlugin?.port || 3000),
-    apiKey: parseNullableString(getEnvVar('PLUGIN_API_KEY'), DEFAULT_CONFIG.apiPlugin?.apiKey || null),
-    globalIpWhitelistEnabled: parseBoolean(getEnvVar('PLUGIN_API_GLOBAL_IP_WHITELIST_ENABLED'), DEFAULT_CONFIG.apiPlugin?.globalIpWhitelistEnabled || false),
-    globalAllowedIps: (getEnvVar('PLUGIN_API_GLOBAL_ALLOWED_IPS')?.split(',').map(ip => ip.trim()).filter(ip => ip) || DEFAULT_CONFIG.apiPlugin?.globalAllowedIps || []),
-  };
-
-  currentConfig.tavily = {
-    apiKey: getEnvVar('TAVILY_API_KEY') || DEFAULT_CONFIG.tavily?.apiKey || null,
-  };
-
-  currentConfig.plugins = {};
-  try {
-    const pluginFileNames = getPluginFileNames(); 
-    pluginFileNames.forEach((fileName: string) => { // fileName is a directory name e.g. "timeManagement"
-      const pluginName = fileName; // No need for path.basename if getPluginFileNames returns dir names
-      const envVarName = 'PLUGIN_' + pluginName.toUpperCase() + '_ENABLED'; 
-      // Default to false if the environment variable is not set or if not in DEFAULT_CONFIG.plugins
-      const defaultEnabledState = (DEFAULT_CONFIG.plugins && DEFAULT_CONFIG.plugins[pluginName]) || false;
-      currentConfig.plugins[pluginName] = parseBoolean(getEnvVar(envVarName), defaultEnabledState);
-    });
-  } catch (error) {
-    // console.error('Error loading plugin configurations:', error);
-    log(LogLevel.ERROR, 'Error processing plugin configurations in configLoader', { error });
+  // Google Calendar configuration
+  if (loadedConfig.google?.calendar) { // Ensure google.calendar object exists
+    loadedConfig.google.calendar.clientId = parseNullableString(getEnvVar('GOOGLE_CALENDAR_CLIENT_ID'), DEFAULT_CONFIG.google?.calendar?.clientId ?? null);
+    loadedConfig.google.calendar.clientSecret = parseNullableString(getEnvVar('GOOGLE_CALENDAR_CLIENT_SECRET'), DEFAULT_CONFIG.google?.calendar?.clientSecret ?? null);
+    loadedConfig.google.calendar.refreshToken = parseNullableString(getEnvVar('GOOGLE_CALENDAR_REFRESH_TOKEN'), DEFAULT_CONFIG.google?.calendar?.refreshToken ?? null);
+    loadedConfig.google.calendar.calendarId = parseString(getEnvVar('GOOGLE_CALENDAR_ID'), DEFAULT_CONFIG.google?.calendar?.calendarId ?? 'primary');
   }
 
-  const gtdBasePathEnv = getEnvVar('GTD_BASE_PATH');
-  const gtdProjectsDirEnv = getEnvVar('GTD_PROJECTS_DIR');
-  const gtdArchiveDirEnv = getEnvVar('GTD_ARCHIVE_DIR');
-  const gtdInboxPathEnv = getEnvVar('GTD_INBOX_PATH');
-  const gtdNextActionsPathEnv = getEnvVar('GTD_NEXT_ACTIONS_PATH');
-  const gtdSomedayMaybePathEnv = getEnvVar('GTD_SOMEDAY_MAYBE_PATH');
-  const gtdWaitingForPathEnv = getEnvVar('GTD_WAITING_FOR_PATH');
+  // UserProfile configuration
+  loadedConfig.userProfile.enabled = parseBoolean(getEnvVar('USER_PROFILE_ENABLED'), DEFAULT_CONFIG.userProfile.enabled);
+  loadedConfig.userProfile.storePath = getEnvVar('USER_PROFILE_STORE_PATH') || DEFAULT_CONFIG.userProfile.storePath || path.join(process.cwd(), 'vector_data', 'user_profile_store');
 
-  currentConfig.gtd = {
-    basePath: (gtdBasePathEnv && gtdBasePathEnv !== '') ? gtdBasePathEnv : DEFAULT_CONFIG.gtd?.basePath,
-    projectsDir: (gtdProjectsDirEnv && gtdProjectsDirEnv !== '') ? gtdProjectsDirEnv : DEFAULT_CONFIG.gtd?.projectsDir,
-    archiveDir: (gtdArchiveDirEnv && gtdArchiveDirEnv !== '') ? gtdArchiveDirEnv : DEFAULT_CONFIG.gtd?.archiveDir,
-    nextActionsArchiveDirPath: getEnvVar('GTD_NEXT_ACTIONS_ARCHIVE_DIR_PATH') || DEFAULT_CONFIG.gtd?.nextActionsArchiveDirPath,
-    inboxPath: (gtdInboxPathEnv && gtdInboxPathEnv !== '') ? gtdInboxPathEnv : DEFAULT_CONFIG.gtd?.inboxPath,
-    nextActionsPath: (gtdNextActionsPathEnv && gtdNextActionsPathEnv !== '') ? gtdNextActionsPathEnv : DEFAULT_CONFIG.gtd?.nextActionsPath,
-    somedayMaybePath: (gtdSomedayMaybePathEnv && gtdSomedayMaybePathEnv !== '') ? gtdSomedayMaybePathEnv : DEFAULT_CONFIG.gtd?.somedayMaybePath,
-    waitingForPath: (gtdWaitingForPathEnv && gtdWaitingForPathEnv !== '') ? gtdWaitingForPathEnv : DEFAULT_CONFIG.gtd?.waitingForPath,
-  };
-
-  // For personalHealth section:
-  const personalHealthDirFromEnv = getEnvVar('PERSONAL_HEALTH_DIR');
-  let determinedPersonalHealthDir: string | undefined;
-  if (personalHealthDirFromEnv && personalHealthDirFromEnv !== '') {
-    determinedPersonalHealthDir = personalHealthDirFromEnv;
-  } else {
-    determinedPersonalHealthDir = DEFAULT_CONFIG.personalHealth?.healthDir;
+  // GTD configuration
+  if (loadedConfig.gtd) {
+    loadedConfig.gtd.basePath = getEnvVar('GTD_BASE_PATH') || DEFAULT_CONFIG.gtd?.basePath;
+    loadedConfig.gtd.projectsDir = getEnvVar('GTD_PROJECTS_DIR') || DEFAULT_CONFIG.gtd?.projectsDir;
+    loadedConfig.gtd.archiveDir = getEnvVar('GTD_ARCHIVE_DIR') || DEFAULT_CONFIG.gtd?.archiveDir;
+    loadedConfig.gtd.nextActionsArchiveDirPath = getEnvVar('GTD_NEXT_ACTIONS_ARCHIVE_DIR_PATH') || DEFAULT_CONFIG.gtd?.nextActionsArchiveDirPath;
+    loadedConfig.gtd.inboxPath = getEnvVar('GTD_INBOX_PATH') || DEFAULT_CONFIG.gtd?.inboxPath;
+    loadedConfig.gtd.nextActionsPath = getEnvVar('GTD_NEXT_ACTIONS_PATH') || DEFAULT_CONFIG.gtd?.nextActionsPath;
+    loadedConfig.gtd.somedayMaybePath = getEnvVar('GTD_SOMEDAY_MAYBE_PATH') || DEFAULT_CONFIG.gtd?.somedayMaybePath;
+    loadedConfig.gtd.waitingForPath = getEnvVar('GTD_WAITING_FOR_PATH') || DEFAULT_CONFIG.gtd?.waitingForPath;
   }
-  currentConfig.personalHealth = {
-    healthDir: determinedPersonalHealthDir
-  };
 
+  // Gmail configuration
+  if (loadedConfig.gmail) {
+    loadedConfig.gmail.senderEmailAddress = parseNullableString(getEnvVar('GMAIL_SENDER_EMAIL_ADDRESS'), DEFAULT_CONFIG.gmail?.senderEmailAddress ?? null);
+    loadedConfig.gmail.userPersonalEmailAddress = parseNullableString(getEnvVar('GMAIL_USER_PERSONAL_EMAIL_ADDRESS'), DEFAULT_CONFIG.gmail?.userPersonalEmailAddress ?? null);
+    loadedConfig.gmail.emailAppPassword = parseNullableString(getEnvVar('GMAIL_APP_PASSWORD'), DEFAULT_CONFIG.gmail?.emailAppPassword ?? null);
+  }
+  
+  // Weather configuration
+  if (loadedConfig.weather) {
+    loadedConfig.weather.city = parseNullableString(getEnvVar('WEATHER_CITY'), DEFAULT_CONFIG.weather?.city ?? null);
+    loadedConfig.weather.openWeatherMapApiKey = parseNullableString(getEnvVar('WEATHER_OPENWEATHERMAP_API_KEY'), DEFAULT_CONFIG.weather?.openWeatherMapApiKey ?? null);
+    loadedConfig.weather.units = parseUnits(getEnvVar('WEATHER_UNITS'), DEFAULT_CONFIG.weather?.units ?? 'F');
+  }
+
+  // DailyReview configuration
+  if (loadedConfig.dailyReview) {
+    loadedConfig.dailyReview.scheduleCronExpression = parseString(getEnvVar('DAILY_REVIEW_SCHEDULE_CRON_EXPRESSION'), DEFAULT_CONFIG.dailyReview?.scheduleCronExpression ?? '30 6 * * *');
+  }
+
+  // CaptureAPI configuration
+  if (loadedConfig.captureApi) {
+    loadedConfig.captureApi.enabled = parseBoolean(getEnvVar('CAPTURE_API_ENABLED'), DEFAULT_CONFIG.captureApi?.enabled ?? false);
+    loadedConfig.captureApi.port = parseNumber(getEnvVar('CAPTURE_API_PORT'), DEFAULT_CONFIG.captureApi?.port ?? 3002);
+    loadedConfig.captureApi.apiKey = parseNullableString(getEnvVar('CAPTURE_API_KEY'), DEFAULT_CONFIG.captureApi?.apiKey ?? null);
+    loadedConfig.captureApi.ipWhitelistEnabled = parseBoolean(getEnvVar('CAPTURE_API_IP_WHITELIST_ENABLED'), DEFAULT_CONFIG.captureApi?.ipWhitelistEnabled ?? false);
+    loadedConfig.captureApi.allowedIps = (getEnvVar('CAPTURE_API_ALLOWED_IPS')?.split(',') ?? DEFAULT_CONFIG.captureApi?.allowedIps) || [];
+  }
+
+  // ApiPlugin configuration
+  if (loadedConfig.apiPlugin) {
+    loadedConfig.apiPlugin.enabled = parseBoolean(getEnvVar('API_PLUGIN_ENABLED'), DEFAULT_CONFIG.apiPlugin?.enabled ?? false);
+    loadedConfig.apiPlugin.port = parseNumber(getEnvVar('API_PLUGIN_PORT'), DEFAULT_CONFIG.apiPlugin?.port ?? 3000);
+    loadedConfig.apiPlugin.apiKey = parseNullableString(getEnvVar('API_PLUGIN_API_KEY'), DEFAULT_CONFIG.apiPlugin?.apiKey ?? null);
+    loadedConfig.apiPlugin.globalIpWhitelistEnabled = parseBoolean(getEnvVar('API_PLUGIN_GLOBAL_IP_WHITELIST_ENABLED'), DEFAULT_CONFIG.apiPlugin?.globalIpWhitelistEnabled ?? false);
+    loadedConfig.apiPlugin.globalAllowedIps = (getEnvVar('API_PLUGIN_GLOBAL_ALLOWED_IPS')?.split(',') ?? DEFAULT_CONFIG.apiPlugin?.globalAllowedIps) || [];
+  }
+
+  // PersonalHealth configuration
+  if (loadedConfig.personalHealth) {
+    loadedConfig.personalHealth.healthDir = getEnvVar('PERSONAL_HEALTH_DIR') || DEFAULT_CONFIG.personalHealth?.healthDir;
+  }
+  
+  // Dynamically load plugin enablement status
+  const pluginFiles = getPluginFileNames();
+  pluginFiles.forEach(pluginName => {
+    // Default to false if not specified in DEFAULT_CONFIG.plugins
+    const defaultStatus = DEFAULT_CONFIG.plugins[pluginName] === undefined ? false : DEFAULT_CONFIG.plugins[pluginName];
+    // Environment variable takes precedence, e.g., PLUGIN_MyPlugin_ENABLED=true
+    loadedConfig.plugins[pluginName] = parseBoolean(getEnvVar(`PLUGIN_${pluginName.toUpperCase()}_ENABLED`), defaultStatus);
+  });
+
+  currentConfig = loadedConfig;
+  log(LogLevel.DEBUG, 'Application Config:', { appConfig: currentConfig });
   return currentConfig;
 }
 

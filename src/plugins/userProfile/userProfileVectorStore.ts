@@ -4,11 +4,8 @@ import path from 'path';
 import fs from 'fs';
 import { getEmbeddingsModel, retrieveContext as generalRetrieveContext } from '../../memoryVector'; // Assuming memoryVector.ts stays in src/
 
-export const USER_PROFILE_VECTOR_STORE_PATH = path.join(process.cwd(), 'vector_data', 'user_profile_store');
-
-export async function initUserProfileStore(): Promise<FaissStore> {
+export async function initUserProfileStore(storePath: string): Promise<FaissStore> {
   const embeddings = getEmbeddingsModel();
-  const storePath = USER_PROFILE_VECTOR_STORE_PATH;
 
   try {
     await fs.promises.access(path.join(storePath, "faiss.index"));
@@ -27,7 +24,8 @@ export async function initUserProfileStore(): Promise<FaissStore> {
 
 export async function addUserFactToProfileStore(
   fact: string,
-  store: FaissStore
+  store: FaissStore,
+  storePath: string
 ): Promise<void> {
   if (!fact || fact.trim() === "") {
     console.warn("Attempted to add an empty fact to User Profile store. Skipping.");
@@ -36,9 +34,9 @@ export async function addUserFactToProfileStore(
   const newDoc = new Document({ pageContent: fact });
   try {
     await store.addDocuments([newDoc]);
-    await store.save(USER_PROFILE_VECTOR_STORE_PATH); // Ensure store is saved after adding
+    await store.save(storePath);
   } catch (error) {
-    console.error(`Error adding fact to User Profile store at ${USER_PROFILE_VECTOR_STORE_PATH}:`, error);
+    console.error(`Error adding fact to User Profile store at ${storePath}:`, error);
     // It might be better to re-throw or handle more gracefully depending on desired behavior
   }
 }
