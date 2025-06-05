@@ -1,8 +1,30 @@
-# Wooster Installation State: Plugins & Core Capabilities
+# Wooster Capabilities: One-Pager
+
+This page provides a high-level overview of Wooster's main components. For detailed descriptions of tools, configurations, and versions, please refer to the sections below.
+
+## Components Overview
+
+-   API Plugin
+-   Capture Plugin
+-   Daily Review Plugin
+-   Google Calendar Plugin
+-   Gmail Plugin
+-   Next Actions Plugin
+-   Personal Health Plugin
+-   Project Manager Plugin
+-   Sort Inbox Plugin
+-   Time Management Plugin
+-   User Profile Plugin
+-   Weather Plugin
+-   Web Search Plugin
+-   Core System Capabilities (Project Knowledge/RAG, Agent Task Scheduling, File Operations)
+
+---
+<br/>
+
+## Detailed Installation State: Plugins & Core Capabilities
 
 This document outlines the detected plugins, their provided tools, and core system capabilities available in this Wooster installation. This information is based on an analysis of the system logs and recent updates, primarily around early May 2025.
-
-## Plugins
 
 This section lists all active plugins and the specific tools or major capabilities they provide.
 
@@ -103,7 +125,7 @@ This section lists all active plugins and the specific tools or major capabiliti
 -   **Tools:**
     -   `web_search`: Searches the web for current information using Tavily Search.
 
-## Core System Tools & Capabilities
+### Core System Tools & Capabilities
 
 These are built-in tools and capabilities not tied to a specific dynamically loaded plugin listed above. They are fundamental to Wooster's operation.
 
