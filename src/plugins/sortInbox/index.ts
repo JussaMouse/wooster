@@ -1,6 +1,8 @@
 import { WoosterPlugin, CoreServices, AppConfig } from '../../types/plugin';
 import { LogLevel } from '../../logger';
 import { DynamicTool } from 'langchain/tools';
+import { StructuredTool } from '@langchain/core/tools';
+import { z } from 'zod';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
@@ -41,7 +43,7 @@ interface CalendarService {
 
 class SortInboxPluginDefinition implements WoosterPlugin {
   static readonly pluginName = "sortInbox";
-  static readonly version = "1.5.0"; // Version bump for addWaitingForItem tool
+  static readonly version = "1.6.0"; // Incremented version
   static readonly description = "Processes items from inbox.md with an interactive, detailed workflow, including calendar event creation and adding 'waiting for' items.";
 
   readonly name = SortInboxPluginDefinition.pluginName;
@@ -597,7 +599,7 @@ Enter code: `;
     }
   }
 
-  getAgentTools?(): DynamicTool[] {
+  getAgentTools?(): DynamicTool[] | StructuredTool[] {
     const sortInboxTool = new DynamicTool({
       name: "sortInboxInteractively",
       description: "Starts an interactive session to process items in the inbox.md file. Each item can be converted to a next action, scheduled, delegated, archived, or deleted.",
@@ -646,15 +648,25 @@ Enter code: `;
       },
     });
 
-    const viewWaitingForItemsTool = new DynamicTool({
-      name: "viewWaitingForItems",
-      description: "Reads and displays the content of the global 'waiting_for.md' file. The agent will call this tool with an object, which may contain an 'input' key (e.g., { input: {} } or { input: '' }). This input is ignored by the tool as it requires no parameters.",
-      func: async (args?: string | object) => { // Accept potential args object
-        this.logMsg(LogLevel.DEBUG, "viewWaitingForItemsTool executed", { args });
+    // New StructuredTool for viewWaitingForItems
+    const viewWaitingForItemsSchema = z.object({});
+    class ViewWaitingForItemsTool extends StructuredTool<typeof viewWaitingForItemsSchema> {
+      name = "viewWaitingForItems";
+      description = "Reads and displays the content of the global 'waiting_for.md' file. This tool requires no parameters.";
+      schema = viewWaitingForItemsSchema;
+      pluginInstance: SortInboxPluginDefinition;
+
+      constructor(pluginInstance: SortInboxPluginDefinition) {
+        super();
+        this.pluginInstance = pluginInstance;
+      }
+
+      async _call(_args: z.infer<typeof this.schema>): Promise<string> {
+        this.pluginInstance.logMsg(LogLevel.DEBUG, "viewWaitingForItemsTool executed", { _args });
         try {
-          const fullPath = this.getFullPath(this.waitingForFilePath);
+          const fullPath = this.pluginInstance.getFullPath(this.pluginInstance.waitingForFilePath);
           if (!fs.existsSync(fullPath)) {
-            this.logMsg(LogLevel.INFO, `Waiting For file not found at ${fullPath}.`);
+            this.pluginInstance.logMsg(LogLevel.INFO, `Waiting For file not found at ${fullPath}.`);
             return "The waiting_for.md file does not exist or is empty.";
           }
           const fileContent = fs.readFileSync(fullPath, 'utf-8');
@@ -663,32 +675,44 @@ Enter code: `;
           }
           return `Contents of waiting_for.md:\n---\n${fileContent.trim()}`;
         } catch (e: any) {
-          this.logMsg(LogLevel.ERROR, "Error in viewWaitingForItemsTool", { error: e.message });
+          this.pluginInstance.logMsg(LogLevel.ERROR, "Error in viewWaitingForItemsTool", { error: e.message });
           return `Error reading waiting_for.md: ${e.message}`;
         }
-      },
-    });
+      }
+    }
+    const viewWaitingForItemsToolInstance = new ViewWaitingForItemsTool(this);
 
-    const viewInboxTool = new DynamicTool({
-      name: "viewInboxItems",
-      description: "Reads and displays the content of the global 'inbox.md' file. The agent will call this tool with an object, which may contain an 'input' key (e.g., { input: {} } or { input: '' }). This input is ignored by the tool as it requires no parameters.",
-      func: async (args?: string | object) => {
-        this.logMsg(LogLevel.DEBUG, "viewInboxItemsTool executed", { args });
+    // New StructuredTool for viewInboxItems
+    const viewInboxItemsSchema = z.object({});
+    class ViewInboxItemsTool extends StructuredTool<typeof viewInboxItemsSchema> {
+      name = "viewInboxItems";
+      description = "Reads and displays the content of the global 'inbox.md' file. This tool requires no parameters.";
+      schema = viewInboxItemsSchema;
+      pluginInstance: SortInboxPluginDefinition;
+
+      constructor(pluginInstance: SortInboxPluginDefinition) {
+        super();
+        this.pluginInstance = pluginInstance;
+      }
+
+      async _call(_args: z.infer<typeof this.schema>): Promise<string> {
+        this.pluginInstance.logMsg(LogLevel.DEBUG, "viewInboxItemsTool executed", { _args });
         try {
-          const inboxItems = await this.readInboxItems(); // Use existing method
+          const inboxItems = await this.pluginInstance.readInboxItems(); // Use existing method
           if (inboxItems.length === 0) {
             return "The inbox.md file is empty or does not exist.";
           }
           const itemLines = inboxItems.map(item => item.rawText);
           return `Contents of inbox.md:\n---\n${itemLines.join('\n')}`;
         } catch (e: any) {
-          this.logMsg(LogLevel.ERROR, "Error in viewInboxItemsTool", { error: e.message });
+          this.pluginInstance.logMsg(LogLevel.ERROR, "Error in viewInboxItemsTool", { error: e.message });
           return `Error reading inbox.md: ${e.message}`;
         }
-      },
-    });
+      }
+    }
+    const viewInboxItemsToolInstance = new ViewInboxItemsTool(this);
 
-    return [sortInboxTool, addWaitingForItemTool, viewWaitingForItemsTool, viewInboxTool];
+    return [sortInboxTool, addWaitingForItemTool, viewWaitingForItemsToolInstance, viewInboxItemsToolInstance];
   }
 }
 
