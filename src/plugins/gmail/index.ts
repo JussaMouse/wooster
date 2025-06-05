@@ -1,13 +1,53 @@
 import nodemailer from 'nodemailer';
 import { z } from 'zod'; // For potential future input validation for the tool
-import { DynamicTool } from 'langchain/tools';
+import { StructuredTool } from 'langchain/tools'; // Changed back to StructuredTool
 import { AppConfig } from '../../configLoader'; // For AppConfig type
 import { WoosterPlugin, CoreServices, EmailService } from '../../types/plugin';
 import { LogLevel } from '../../logger'; // Import LogLevel
 import type { GmailPluginEmailArgs, GmailPluginSendEmailResult } from './types';
+import type { CallbackManagerForToolRun } from '@langchain/core/callbacks/manager'; // Refined import path
 
 // Placeholder for self-email, defined within the plugin
 const SELF_EMAIL_PLACEHOLDER = 'SELF_EMAIL_RECIPIENT';
+
+// Define the Zod schema for the send_email tool's input
+const sendEmailSchema = z.object({
+  to: z.string().describe("The recipient's email address. Can be a comma-separated list for multiple recipients."),
+  subject: z.string().describe("The subject of the email."),
+  body: z.string().describe("The main content/body of the email."),
+  isHtml: z.boolean().optional().describe("Set to true if the body content is HTML. Defaults to false (plain text).")
+});
+
+type SendEmailSchemaType = z.infer<typeof sendEmailSchema>;
+
+// Define the new Structured Tool class, extending StructuredTool
+class SendEmailStructuredTool extends StructuredTool {
+  // `lc_name` is not typically needed when extending StructuredTool directly with these properties
+  // It's more for dynamic tool registration or complex inheritance scenarios.
+
+  name = "send_email";
+  description = "Sends an email with the specified 'to', 'subject', and 'body'. Optionally, 'isHtml' can be set for HTML emails.";
+  schema = sendEmailSchema; // This is the Zod schema for the input arguments
+  
+  private pluginInstance: GmailPluginDefinition;
+
+  constructor(pluginInstance: GmailPluginDefinition) {
+    super();
+    this.pluginInstance = pluginInstance;
+  }
+
+  protected async _call(args: SendEmailSchemaType, runManager?: CallbackManagerForToolRun): Promise<string> { // Added runManager
+    this.pluginInstance.logMsg(LogLevel.DEBUG, "send_email tool executed (SendEmailStructuredTool).", { args });
+    try {
+      // The 'args' object is already parsed by LangChain according to the 'schema'
+      const result = await this.pluginInstance.send(args); // No need to cast if SendEmailSchemaType is compatible with GmailPluginEmailArgs
+      return JSON.stringify(result);
+    } catch (error: any) {
+      this.pluginInstance.logMsg(LogLevel.ERROR, "SendEmailStructuredTool: Error processing or sending email.", { error: error.message, inputArgs: args });
+      return JSON.stringify({ success: false, message: `Error processing email arguments or sending: ${error.message}` });
+    }
+  }
+}
 
 class GmailPluginDefinition implements WoosterPlugin, EmailService {
   static readonly pluginName = "gmail";
@@ -21,9 +61,10 @@ class GmailPluginDefinition implements WoosterPlugin, EmailService {
   private senderEmailAddress: string | null = null;
   private emailAppPassword: string | null = null;
   private coreServicesInstance: CoreServices | null = null;
-  private sendEmailToolInstance!: DynamicTool; // Instance property for the tool
+  private sendEmailToolInstance!: SendEmailStructuredTool;
 
-  private logMsg(level: LogLevel, message: string, metadata?: object) {
+  // Renamed logMsg to avoid conflict with Tool's internal properties if any, and to be specific to plugin
+  public logMsg(level: LogLevel, message: string, metadata?: object) { // Made public for the tool
     if (this.coreServicesInstance && this.coreServicesInstance.log) {
       this.coreServicesInstance.log(level, `[${GmailPluginDefinition.pluginName} Plugin v${GmailPluginDefinition.version}] ${message}`, metadata);
     } else {
@@ -47,27 +88,7 @@ class GmailPluginDefinition implements WoosterPlugin, EmailService {
       this.logMsg(LogLevel.WARN, "Configuration for senderEmailAddress or emailAppPassword not found in config.gmail. Email functionality will be disabled.");
     }
 
-    // Define the tool here so it has access to 'this'
-    this.sendEmailToolInstance = new DynamicTool({
-      name: "send_email",
-      description: "Sends an email. Input should be a JSON string with 'to', 'subject', and 'body'. 'isHtml' (boolean) is optional for HTML emails.",
-      func: async (jsonInput: string) => {
-        this.logMsg(LogLevel.DEBUG, "send_email tool executed.", { input: jsonInput});
-        try {
-          const toolArgs = JSON.parse(jsonInput) as GmailPluginEmailArgs;
-          if (!toolArgs.to || !toolArgs.subject || !toolArgs.body) {
-            this.logMsg(LogLevel.WARN, "SendEmailTool: Invalid arguments. 'to', 'subject', and 'body' are required.", { args: toolArgs });
-            return JSON.stringify({ success: false, message: "Invalid arguments. 'to', 'subject', and 'body' are required." });
-          }
-          // Directly call the instance's send method, which calls the private _sendGmailInternal
-          const result = await this.send(toolArgs); 
-          return JSON.stringify(result);
-        } catch (error: any) {
-          this.logMsg(LogLevel.ERROR, "SendEmailTool: Error processing or sending email.", { error: error.message, input: jsonInput });
-          return JSON.stringify({ success: false, message: `Error processing email arguments or sending: ${error.message}` });
-        }
-      },
-    });
+    this.sendEmailToolInstance = new SendEmailStructuredTool(this);
   }
 
   // Helper methods, now private as they are internal details
@@ -119,8 +140,8 @@ class GmailPluginDefinition implements WoosterPlugin, EmailService {
     return this._sendGmailInternal(args);
   }
 
-  getAgentTools?(): DynamicTool[] {
-    if (this.isConfigured() && this.sendEmailToolInstance) { // Check if tool instance exists
+  getAgentTools?(): SendEmailStructuredTool[] { // Return type made more specific
+    if (this.isConfigured() && this.sendEmailToolInstance) {
       this.logMsg(LogLevel.DEBUG, 'Providing send_email tool because plugin is configured.');
       return [this.sendEmailToolInstance]; 
     }
