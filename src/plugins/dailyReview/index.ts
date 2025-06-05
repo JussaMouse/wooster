@@ -12,7 +12,10 @@ import type { ListCalendarEventsService } from '../gcal/types';
 import type { GmailPluginEmailArgs } from '../gmail/types';
 import type { PersonalHealthService } from '../personalHealth/types.ts';
 
-export type GetOpenNextActionsService = (filters?: any, sortOptions?: any) => Promise<TaskItem[]>;
+// Define an interface for the service instance we expect
+interface IGetOpenNextActionsService {
+  execute(filters?: any, sortOptions?: any): Promise<TaskItem[]>;
+}
 
 // const PROJECTS_DIR = path.join(__dirname, '../../../projects'); // No longer used by this plugin
 const USER_CONFIG_DIR = path.join(process.cwd(), 'config');
@@ -210,10 +213,10 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
   
     let fetchedNextActions: TaskItem[] | undefined = undefined;
     if (userCfg.contentModules.nextActions) {
-        const getOpenNextActions = this.coreServices.getService("GetOpenNextActionsService") as GetOpenNextActionsService | undefined;
-        if (getOpenNextActions) {
+        const nextActionsService = this.coreServices.getService("GetOpenNextActionsService") as IGetOpenNextActionsService | undefined;
+        if (nextActionsService) {
             try {
-                const tasks = await getOpenNextActions({ status: 'open' });
+                const tasks = await nextActionsService.execute({ status: 'open' });
                 if (tasks && tasks.length > 0) {
                     fetchedNextActions = tasks;
                     this.logMsg(LogLevel.INFO, 'Fetched next actions for daily review.', { count: tasks.length });
@@ -510,9 +513,9 @@ It checks for available services (Calendar, Weather, etc.) on first setup to aut
     });
 
     // Example of checking for the GetOpenNextActionsService during initialization
-    const nextActionsServiceCheck = this.coreServices.getService("GetOpenNextActionsService");
+    const nextActionsServiceCheck = this.coreServices.getService("GetOpenNextActionsService") as IGetOpenNextActionsService | undefined;
     if (!nextActionsServiceCheck && this.userConfig?.contentModules.nextActions) {
-        this.logMsg(LogLevel.WARN, "'GetOpenNextActionsService' not found, but the 'nextActions' module is enabled in dailyReview.json. Next actions might not appear in the review.");
+        this.logMsg(LogLevel.WARN, "'GetOpenNextActionsService' not found during initialization, but the 'nextActions' module is enabled. Next actions might not appear in the review if NextActionsPlugin loads later.");
     }
   }
 
