@@ -25,7 +25,7 @@ export interface DailyReviewUserConfig {
     chineseWordOfTheDay: boolean;
     // Add more as they become available
   };
-}
+} 
 
 // Removed ProjectActionItem as it's related to the old actions.txt logic
 

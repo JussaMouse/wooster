@@ -1,7 +1,7 @@
 # SystemInfo Plugin
 
-**Version:** 0.1.0
-**Description:** Provides system information tools, like listing plugin statuses.
+**Version:** 0.2.0
+**Description:** Provides system information tools, like listing plugin statuses and generating a plugin state file.
 
 ## Purpose
 
@@ -42,6 +42,30 @@ Plugin: faultyPlugin
   Error: Some import error message here
   Path: /path/to/your/project/dist/plugins/faultyPlugin
 ---------------------------
+```
+
+### `generate_plugin_state_file`
+
+-   **Description:** Generates a file named `plugins_state.md` in the workspace root. This file contains a simple list of all active (loaded) plugins and a summary of core system capabilities.
+-   **Usage:** This tool takes no input.
+-   **Output:** A confirmation message indicating success or failure. The primary output is the creation or update of the `plugins_state.md` file.
+-   **File Content Example (`plugins_state.md`):
+
+```
+Api Plugin
+Capture Plugin
+Daily Review Plugin
+Google Calendar Plugin
+Gmail Plugin
+Next Actions Plugin
+Personal Health Plugin
+Project Manager Plugin
+Sort Inbox Plugin
+Time Management Plugin
+User Profile Plugin
+Weather Plugin
+Web Search Plugin
+Core System Capabilities (Project Knowledge/RAG, Agent Task Scheduling, File Operations)
 ```
 
 ## Configuration
