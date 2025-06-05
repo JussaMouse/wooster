@@ -457,10 +457,23 @@ class NextActionsPluginDefinition implements WoosterPlugin {
         return null;
       }
 
-      const taskIndex = tasksCurrentlyInFile.findIndex(t =>
-        t.id === taskToCompleteId ||
-        (typeof identifier === 'string' && t.description.toLowerCase().includes(identifier.toLowerCase()))
-      );
+      let taskIndex = -1;
+
+      if (typeof identifier === 'string') {
+        // Attempt 1: Check if the identifier is a task ID
+        taskIndex = tasksCurrentlyInFile.findIndex(t => t.id === identifier);
+
+        // Attempt 2: If not an ID, try exact case-insensitive description match
+        if (taskIndex === -1) {
+          const lowerIdentifier = identifier.toLowerCase();
+          taskIndex = tasksCurrentlyInFile.findIndex(t => t.description.toLowerCase() === lowerIdentifier);
+        }
+        // NOTE: The previous .includes() fallback is removed to prevent cross-completion issues in batch operations.
+        // If an .includes() behavior is desired, it should be an explicit agent choice/tool parameter.
+      } else { // Numeric identifier (identifier is a number)
+        // The numeric path already set taskToCompleteId to a specific task.id
+        taskIndex = tasksCurrentlyInFile.findIndex(t => t.id === taskToCompleteId);
+      }
 
       if (taskIndex !== -1) {
         const taskToComplete = tasksCurrentlyInFile[taskIndex];
