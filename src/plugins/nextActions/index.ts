@@ -466,6 +466,14 @@ class NextActionsPluginDefinition implements WoosterPlugin {
         // Attempt 2: If not an ID, try exact case-insensitive description match
         if (taskIndex === -1) {
           const lowerIdentifier = identifier.toLowerCase();
+          this.logMsg(LogLevel.DEBUG, `[completeTask] Attempting exact description match. Identifier: "${identifier}", Lowercased: "${lowerIdentifier}"`);
+          if (tasksCurrentlyInFile.length === 0) {
+            this.logMsg(LogLevel.DEBUG, "[completeTask] tasksCurrentlyInFile is empty. No tasks to compare against.");
+          } else {
+            tasksCurrentlyInFile.forEach((task, i) => {
+              this.logMsg(LogLevel.DEBUG, `[completeTask] Comparing with task[${i}].id: "${task.id}", task[${i}].description: "${task.description}", Lowercased task.description: "${task.description.toLowerCase()}"`);
+            });
+          }
           taskIndex = tasksCurrentlyInFile.findIndex(t => t.description.toLowerCase() === lowerIdentifier);
         }
         // NOTE: The previous .includes() fallback is removed to prevent cross-completion issues in batch operations.
