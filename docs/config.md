@@ -156,3 +156,27 @@ Provides weather forecasts, primarily for the Daily Review feature.
     -   **Description**: Your API key for the chosen weather service (e.g., OpenWeatherMap). The specific variable name might change depending on the service selected.
     -   **Required**: Yes, if you want weather in the Daily Review.
     -   **Default**: (none) - If not set, the weather part of the Daily Review will be skipped.
+
+#### 4c. Google Calendar Tool (Provided by GCalPlugin)
+
+Controls Wooster's integration with Google Calendar. This tool's functionality is provided by the `GCalPlugin`. For calendar features to be available, the `GCalPlugin` must be active (see the general "Plugin Activation" section, typically `PLUGIN_GCAL_ENABLED=true`) AND the necessary OAuth credentials must be provided below. See `docs/plugins/gcal.md` for full details on obtaining credentials and troubleshooting.
+
+-   `GOOGLE_CALENDAR_CLIENT_ID`
+    -   **Description**: Your Google Cloud OAuth 2.0 Client ID for accessing Google Calendar.
+    -   **Required**: Yes, if the `GCalPlugin` is enabled and calendar functionality is desired.
+    -   **Default**: (none)
+-   `GOOGLE_CALENDAR_CLIENT_SECRET`
+    -   **Description**: Your Google Cloud OAuth 2.0 Client Secret for accessing Google Calendar.
+    -   **Required**: Yes, if the `GCalPlugin` is enabled and calendar functionality is desired.
+    -   **Default**: (none)
+-   `GOOGLE_CALENDAR_REFRESH_TOKEN`
+    -   **Description**: Your OAuth 2.0 Refresh Token grants Wooster long-term access to Google Calendar on your behalf.
+    -   **Required**: Yes, if the `GCalPlugin` is enabled and calendar functionality is desired.
+    -   **Default**: (none)
+-   `GOOGLE_CALENDAR_ID`
+    -   **Description**: The ID of the specific Google Calendar Wooster should manage (e.g., 'primary' for the main calendar, or a custom calendar ID like 'your.email@example.com').
+    -   **Default**: `primary`
+
+### 5. Plugin Activation (General)
+
+(This is a placeholder for where a general plugin activation section might go or be referenced if not already present. The specific `PLUGIN_<PLUGINNAME>_ENABLED` variables are usually detailed per plugin or dynamically handled by the config loader based on plugin directory names.)
