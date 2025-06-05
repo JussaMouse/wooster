@@ -176,6 +176,9 @@ Controls Wooster's integration with Google Calendar. This tool's functionality i
 -   `GOOGLE_CALENDAR_ID`
     -   **Description**: The ID of the specific Google Calendar Wooster should manage (e.g., 'primary' for the main calendar, or a custom calendar ID like 'your.email@example.com').
     -   **Default**: `primary`
+-   `GOOGLE_CALENDAR_DEFAULT_ATTENDEE_EMAIL`
+    -   **Description**: Optional. If set to a valid email address, Wooster will automatically add this email as an attendee to all events it creates. This is useful for ensuring you are always invited to events Wooster schedules for you.
+    -   **Default**: (none) - If not set or empty, no default attendee is added.
 
 ### 5. Plugin Activation (General)
 
