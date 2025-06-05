@@ -75,6 +75,7 @@ export interface GoogleConfig {
     clientSecret: string | null;
     refreshToken: string | null;
     calendarId: string;
+    defaultAttendeeEmail?: string | null;
   };
 }
 
@@ -141,6 +142,7 @@ export const DEFAULT_CONFIG: AppConfig = {
       clientSecret: null,
       refreshToken: null,
       calendarId: 'primary',
+      defaultAttendeeEmail: null,
     }
   },
   userProfile: {
@@ -278,6 +280,7 @@ export function loadConfig(): AppConfig {
     loadedConfig.google.calendar.clientSecret = parseNullableString(getEnvVar('GOOGLE_CALENDAR_CLIENT_SECRET'), DEFAULT_CONFIG.google?.calendar?.clientSecret ?? null);
     loadedConfig.google.calendar.refreshToken = parseNullableString(getEnvVar('GOOGLE_CALENDAR_REFRESH_TOKEN'), DEFAULT_CONFIG.google?.calendar?.refreshToken ?? null);
     loadedConfig.google.calendar.calendarId = parseString(getEnvVar('GOOGLE_CALENDAR_ID'), DEFAULT_CONFIG.google?.calendar?.calendarId ?? 'primary');
+    loadedConfig.google.calendar.defaultAttendeeEmail = parseNullableString(getEnvVar('GOOGLE_CALENDAR_DEFAULT_ATTENDEE_EMAIL'), DEFAULT_CONFIG.google?.calendar?.defaultAttendeeEmail ?? null);
   }
 
   // UserProfile configuration

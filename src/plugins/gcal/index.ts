@@ -75,6 +75,18 @@ const createEventInternal: CreateCalendarEventService = async (options: CreateEv
     return 'GCalPlugin: Calendar client not initialized.';
   }
    try {
+    // Prepare attendees
+    let attendees = options.attendees?.map(email => ({ email })) || [];
+    const appConfig = core?.getConfig();
+    const defaultAttendee = appConfig?.google?.calendar?.defaultAttendeeEmail;
+
+    if (defaultAttendee) {
+      const isDefaultAttendeeAlreadyListed = attendees.some(att => att.email?.toLowerCase() === defaultAttendee.toLowerCase());
+      if (!isDefaultAttendeeAlreadyListed) {
+        attendees.push({ email: defaultAttendee });
+      }
+    }
+
     const event: calendar_v3.Params$Resource$Events$Insert = {
       calendarId: defaultCalendarId,
       requestBody: {
@@ -88,11 +100,17 @@ const createEventInternal: CreateCalendarEventService = async (options: CreateEv
           dateTime: options.endDateTime,
           timeZone: options.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone,
         },
-        attendees: options.attendees?.map(email => ({ email })),
+        attendees: attendees.length > 0 ? attendees : undefined, // Pass attendees only if array is not empty
         location: options.location,
+        reminders: { 
+          useDefault: false,
+          overrides: [
+            { method: 'email', minutes: 15 }
+          ]
+        }
       },
     };
-    core?.log(LogLevel.DEBUG, 'GCalPlugin: Creating Google Calendar event:', { summary: options.summary });
+    core?.log(LogLevel.DEBUG, 'GCalPlugin: Creating Google Calendar event:', { summary: options.summary, attendees: event.requestBody?.attendees, reminders: event.requestBody?.reminders });
     const response = await calendarApi.events.insert(event);
     if (response.status >= 200 && response.status < 300 && response.data && response.data.id) {
       core?.log(LogLevel.INFO, 'GCalPlugin: Google Calendar event created successfully.', { eventId: response.data.id });
@@ -159,8 +177,8 @@ const createCalendarEventTool = new DynamicTool({
 
 class GCalPluginDefinition implements WoosterPlugin {
   static readonly pluginName = "gcal";
-  static readonly version = "1.1.0";
-  static readonly description = "Provides Google Calendar event listing and creation.";
+  static readonly version = "1.3.0";
+  static readonly description = "Provides Google Calendar event listing and creation, with default 15-min email reminders and option to auto-add default attendee.";
 
   readonly name = GCalPluginDefinition.pluginName;
   readonly version = GCalPluginDefinition.version;
