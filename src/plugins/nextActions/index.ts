@@ -465,16 +465,24 @@ class NextActionsPluginDefinition implements WoosterPlugin {
 
         // Attempt 2: If not an ID, try exact case-insensitive description match
         if (taskIndex === -1) {
-          const lowerIdentifier = identifier.toLowerCase();
-          this.logMsg(LogLevel.DEBUG, `[completeTask] Attempting exact description match. Identifier: "${identifier}", Lowercased: "${lowerIdentifier}"`);
+          // Clean the incoming identifier string similarly to how TaskParser cleans descriptions
+          const cleanIdentifier = identifier.replace(/\s\s+/g, ' ').trim();
+          const lowerIdentifier = cleanIdentifier.toLowerCase();
+
+          this.logMsg(LogLevel.DEBUG, `[completeTask] Attempting exact description match. Original Identifier: "${identifier}", Cleaned/Lowercased for match: "${lowerIdentifier}"`);
           if (tasksCurrentlyInFile.length === 0) {
             this.logMsg(LogLevel.DEBUG, "[completeTask] tasksCurrentlyInFile is empty. No tasks to compare against.");
           } else {
             tasksCurrentlyInFile.forEach((task, i) => {
-              this.logMsg(LogLevel.DEBUG, `[completeTask] Comparing with task[${i}].id: "${task.id}", task[${i}].description: "${task.description}", Lowercased task.description: "${task.description.toLowerCase()}"`);
+              // Ensure the task description used for comparison is also cleaned the same way
+              const cleanTaskDescription = task.description.replace(/\s\s+/g, ' ').trim();
+              this.logMsg(LogLevel.DEBUG, `[completeTask] Comparing with task[${i}].id: "${task.id}", task[${i}].description (original): "${task.description}", Cleaned/Lowercased for match: "${cleanTaskDescription.toLowerCase()}"`);
             });
           }
-          taskIndex = tasksCurrentlyInFile.findIndex(t => t.description.toLowerCase() === lowerIdentifier);
+          taskIndex = tasksCurrentlyInFile.findIndex(t => {
+            const cleanTaskDescription = t.description.replace(/\s\s+/g, ' ').trim();
+            return cleanTaskDescription.toLowerCase() === lowerIdentifier;
+          });
         }
         // NOTE: The previous .includes() fallback is removed to prevent cross-completion issues in batch operations.
         // If an .includes() behavior is desired, it should be an explicit agent choice/tool parameter.
