@@ -66,3 +66,9 @@ prompts/
 gtd/
 
 health/
+
+# Ignore all files in the config directory
+config/*
+
+# But DO NOT ignore (re-include) dailyReview.example.json
+!config/dailyReview.example.json
