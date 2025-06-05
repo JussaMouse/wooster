@@ -499,10 +499,25 @@ class NextActionsPluginDefinition implements WoosterPlugin {
             const normalizedPlaceholders = knownEmptyPlaceholders.map(p => normalizeStringForComparison(p));
 
             if (normalizedPlaceholders.includes(normalizedIdentifier)) {
-              this.logMsg(LogLevel.DEBUG, `[completeTask] Identifier "${identifier}" (normalized: "${normalizedIdentifier}") matches a known empty placeholder. Looking for task with empty description.`);
-              taskIndex = tasksCurrentlyInFile.findIndex(t => normalizeStringForComparison(t.description) === "");
+              this.logMsg(LogLevel.DEBUG, `[completeTask] Identifier "${identifier}" (normalized: "${normalizedIdentifier}") matches a known empty placeholder. Looking for task with empty or bracket-only description.`);
+              taskIndex = tasksCurrentlyInFile.findIndex(t => {
+                const currentTaskNormalizedDesc = normalizeStringForComparison(t.description);
+                if (currentTaskNormalizedDesc === "") {
+                  return true; // Match for genuinely empty description
+                }
+                // Check if the description is only content within brackets, e.g., "[some value]"
+                const bracketOnlyRegex = /^\[([^\]]+)\]$/;
+                if (bracketOnlyRegex.test(t.description.trim())) {
+                  // If original description is just "[...]]", its normalized form might not be empty.
+                  // We consider this a match for a placeholder if the description was *only* bracketed content.
+                  this.logMsg(LogLevel.DEBUG, `[completeTask] Task with id ${t.id} has bracket-only description: "${t.description}". Matching for placeholder.`);
+                  return true;
+                }
+                return false;
+              });
+
               if (taskIndex !== -1) {
-                this.logMsg(LogLevel.DEBUG, `[completeTask] Found task with empty description (id: ${tasksCurrentlyInFile[taskIndex].id}) for placeholder match.`);
+                this.logMsg(LogLevel.DEBUG, `[completeTask] Found task (id: ${tasksCurrentlyInFile[taskIndex].id}) for placeholder match (empty or bracket-only description).`);
               }
             }
           }
