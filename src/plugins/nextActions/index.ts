@@ -58,6 +58,7 @@ class NextActionsPluginDefinition implements WoosterPlugin {
   private archiveDirPath!: string;
   private coreServices!: CoreServices; // Renamed and properly typed
   private getOpenNextActionsService!: GetOpenNextActionsService; // Added for the service
+  private fileOperationLock: Promise<void> = Promise.resolve();
 
   private logMsg(level: LogLevel, message: string, metadata?: object) {
     if (this.coreServices && this.coreServices.log) {
@@ -65,6 +66,24 @@ class NextActionsPluginDefinition implements WoosterPlugin {
     } else {
       console.log(`[${level}][${NextActionsPluginDefinition.pluginName} Plugin v${NextActionsPluginDefinition.version}] ${message}`, metadata || '');
     }
+  }
+
+  private async performFileOperation<T>(operation: () => Promise<T>): Promise<T> {
+    const resultPromise = this.fileOperationLock
+      .then(operation)
+      .catch(error => {
+        this.logMsg(LogLevel.ERROR, `Error during locked file operation: ${error.message}`, { error, stack: error.stack });
+        // Rethrow the error so the original caller's catch block can handle it
+        // and convert it to the specific return type expected by that method (e.g., null or a specific TaskItem structure).
+        throw error;
+      });
+
+    // Ensure the lock chain waits for the current operation to finish,
+    // regardless of success or failure, before allowing the next one.
+    // This new promise becomes the new "tail" of the lock chain.
+    this.fileOperationLock = resultPromise.then(() => undefined, () => undefined);
+
+    return resultPromise;
   }
 
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
@@ -277,257 +296,246 @@ class NextActionsPluginDefinition implements WoosterPlugin {
   }
 
   public async addTask(description: string, contextFromInput?: string | null, projectFromInput?: string | null, dueDate?: string | null): Promise<TaskItem> {
-    const tasks = await this.readNextActionsFromFile();
-    const now = new Date().toISOString().replace(/T.*/, ''); // YYYY-MM-DD
+    return this.performFileOperation(async () => {
+      const tasks = await this.readNextActionsFromFile();
+      const now = new Date().toISOString().replace(/T.*/, ''); // YYYY-MM-DD
 
-    let effectiveProject = projectFromInput; // Will be reassigned based on priority
-    let effectiveContext = contextFromInput;
+      let effectiveProject = projectFromInput;
+      let effectiveContext = contextFromInput;
 
-    const descriptionAlreadyHasContext = /(?:^|\\s)@\\w+/.test(description.trim());
-    if (!effectiveContext && !descriptionAlreadyHasContext) {
-      effectiveContext = '@home';
-      this.logMsg(LogLevel.DEBUG, `Defaulting context to @home for new next action.`);
-    }
-
-    const activeProjectName = (this.coreServices && typeof this.coreServices.getActiveProjectName === 'function')
-                              ? this.coreServices.getActiveProjectName()
-                              : null;
-
-    const taskParserProjectRegex = /(?:^|\\s)(\\+[\w-]+(?:(?:\\s[A-Z][\\w-]*)+)?(?:\\s\\d+)?)/;
-    const descriptionHasProjectTag = taskParserProjectRegex.test(description.trim());
-
-    this.logMsg(LogLevel.DEBUG, `addTask - Initial decision values:`, {
-      initialDescription: description,
-      projectFromInput,
-      contextFromInput,
-      activeProjectNameFromServices: activeProjectName,
-      descriptionHasProjectTag,
-    });
-
-    // This variable will hold the project string that is explicitly chosen for prepending
-    // It might be from projectFromInput, activeProject, or a default.
-    // If null, it means the project is expected to be parsed from the description string itself.
-    let projectChosenForPrepending: string | null = null;
-
-    if (projectFromInput) {
-      this.logMsg(LogLevel.DEBUG, `addTask - Priority 1: Project from input JSON: '${projectFromInput}'`);
-      let proj = projectFromInput.trim();
-      if (!proj.startsWith('+')) {
-        proj = `+${proj}`;
+      const descriptionAlreadyHasContext = /(?:^|\s)@\w+/.test(description.trim());
+      if (!effectiveContext && !descriptionAlreadyHasContext) {
+        effectiveContext = '@home';
+        this.logMsg(LogLevel.DEBUG, `Defaulting context to @home for new next action.`);
       }
-      projectChosenForPrepending = proj.replace(/^\\+\\s*(['"])(.*)\\1$/, '+$2');
-      this.logMsg(LogLevel.DEBUG, `addTask - Effective project from input JSON (for prepending): '${projectChosenForPrepending}'`);
-    } else if (descriptionHasProjectTag) {
-      this.logMsg(LogLevel.DEBUG, `addTask - Priority 2: Project tag found in description. Parser will extract. No prepending by addTask.`);
-      projectChosenForPrepending = null; // Parser will handle it
-    } else if (activeProjectName && activeProjectName.toLowerCase() !== 'home') {
-      this.logMsg(LogLevel.DEBUG, `addTask - Priority 3: Auto-prepending active project: '+${activeProjectName}'`);
-      projectChosenForPrepending = `+${activeProjectName}`;
-    } else {
-      this.logMsg(LogLevel.DEBUG, `addTask - Priority 4: Defaulting project to '+home'.`);
-      projectChosenForPrepending = '+home';
-    }
 
-    this.logMsg(LogLevel.DEBUG, `addTask - Final effective context: '${effectiveContext}', project chosen for prepending: '${projectChosenForPrepending || "null (parser will handle if in desc)"}'`);
+      const activeProjectName = (this.coreServices && typeof this.coreServices.getActiveProjectName === 'function')
+                                ? this.coreServices.getActiveProjectName()
+                                : null;
 
-    let taskStringParts: string[] = [description.trim()];
-    if (projectChosenForPrepending) {
-        taskStringParts.unshift(projectChosenForPrepending);
-    }
-    if (effectiveContext) {
-        taskStringParts.unshift(effectiveContext);
-    }
-    
-    let combinedDescriptionForParser = taskStringParts.join(' ');
+      const taskParserProjectRegex = /(?:^|\s)(\+[\w-]+(?:(?:\s[A-Z][\w-]*)+)?(?:\s\d+)?)/;
+      const descriptionHasProjectTag = taskParserProjectRegex.test(description.trim());
 
-    let rawTaskForParser = `- [ ] ${combinedDescriptionForParser}`;
-    if (dueDate) {
-      rawTaskForParser += ` due:${dueDate}`;
-    }
-    rawTaskForParser += ` (Captured: ${now})`;
+      this.logMsg(LogLevel.DEBUG, `addTask - Initial decision values:`, {
+        initialDescription: description,
+        projectFromInput,
+        contextFromInput,
+        activeProjectNameFromServices: activeProjectName,
+        descriptionHasProjectTag,
+      });
 
-    const parsedTask = TaskParser.parse(rawTaskForParser);
-    if (!parsedTask) {
-      this.logMsg(LogLevel.ERROR, "Failed to parse the constructed task string in addTask.", { rawTaskForParser });
-      const fallbackDescription = description.trim() +
-                                (projectFromInput ? ` ${projectFromInput}` : '') + // Use original projectFromInput for fallback
-                                (contextFromInput ? ` ${contextFromInput}` : '') +
-                                (dueDate ? ` due:${dueDate}` : '');
-      const fallbackTask: TaskItem = {
-          id: crypto.randomUUID(),
-          rawText: `- [ ] ${fallbackDescription} (Captured: ${now})`,
-          description: fallbackDescription,
-          isCompleted: false,
-          capturedDate: now,
-          project: projectChosenForPrepending, // At least try to retain the intended project
-          context: effectiveContext 
-      };
-      tasks.push(fallbackTask);
-      await this.writeNextActionsToFile(tasks);
-      this.logMsg(LogLevel.WARN, "Task added with fallback parsing due to initial parsing error.", { taskId: fallbackTask.id });
-      return fallbackTask;
-    }
+      let projectChosenForPrepending: string | null = null;
 
-    let finalProjectToStore = parsedTask.project;
-    let finalDescriptionToStore = parsedTask.description;
-
-    if (projectChosenForPrepending && parsedTask.project !== projectChosenForPrepending) {
-        // If we prepended a specific project, and TaskParser either didn't find it
-        // or found a different one, we trust the projectChosenForPrepending.
-        // This implies projectChosenForPrepending might still be in parsedTask.description.
-        this.logMsg(LogLevel.DEBUG, `addTask - Overriding parsed project. Original parsed: '${parsedTask.project}', Using intended: '${projectChosenForPrepending}'`);
-        finalProjectToStore = projectChosenForPrepending;
-        
-        // Remove the projectChosenForPrepending string from the beginning of parsedTask.description
-        // Escape special characters in projectChosenForPrepending for regex
-        // A simple escape for '+' should be sufficient for typical project names like '+project' or '+project name'
-        const escapedProjectString = projectChosenForPrepending.replace(/[.*+?^${}()|[\]\\]/g, '\\\\$&');
-        const projectRemovalRegex = new RegExp(`^${escapedProjectString}\\s*`);
-        
-        if (parsedTask.description.startsWith(projectChosenForPrepending)) {
-             finalDescriptionToStore = parsedTask.description.replace(projectRemovalRegex, '').trim();
-             this.logMsg(LogLevel.DEBUG, `addTask - Cleaned description. Original: '${parsedTask.description}', New: '${finalDescriptionToStore}'`);
-        } else {
-            this.logMsg(LogLevel.DEBUG, `addTask - Parsed description did not start with prepended project. Desc: '${parsedTask.description}', Prepended: '${projectChosenForPrepending}'`);
-            // finalDescriptionToStore remains parsedTask.description as a fallback
+      if (projectFromInput) {
+        this.logMsg(LogLevel.DEBUG, `addTask - Priority 1: Project from input JSON: '${projectFromInput}'`);
+        let proj = projectFromInput.trim();
+        if (!proj.startsWith('+')) {
+          proj = `+${proj}`;
         }
-    }
-    
-    const taskToAdd: TaskItem = {
-      id: parsedTask.id,
-      rawText: '', // Will be regenerated by TaskParser.serialize
-      description: finalDescriptionToStore,
-      isCompleted: false,
-      context: parsedTask.context, // Trust parser for context
-      project: finalProjectToStore, // Use our adjusted project
-      dueDate: parsedTask.dueDate, // Trust parser for due date
-      capturedDate: parsedTask.capturedDate || now,
-      additionalMetadata: parsedTask.additionalMetadata, // Carry over any other metadata
-    };
-    
-    tasks.push(taskToAdd);
-    await this.writeNextActionsToFile(tasks);
-    this.logMsg(LogLevel.INFO, "Task added successfully via addTask method", { taskId: taskToAdd.id, description: taskToAdd.description, project: taskToAdd.project, context: taskToAdd.context });
-    return taskToAdd;
+        projectChosenForPrepending = proj.replace(/^\+\s*(['"])(.*)\1$/, '+$2');
+        this.logMsg(LogLevel.DEBUG, `addTask - Effective project from input JSON (for prepending): '${projectChosenForPrepending}'`);
+      } else if (descriptionHasProjectTag) {
+        this.logMsg(LogLevel.DEBUG, `addTask - Priority 2: Project tag found in description. Parser will extract. No prepending by addTask.`);
+        projectChosenForPrepending = null;
+      } else if (activeProjectName && activeProjectName.toLowerCase() !== 'home') {
+        this.logMsg(LogLevel.DEBUG, `addTask - Priority 3: Auto-prepending active project: '+${activeProjectName}'`);
+        projectChosenForPrepending = `+${activeProjectName}`;
+      } else {
+        this.logMsg(LogLevel.DEBUG, `addTask - Priority 4: Defaulting project to '+home'.`);
+        projectChosenForPrepending = '+home';
+      }
+
+      this.logMsg(LogLevel.DEBUG, `addTask - Final effective context: '${effectiveContext}', project chosen for prepending: '${projectChosenForPrepending || "null (parser will handle if in desc)"}'`);
+
+      let taskStringParts: string[] = [description.trim()];
+      if (projectChosenForPrepending) {
+          taskStringParts.unshift(projectChosenForPrepending);
+      }
+      if (effectiveContext) {
+          taskStringParts.unshift(effectiveContext);
+      }
+      
+      let combinedDescriptionForParser = taskStringParts.join(' ');
+
+      let rawTaskForParser = `- [ ] ${combinedDescriptionForParser}`;
+      if (dueDate) {
+        rawTaskForParser += ` due:${dueDate}`;
+      }
+      rawTaskForParser += ` (Captured: ${now})`;
+
+      const parsedTask = TaskParser.parse(rawTaskForParser);
+      if (!parsedTask) {
+        this.logMsg(LogLevel.ERROR, "Failed to parse the constructed task string in addTask.", { rawTaskForParser });
+        const fallbackDescription = description.trim() +
+                                  (projectFromInput ? ` ${projectFromInput}` : '') +
+                                  (contextFromInput ? ` ${contextFromInput}` : '') +
+                                  (dueDate ? ` due:${dueDate}` : '');
+        const fallbackTask: TaskItem = {
+            id: crypto.randomUUID(),
+            rawText: `- [ ] ${fallbackDescription} (Captured: ${now})`,
+            description: fallbackDescription,
+            isCompleted: false,
+            capturedDate: now,
+            project: projectChosenForPrepending,
+            context: effectiveContext 
+        };
+        tasks.push(fallbackTask);
+        await this.writeNextActionsToFile(tasks);
+        this.logMsg(LogLevel.WARN, "Task added with fallback parsing due to initial parsing error.", { taskId: fallbackTask.id });
+        return fallbackTask;
+      }
+
+      let finalProjectToStore = parsedTask.project;
+      let finalDescriptionToStore = parsedTask.description;
+
+      if (projectChosenForPrepending && parsedTask.project !== projectChosenForPrepending) {
+          const escapedProjectString = projectChosenForPrepending.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+          const projectRemovalRegex = new RegExp(`^${escapedProjectString}\\s*`);
+          
+          if (parsedTask.description.startsWith(projectChosenForPrepending)) {
+               finalDescriptionToStore = parsedTask.description.replace(projectRemovalRegex, '').trim();
+               this.logMsg(LogLevel.DEBUG, `addTask - Cleaned description. Original: '${parsedTask.description}', New: '${finalDescriptionToStore}'`);
+          } else {
+              this.logMsg(LogLevel.DEBUG, `addTask - Parsed description did not start with prepended project. Desc: '${parsedTask.description}', Prepended: '${projectChosenForPrepending}'`);
+          }
+          // If projectChosenForPrepending was not found at the start of parsedTask.description,
+          // we still honor projectChosenForPrepending as the project, and keep parsedTask.description as is.
+          finalProjectToStore = projectChosenForPrepending;
+      }
+      
+      const taskToAdd: TaskItem = {
+        id: parsedTask.id,
+        rawText: '',
+        description: finalDescriptionToStore,
+        isCompleted: false,
+        context: parsedTask.context,
+        project: finalProjectToStore,
+        dueDate: parsedTask.dueDate,
+        capturedDate: parsedTask.capturedDate || now,
+        additionalMetadata: parsedTask.additionalMetadata,
+      };
+      
+      tasks.push(taskToAdd);
+      await this.writeNextActionsToFile(tasks);
+      this.logMsg(LogLevel.INFO, "Task added successfully via addTask method", { taskId: taskToAdd.id, description: taskToAdd.description, project: taskToAdd.project, context: taskToAdd.context });
+      return taskToAdd;
+    }).catch(error => {
+      this.logMsg(LogLevel.ERROR, `addTask operation failed: ${error.message}. Attempting to return a minimal error task.`, { description });
+      // addTask is expected to return a TaskItem. If the locked operation throws an error,
+      // we need to decide if we rethrow or construct a fallback. The original method has a fallback path.
+      // For now, let's rethrow, as the internal fallback might not have been reached.
+      // The caller needs to be aware that the task addition truly failed.
+      // Alternatively, create and return a dummy error task IF the signature strictly must not throw.
+      throw error; 
+    });
   }
 
   public async completeTask(identifier: string | number): Promise<TaskItem | null> {
-    let taskToCompleteId: string | undefined;
-    // tasksCurrentlyInFile should represent the current state of open tasks in the persisted file.
-    const tasksCurrentlyInFile = await this.readNextActionsFromFile(); 
+    return this.performFileOperation(async () => {
+      let taskToCompleteId: string | undefined;
+      const tasksCurrentlyInFile = await this.readNextActionsFromFile();
 
-    if (typeof identifier === 'number') {
-      if (this.S_currentListedTasks && this.S_currentListedTasks.length > 0 && identifier > 0 && identifier <= this.S_currentListedTasks.length) {
-        // Identifier is a 1-based index from the last 'viewNextActions' call
-        const targetTaskFromView = this.S_currentListedTasks[identifier - 1];
-        if (targetTaskFromView) {
-          taskToCompleteId = targetTaskFromView.id;
+      if (typeof identifier === 'number') {
+        if (this.S_currentListedTasks && this.S_currentListedTasks.length > 0 && identifier > 0 && identifier <= this.S_currentListedTasks.length) {
+          const targetTaskFromView = this.S_currentListedTasks[identifier - 1];
+          if (targetTaskFromView) {
+            taskToCompleteId = targetTaskFromView.id;
+          } else {
+            this.logMsg(LogLevel.WARN, `Numeric identifier ${identifier} resulted in an undefined task from recently viewed list.`);
+            return null;
+          }
         } else {
-           this.logMsg(LogLevel.WARN, `Numeric identifier ${identifier} resulted in an undefined task from recently viewed list.`);
-           return null;
+          this.logMsg(LogLevel.WARN, `Cannot complete by number: No recently viewed tasks list available, or number ${identifier} is out of bounds for ${this.S_currentListedTasks?.length || 0} tasks.`);
+          return null;
         }
-      } else {
-        this.logMsg(LogLevel.WARN, `Cannot complete by number: No recently viewed tasks list available, or number ${identifier} is out of bounds for ${this.S_currentListedTasks?.length || 0} tasks.`);
-        return null;
+      } else { 
+        taskToCompleteId = identifier;
       }
-    } else { // identifier is string (ID or description fragment)
-      taskToCompleteId = identifier; // Assume it's an ID or a description to be searched
-    }
 
-    if (!taskToCompleteId) {
+      if (!taskToCompleteId) {
         this.logMsg(LogLevel.WARN, "No valid task identifier derived for completion.");
         return null;
-    }
+      }
 
-    // Find the task in the current list of open tasks from the file
-    // If identifier was a number, taskToCompleteId is now the ID from S_currentListedTasks.
-    // If identifier was a string, taskToCompleteId is that string (either ID or description fragment).
-    const taskIndex = tasksCurrentlyInFile.findIndex(t => 
-        t.id === taskToCompleteId || 
-        (typeof identifier === 'string' && t.description.toLowerCase().includes(identifier.toLowerCase())) // Only use description match if original identifier was string
-    );
+      const taskIndex = tasksCurrentlyInFile.findIndex(t =>
+        t.id === taskToCompleteId ||
+        (typeof identifier === 'string' && t.description.toLowerCase().includes(identifier.toLowerCase()))
+      );
 
-    if (taskIndex !== -1) {
-      const taskToComplete = tasksCurrentlyInFile[taskIndex];
+      if (taskIndex !== -1) {
+        const taskToComplete = tasksCurrentlyInFile[taskIndex];
+        taskToComplete.isCompleted = true;
+        taskToComplete.completedDate = new Date().toISOString().replace(/T.*/, ''); // YYYY-MM-DD
 
-      // Mark as completed and set completedDate
-      taskToComplete.isCompleted = true;
-      taskToComplete.completedDate = new Date().toISOString().replace(/T.*/, ''); // YYYY-MM-DD
-
-      // Archive it
-      await this.archiveTask(taskToComplete);
+        await this.archiveTask(taskToComplete);
+        tasksCurrentlyInFile.splice(taskIndex, 1);
+        await this.writeNextActionsToFile(tasksCurrentlyInFile);
+        
+        this.logMsg(LogLevel.INFO, "Task completed and archived", { taskId: taskToComplete.id, description: taskToComplete.description });
+        return taskToComplete;
+      }
       
-      // Remove from active list (tasksCurrentlyInFile)
-      tasksCurrentlyInFile.splice(taskIndex, 1);
-      await this.writeNextActionsToFile(tasksCurrentlyInFile); // Write back the modified list of open tasks
-      
-      this.logMsg(LogLevel.INFO, "Task completed and archived", { taskId: taskToComplete.id, description: taskToComplete.description });
-      return taskToComplete;
-    }
-    
-    // If the task was identified by ID from S_currentListedTasks but not found in tasksCurrentlyInFile,
-    // it might have been completed by another process or it wasn't an open task to begin with.
-    this.logMsg(LogLevel.WARN, "Task not found in the current open tasks list, or it might have been already completed/archived.", { originalIdentifier: identifier, derivedId: taskToCompleteId });
-    return null;
+      this.logMsg(LogLevel.WARN, "Task not found in the current open tasks list, or it might have been already completed/archived.", { originalIdentifier: identifier, derivedId: taskToCompleteId });
+      return null;
+    }).catch(error => {
+      // The error is already logged by performFileOperation's catch block.
+      // We just need to ensure this method still adheres to its return type signature.
+      this.logMsg(LogLevel.ERROR, `completeTask operation failed overall: ${error.message}`, { identifier });
+      return null; 
+    });
   }
 
   public async editTask(identifier: string, updates: Partial<TaskItem>): Promise<TaskItem | null> {
-    const tasks = await this.readNextActionsFromFile();
-    const taskIndex = tasks.findIndex(t => t.id === identifier);
+    return this.performFileOperation(async () => {
+      const tasks = await this.readNextActionsFromFile();
+      const taskIndex = tasks.findIndex(t => t.id === identifier);
 
-    if (taskIndex === -1) {
-      this.logMsg(LogLevel.WARN, `editTask - Task with ID "${identifier}" not found.`);
+      if (taskIndex === -1) {
+        this.logMsg(LogLevel.WARN, `editTask - Task with ID "${identifier}" not found.`);
+        return null;
+      }
+
+      const originalTask = tasks[taskIndex];
+      const { id, rawText, ...updatableFields } = updates;
+      
+      let updatedTaskFields: Partial<TaskItem> = { ...originalTask, ...updatableFields };
+
+      if (updatableFields.description) {
+          const tempRawForReparse = `- [ ] ${updatableFields.description}`;
+          const parsedFromNewDesc = TaskParser.parse(tempRawForReparse);
+          if (parsedFromNewDesc) {
+              updatedTaskFields.description = parsedFromNewDesc.description;
+              updatedTaskFields.context = updatableFields.context ?? parsedFromNewDesc.context;
+              updatedTaskFields.project = updatableFields.project ?? parsedFromNewDesc.project;
+              updatedTaskFields.dueDate = updatableFields.dueDate ?? parsedFromNewDesc.dueDate;
+              updatedTaskFields.capturedDate = updatableFields.capturedDate === undefined ? originalTask.capturedDate : updatableFields.capturedDate;
+              updatedTaskFields.additionalMetadata = updatableFields.additionalMetadata === undefined ? parsedFromNewDesc.additionalMetadata : updatableFields.additionalMetadata;
+          } else {
+              updatedTaskFields.description = updatableFields.description; 
+          }
+      }
+      
+      const finalUpdatedTask: TaskItem = {
+          id: originalTask.id,
+          rawText: '',
+          description: updatedTaskFields.description || originalTask.description,
+          isCompleted: typeof updatedTaskFields.isCompleted === 'boolean' ? updatedTaskFields.isCompleted : originalTask.isCompleted,
+          context: updatedTaskFields.context !== undefined ? updatedTaskFields.context : originalTask.context,
+          project: updatedTaskFields.project !== undefined ? updatedTaskFields.project : originalTask.project,
+          dueDate: updatedTaskFields.dueDate !== undefined ? updatedTaskFields.dueDate : originalTask.dueDate,
+          capturedDate: updatedTaskFields.capturedDate !== undefined ? updatedTaskFields.capturedDate : originalTask.capturedDate,
+          completedDate: updatedTaskFields.completedDate !== undefined ? updatedTaskFields.completedDate : originalTask.completedDate,
+          additionalMetadata: updatedTaskFields.additionalMetadata !== undefined ? updatedTaskFields.additionalMetadata : originalTask.additionalMetadata,
+      };
+
+      tasks[taskIndex] = finalUpdatedTask;
+      await this.writeNextActionsToFile(tasks);
+      this.logMsg(LogLevel.INFO, `Task "${finalUpdatedTask.id}" updated.`);
+      return finalUpdatedTask;
+    }).catch(error => {
+      this.logMsg(LogLevel.ERROR, `editTask operation failed: ${error.message}`, { identifier });
       return null;
-    }
-
-    // Merge updates into the found task
-    // Important: Do not allow changing the ID via updates
-    const originalTask = tasks[taskIndex];
-    const { id, rawText, ...updatableFields } = updates; // Destructure to exclude id and rawText from direct update
-    
-    // If description is updated, other fields parsed from it (context, project, dueDate, additionalMetadata) might become stale
-    // or might be intended to be replaced by explicit values in `updates`.
-    // For simplicity, if `description` is part of `updates`, we should re-parse it to ensure consistency, 
-    // then layer explicit `updates` for context, project, dueDate etc. on top.
-    let updatedTaskFields: Partial<TaskItem> = { ...originalTask, ...updatableFields };
-
-    if (updatableFields.description) {
-        // If description changes, re-parse it to potentially update derived fields, then apply explicit updates.
-        const tempRawForReparse = `- [ ] ${updatableFields.description}`;
-        const parsedFromNewDesc = TaskParser.parse(tempRawForReparse);
-        if (parsedFromNewDesc) {
-            updatedTaskFields.description = parsedFromNewDesc.description; // Use re-parsed description
-            updatedTaskFields.context = updatableFields.context ?? parsedFromNewDesc.context; // Prioritize explicit update
-            updatedTaskFields.project = updatableFields.project ?? parsedFromNewDesc.project; // Prioritize explicit update
-            updatedTaskFields.dueDate = updatableFields.dueDate ?? parsedFromNewDesc.dueDate; // Prioritize explicit update
-            // Keep original capturedDate unless explicitly updated
-            updatedTaskFields.capturedDate = updatableFields.capturedDate === undefined ? originalTask.capturedDate : updatableFields.capturedDate;
-            // additionalMetadata from re-parse, unless explicitly updated
-            updatedTaskFields.additionalMetadata = updatableFields.additionalMetadata === undefined ? parsedFromNewDesc.additionalMetadata : updatableFields.additionalMetadata;
-        } else {
-            // Fallback if new description is not parsable as a task body (should be rare)
-            updatedTaskFields.description = updatableFields.description; 
-        }
-    }
-    
-    // Ensure all fields of TaskItem are present, carrying over from original if not in updatedTaskFields
-    const finalUpdatedTask: TaskItem = {
-        id: originalTask.id, // ID must not change
-        rawText: '', // Will be regenerated by serialize
-        description: updatedTaskFields.description || originalTask.description,
-        isCompleted: typeof updatedTaskFields.isCompleted === 'boolean' ? updatedTaskFields.isCompleted : originalTask.isCompleted,
-        context: updatedTaskFields.context !== undefined ? updatedTaskFields.context : originalTask.context,
-        project: updatedTaskFields.project !== undefined ? updatedTaskFields.project : originalTask.project,
-        dueDate: updatedTaskFields.dueDate !== undefined ? updatedTaskFields.dueDate : originalTask.dueDate,
-        capturedDate: updatedTaskFields.capturedDate !== undefined ? updatedTaskFields.capturedDate : originalTask.capturedDate,
-        completedDate: updatedTaskFields.completedDate !== undefined ? updatedTaskFields.completedDate : originalTask.completedDate,
-        additionalMetadata: updatedTaskFields.additionalMetadata !== undefined ? updatedTaskFields.additionalMetadata : originalTask.additionalMetadata,
-    };
-
-    tasks[taskIndex] = finalUpdatedTask;
-    await this.writeNextActionsToFile(tasks);
-    this.logMsg(LogLevel.INFO, `Task "${finalUpdatedTask.id}" updated.`);
-    return finalUpdatedTask;
+    });
   }
 
   private async archiveTask(task: TaskItem): Promise<void> {
