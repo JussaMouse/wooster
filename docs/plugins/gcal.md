@@ -8,7 +8,7 @@ This document provides details about the GCal plugin for Wooster, which integrat
 
 The GCal plugin allows Wooster to:
 - Read events from your Google Calendar.
-- Create new events in your Google Calendar. By default, all events created by Wooster will automatically include a 15-minute email reminder for attendees.
+- Create new events in your Google Calendar. Wooster configures these events to include a 15-minute email reminder and ensures that Google Calendar sends invitation/update notifications to all attendees.
 - Optionally, automatically add a configured default email address as an attendee to all created events, ensuring they receive notifications.
 
 This functionality enables features like including calendar summaries in the Daily Review and allowing the agent to manage your schedule.

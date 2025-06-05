@@ -109,8 +109,9 @@ const createEventInternal: CreateCalendarEventService = async (options: CreateEv
           ]
         }
       },
+      sendUpdates: 'all',
     };
-    core?.log(LogLevel.DEBUG, 'GCalPlugin: Creating Google Calendar event:', { summary: options.summary, attendees: event.requestBody?.attendees, reminders: event.requestBody?.reminders });
+    core?.log(LogLevel.DEBUG, 'GCalPlugin: Creating Google Calendar event:', { summary: options.summary, attendees: event.requestBody?.attendees, reminders: event.requestBody?.reminders, sendUpdates: event.sendUpdates });
     const response = await calendarApi.events.insert(event);
     if (response.status >= 200 && response.status < 300 && response.data && response.data.id) {
       core?.log(LogLevel.INFO, 'GCalPlugin: Google Calendar event created successfully.', { eventId: response.data.id });
