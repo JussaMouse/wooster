@@ -1,72 +1,107 @@
-# User Profile Design
+# User Profile Plugin (userProfile)
 
-This document outlines a conceptual approach for a "User Profile" system. It is designed to enable Wooster to learn about the user's preferences, facts, and context from conversations, while distinguishing this from project-specific knowledge.
+**Version:** 1.0.5
 
-## Core Idea: Dual Knowledge Systems with a User Knowledge Extractor
+## Overview
 
-The system would feature two distinct knowledge components:
+The User Profile plugin enables Wooster to store and recall specific facts, preferences, and pieces of information about the user. This allows for a more personalized and context-aware interaction over time.
 
-1.  **Project Knowledge (Existing ProjectRAG System):**
-    *   Knowledge Base: Vector stores dedicated to each project.
-    *   Purpose: To answer questions and provide information derived *from the content of the currently loaded project*.
+The plugin utilizes a dedicated vector store (FaissStore) to save user-specific data, separate from project-specific knowledge. It provides tools for the agent to explicitly save new information to this profile or recall existing information based on a topic.
 
-2.  **User Profile (New System):**
-    *   Knowledge Base: A separate, dedicated vector store (e.g., `vector_data/user_profile_store/`).
-    *   Purpose: To store and retrieve facts, preferences, statements, and insights *about the user*.
-    *   Content Examples: Embeddings of statements like "User likes Woody Allen films."
+Internally, a `UserProfileService` manages all interactions with the vector store, ensuring that data is handled consistently.
 
-## Key Component: The "User Knowledge Extractor"
+## Core Functionality
 
-To populate User Profile accurately, a "User Knowledge Extractor" module is essential. This would likely be an LLM-powered component that processes each conversational turn.
+### Data Storage
 
-**Workflow of the User Knowledge Extractor:**
+-   **Method:** User-specific facts and preferences are converted into text embeddings and stored in a [FaissStore](https://github.com/facebookresearch/faiss) vector database.
+-   **Location:** The directory for this vector store is configurable (see [Configuration](#configuration) below).
+    -   Default Path: `<workspace_root>/vector_data/user_profile_store/`
+-   **Files:** Within the configured `storePath`, the plugin creates and manages files such as `faiss.index` (the vector index) and `docstore.json` (the raw text of stored facts).
+-   **Format:** When information is saved (e.g., using the `save_user_profile` tool), it's typically stored as a combined string, like "Category: Value" (e.g., "email address: user@example.com").
 
-1.  **Observation Phase:** After each user-assistant interaction, it analyzes user input, assistant response, and project context.
-2.  **Extraction & Filtering Logic:** Guided by a sophisticated prompt to identify user-specific information and filter out project content.
-3.  **Storing in User Profile:** Extracted knowledge is embedded and added to the `vector_data/user_profile_store/`.
+### Service Layer
 
-## Utilizing Contextual User Knowledge from User Profile
+-   All operations related to the user profile vector store (initialization, adding facts, retrieving context) are managed by the `UserProfileService`. This service is used internally by the plugin's tools.
 
-When the assistant needs to access information *about the user*:
-1.  It would query the User Profile system, primarily via the `recall_user_profile` agent tool.
-2.  The query could be augmented with current project context.
+## Provided Agent Tools
 
-## Challenges and Considerations:
-*   Sophisticated Prompt Engineering
-*   Managing Ambiguity
-*   Performance Overhead
-*   Evolution and Staleness of Preferences
-*   Determining Granularity
-*   Privacy and Control
+The User Profile plugin provides the following `StructuredTool`(s) to the agent:
 
-## Privacy Considerations & Non-Local LLMs
+### 1. `save_user_profile`
 
-**IMPORTANT: Data Privacy with Cloud-Based LLMs**
-If the LLM for the User Knowledge Extractor is cloud-based, conversation snippets will be sent to a third-party provider. Review their data policies.
+-   **Type:** `StructuredTool`
+-   **Description:** Saves or updates a new piece of information, preference, or fact about the user to their profile. The agent should provide a category for the fact and the fact's value.
+-   **Schema/Arguments:**
+    -   `fact_category: string`: The category or type of the fact being saved (e.g., "email address", "preferred city", "favorite programming language").
+    -   `fact_value: string`: The actual piece of information or preference to save (e.g., "lonhig@gmail.com", "New York", "TypeScript").
+-   **How it works:** The tool combines the `fact_category` and `fact_value` into a single string (e.g., "email address: lonhig@gmail.com"). This string is then embedded and stored in the user profile vector store. If a similar fact already exists, this may effectively update it due to how vector similarity works, though it's primarily an "add" operation.
+-   **Example Agent Usage (Conceptual):**
+    *User: "Please remember my favorite color is blue."*
+    *Agent might call `save_user_profile` with:*
+    `{ "fact_category": "favorite color", "fact_value": "blue" }`
 
-**Recommendation:** Provide clear notification or require user opt-in for User Profile learning with cloud-based LLMs.
+### 2. `recall_user_profile`
 
-## Current System State Relative to User Profile Implementation
+-   **Type:** `StructuredTool`
+-   **Description:** Recalls stored user profile information, preferences, or facts based on a specific topic.
+-   **Schema/Arguments:**
+    -   `topic: string`: The topic or subject to recall information about from the user profile (e.g., "email address", "user's coffee preference", "contact details").
+-   **How it works:** The tool takes the `topic`, embeds it, and performs a similarity search against the facts stored in the user profile vector store. It returns the most relevant stored facts.
+-   **Example Agent Usage (Conceptual):**
+    *User: "What's my email address you have on file?"*
+    *Agent might call `recall_user_profile` with:*
+    `{ "topic": "email address" }`
+    *The tool would then return relevant stored information like "email address: lonhig@gmail.com".*
 
-Wooster's current architecture already possesses several foundational components:
-*   **Vector Store Management (`src/memoryVector.ts`, `src/projectIngestor.ts`):**
-    *   Experience with `FaissStore`.
-    *   Use of `HuggingFaceTransformersEmbeddings` (`Xenova/all-MiniLM-L6-v2`).
-    *   `USER_PROFILE_VECTOR_STORE_PATH` in `memoryVector.ts` points to `vector_data/user_profile_store/`.
-    *   `initUserProfileStore` function in `memoryVector.ts`.
-*   **LLM Integration (`src/index.ts`, `src/agent.ts`):**
-    *   Use of `ChatOpenAI` for the "User Knowledge Extractor".
-*   **Agent Tool: `recall_user_profile`:**
-    *   The primary way the agent accesses User Profile, defined in `src/agentExecutorService.ts` and implemented in `src/tools/userProfileTool.ts` (formerly `userContextTool.ts`).
+## Configuration
 
-## Enabling/Disabling User Profile
+To use the User Profile plugin, it needs to be enabled in your application configuration (`config.json` or equivalent, managed by `configLoader.ts`).
 
-Controlled via `USER_PROFILE_ENABLED` in `.env` file.
-- If `false` or omitted, User Profile is disabled.
-- The `recall_user_profile` tool should reflect this.
+1.  **Enable the Plugin Globally:**
+    Ensure the plugin is listed and set to `true` in the main `plugins` section of your `AppConfig`:
+    ```json
+    {
+      "plugins": {
+        "userProfile": true,
+        // ... other plugins
+      }
+    }
+    ```
 
-## Customizing the Extractor Prompt
+2.  **Enable the User Profile Feature:**
+    The `userProfile` configuration block must also have `enabled` set to `true`:
+    ```json
+    {
+      "userProfile": {
+        "enabled": true,
+        "storePath": "/custom/path/to/user_profile_data/" // Optional
+      }
+      // ... other configurations
+    }
+    ```
 
-Controlled via `USER_PROFILE_EXTRACTOR_LLM_PROMPT` in `.env` file.
-- If not set, a default prompt from `src/userKnowledgeExtractor.ts` is used.
-- Placeholders `{userInput}`, `{assistantResponse}`, `{currentProjectName}` are available.
+### Configuration Options for `userProfile`
+
+The following options are available within the `userProfile` block of your `AppConfig`:
+
+-   `enabled: boolean`
+    -   **Description:** Master toggle for all User Profile plugin functionalities. If `false`, the plugin will not initialize its store or provide tools to the agent.
+    -   **Default:** `false` (as per `DEFAULT_CONFIG` in `configLoader.ts`)
+    -   **Environment Variable:** `USER_PROFILE_ENABLED` (e.g., `USER_PROFILE_ENABLED=true`)
+
+-   `storePath?: string` (Optional)
+    -   **Description:** Specifies the directory path where the FaissStore vector database files (e.g., `faiss.index`, `docstore.json`) for the user profile will be stored.
+    -   **Default:** If not specified, defaults to `<workspace_root>/vector_data/user_profile_store/`.
+    -   **Environment Variable:** `USER_PROFILE_STORE_PATH` (e.g., `USER_PROFILE_STORE_PATH="./my_data/user_profile_db"`)
+
+## Dependencies
+
+-   Utilizes the core logging service provided by Wooster for internal logging.
+-   The `UserProfileService` is registered with `CoreServices` during plugin initialization, making it potentially available for other plugins or advanced use cases (this is primarily an internal detail).
+
+## Notes
+
+-   The effectiveness of the `recall_user_profile` tool depends on how well the provided `topic` matches the stored facts.
+-   While this plugin provides tools for explicit saving, the agent's intelligence determines when and how to use them to "learn" about the user.
+-   Consider the privacy implications of the information being stored, especially if your Wooster instance interacts with cloud-based LLMs for its primary reasoning.

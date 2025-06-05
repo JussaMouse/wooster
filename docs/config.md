@@ -112,12 +112,13 @@ These variables control Wooster's logging behavior. See `07 LOGGING.MD` for more
 Controls the User Profile feature, which allows Wooster to remember user-specific facts and preferences.
 
 -   `USER_PROFILE_ENABLED`
-    -   **Description**: Set to `true` to enable the User Profile feature.
+    -   **Description**: Set to `true` to enable the User Profile feature. This works in conjunction with enabling the `userProfile` plugin in the application's plugin settings.
     -   **Valid Values**: `true`, `false`
     -   **Default**: `false`
--   `USER_PROFILE_EXTRACTOR_LLM_PROMPT`
-    -   **Description**: Custom prompt for the User Profile fact extractor. If empty, a system default is used. Supports placeholders like `{conversationHistory}`.
-    -   **Default**: (empty string, uses system default)
+-   `USER_PROFILE_STORE_PATH`
+    -   **Description**: Specifies the directory path for the User Profile plugin's vector store files (e.g., `faiss.index`, `docstore.json`).
+    -   **Default**: If not set, defaults to `<workspace_root>/vector_data/user_profile_store/`.
+    -   **Example**: `USER_PROFILE_STORE_PATH="./my_data/user_profile_db"`
 
 ### 4. Tools Configuration
 
