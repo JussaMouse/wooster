@@ -96,8 +96,15 @@ class NextActionsPluginDefinition implements WoosterPlugin {
     
     // Instantiate services
     this.getOpenNextActionsService = new GetOpenNextActionsService(this);
-    
-    this.logMsg(LogLevel.INFO, `Service "${GetOpenNextActionsService.serviceName}" initialized.`);
+    this.logMsg(LogLevel.INFO, `Service "${GetOpenNextActionsService.serviceName}" instance created.`);
+
+    // Actually register the service with the PluginManager
+    if (this.coreServices && this.getOpenNextActionsService) {
+      this.coreServices.registerService(GetOpenNextActionsService.serviceName, this.getOpenNextActionsService);
+      // The PluginManager's registerService method already logs this, so no need to duplicate here.
+    } else {
+      this.logMsg(LogLevel.ERROR, `Failed to register "${GetOpenNextActionsService.serviceName}": coreServices or service instance is missing.`);
+    }
   }
 
   async shutdown(): Promise<void> {
