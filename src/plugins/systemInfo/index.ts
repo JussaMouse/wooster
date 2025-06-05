@@ -3,6 +3,7 @@ import { DynamicTool } from 'langchain/tools';
 import { LogLevel } from '../../logger';
 import * as fs from 'fs';
 import * as path from 'path';
+import { listPlugins } from '../../pluginManager';
 
 interface PluginStatusInfo {
   name: string;
@@ -16,8 +17,8 @@ interface PluginStatusInfo {
 
 export class SystemInfoPlugin implements WoosterPlugin {
   static readonly pluginName = 'systemInfo';
-  static readonly version = '0.1.0';
-  static readonly description = 'Provides system information tools, like listing plugin statuses.';
+  static readonly version = '0.2.0';
+  static readonly description = 'Provides system information tools, like listing plugin statuses and generating a plugin state file.';
 
   readonly name = SystemInfoPlugin.pluginName;
   readonly version = SystemInfoPlugin.version;
@@ -147,7 +148,44 @@ export class SystemInfoPlugin implements WoosterPlugin {
       },
     });
 
-    return [listPluginsStatusTool];
+    const generatePluginStateFileTool = new DynamicTool({
+      name: 'generate_plugin_state_file',
+      description: 'Generates a file named plugins_state.md in the workspace root, listing all active plugins and core system capabilities.',
+      func: async () => {
+        this.logMsg(LogLevel.INFO, 'generate_plugin_state_file tool called.');
+        try {
+          const activePluginNames = listPlugins();
+
+          const formattedPluginNames = activePluginNames.map(name => {
+            // Convert camelCase or single word to Title Case + " Plugin"
+            // e.g., "nextActions" -> "Next Actions Plugin", "api" -> "Api Plugin"
+            if (!name) return 'Unknown Plugin';
+            const spacedName = name.replace(/([A-Z])/g, ' $1');
+            const titleCasedName = spacedName.charAt(0).toUpperCase() + spacedName.slice(1);
+            return `${titleCasedName} Plugin`;
+          });
+
+          const coreCapabilities = "Core System Capabilities (Project Knowledge/RAG, Agent Task Scheduling, File Operations)";
+          
+          const fileContent = formattedPluginNames.join('\n') + '\n' + coreCapabilities;
+          
+          const filePath = path.join(process.cwd(), 'plugins_state.md');
+          
+          fs.writeFileSync(filePath, fileContent, 'utf8');
+          
+          const successMsg = `Successfully generated ${filePath}`;
+          this.logMsg(LogLevel.INFO, successMsg);
+          return successMsg;
+
+        } catch (error: any) {
+          const errorMsg = `Error generating plugin state file: ${error.message}`;
+          this.logMsg(LogLevel.ERROR, errorMsg, { error });
+          return errorMsg;
+        }
+      },
+    });
+
+    return [listPluginsStatusTool, generatePluginStateFileTool];
   }
 }
 
