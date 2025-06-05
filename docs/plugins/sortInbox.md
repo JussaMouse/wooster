@@ -1,5 +1,7 @@
 # Wooster Plugin: sortInbox
 
+**Version:** 1.6.0
+
 ## 1. Purpose
 
 The `sortInbox` plugin provides a command-line interface to systematically process items captured in the main `inbox.md` file. It allows users to review each item and decide on the appropriate action, helping to keep the inbox clear and actionable items routed to their correct destinations, following GTD (Getting Things Done) principles.
@@ -165,13 +167,11 @@ The `sortInbox` plugin provides the following tools for the agent:
     *   **File Interaction**: Appends a formatted line to `waiting_for.md`. The typical format is: `- [ ] @Waiting [Person/Entity, if provided] re: [Description] (Logged: YYYY-MM-DD)`.
 
 *   **`viewWaitingForItems`**:
-    *   **Description**: Reads and displays all items from the global `waiting_for.md` file. While the tool itself requires no parameters, the agent will typically call it with an object containing an `'input'` key (e.g., `toolName({ input: {} })` or `toolName({ input: '' })`). This input is ignored by the tool.
-    *   **Input**: Effectively none. The agent might provide an `input` key with an empty object or string, which is disregarded.
+    *   **Description**: Reads and displays all items from the global `waiting_for.md` file. This tool requires no parameters.
+    *   **Input**: This tool takes no parameters.
     *   **Output**: The content of the `waiting_for.md` file, typically prefixed with a header like "Contents of waiting_for.md:", or a message if the file doesn't exist or is empty.
-    *   **Example Agent Call**: `agent.callTool('viewWaitingForItems', { input: {} })` or simply `agent.callTool('viewWaitingForItems', {})`
 
 *   **`viewInboxItems`**:
-    *   **Description**: Reads and displays all items from the global `inbox.md` file. While the tool itself requires no parameters, the agent will typically call it with an object containing an `'input'` key (e.g., `toolName({ input: {} })` or `toolName({ input: '' })`). This input is ignored by the tool.
-    *   **Input**: Effectively none. The agent might provide an `input` key with an empty object or string, which is disregarded.
-    *   **Output**: The content of the `inbox.md` file, typically prefixed with a header like "Contents of inbox.md:", or a message if the file is empty or doesn't exist.
-    *   **Example Agent Call**: `agent.callTool('viewInboxItems', { input: {} })` or `agent.callTool('viewInboxItems', {})` 
+    *   **Description**: Reads and displays all items from the global `inbox.md` file. This tool requires no parameters.
+    *   **Input**: This tool takes no parameters.
+    *   **Output**: The content of the `inbox.md` file, typically prefixed with a header like "Contents of inbox.md:", or a message if the file is empty or doesn't exist. 
