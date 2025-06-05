@@ -465,24 +465,47 @@ class NextActionsPluginDefinition implements WoosterPlugin {
 
         // Attempt 2: If not an ID, try exact case-insensitive description match
         if (taskIndex === -1) {
-          // Clean the incoming identifier string similarly to how TaskParser cleans descriptions
-          const cleanIdentifier = identifier.replace(/\s\s+/g, ' ').trim();
-          const lowerIdentifier = cleanIdentifier.toLowerCase();
+          const normalizeStringForComparison = (str: string): string => {
+            if (typeof str !== 'string') return '';
+            return str.toLowerCase()
+                      .replace(/[^a-z0-9\s]/g, '') // Remove non-alphanumeric (excluding space)
+                      .replace(/\s\s+/g, ' ')      // Normalize multiple spaces to single
+                      .trim();
+          };
 
-          this.logMsg(LogLevel.DEBUG, `[completeTask] Attempting exact description match. Original Identifier: "${identifier}", Cleaned/Lowercased for match: "${lowerIdentifier}"`);
+          const normalizedIdentifier = normalizeStringForComparison(identifier);
+
+          this.logMsg(LogLevel.DEBUG, `[completeTask] Attempting normalized description match. Original Identifier: "${identifier}", Normalized for match: "${normalizedIdentifier}"`);
           if (tasksCurrentlyInFile.length === 0) {
             this.logMsg(LogLevel.DEBUG, "[completeTask] tasksCurrentlyInFile is empty. No tasks to compare against.");
           } else {
             tasksCurrentlyInFile.forEach((task, i) => {
-              // Ensure the task description used for comparison is also cleaned the same way
-              const cleanTaskDescription = task.description.replace(/\s\s+/g, ' ').trim();
-              this.logMsg(LogLevel.DEBUG, `[completeTask] Comparing with task[${i}].id: "${task.id}", task[${i}].description (original): "${task.description}", Cleaned/Lowercased for match: "${cleanTaskDescription.toLowerCase()}"`);
+              const normalizedTaskDescription = normalizeStringForComparison(task.description);
+              this.logMsg(LogLevel.DEBUG, `[completeTask] Comparing with task[${i}].id: "${task.id}", task[${i}].description (original): "${task.description}", Normalized for match: "${normalizedTaskDescription}"`);
             });
           }
           taskIndex = tasksCurrentlyInFile.findIndex(t => {
-            const cleanTaskDescription = t.description.replace(/\s\s+/g, ' ').trim();
-            return cleanTaskDescription.toLowerCase() === lowerIdentifier;
+            const normalizedTaskDescription = normalizeStringForComparison(t.description);
+            return normalizedTaskDescription === normalizedIdentifier;
           });
+
+          // Fallback: Special handling for empty descriptions represented by placeholders
+          if (taskIndex === -1) {
+            const knownEmptyPlaceholders = [
+              "no specific action mentioned",
+              "no action mentioned",
+              // Add other common placeholder phrases if needed, they will be normalized
+            ];
+            const normalizedPlaceholders = knownEmptyPlaceholders.map(p => normalizeStringForComparison(p));
+
+            if (normalizedPlaceholders.includes(normalizedIdentifier)) {
+              this.logMsg(LogLevel.DEBUG, `[completeTask] Identifier "${identifier}" (normalized: "${normalizedIdentifier}") matches a known empty placeholder. Looking for task with empty description.`);
+              taskIndex = tasksCurrentlyInFile.findIndex(t => normalizeStringForComparison(t.description) === "");
+              if (taskIndex !== -1) {
+                this.logMsg(LogLevel.DEBUG, `[completeTask] Found task with empty description (id: ${tasksCurrentlyInFile[taskIndex].id}) for placeholder match.`);
+              }
+            }
+          }
         }
         // NOTE: The previous .includes() fallback is removed to prevent cross-completion issues in batch operations.
         // If an .includes() behavior is desired, it should be an explicit agent choice/tool parameter.
