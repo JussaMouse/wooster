@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import slugify from 'slugify';
 import { AppConfig } from './configLoader'; // Assuming AppConfig is available
 import { log, LogLevel } from './logger'; // Correctly import named exports
 
@@ -24,14 +25,16 @@ export async function createNewProject(
     return { success: false, message: 'Project name cannot be empty.' };
   }
 
+  const projectSlug = slugify(projectName, { lower: true, strict: true });
+
   if (!config.gtd || !config.gtd.projectsDir) {
     log(LogLevel.ERROR, 'createNewProject: GTD_PROJECTS_DIR is not configured.');
     return { success: false, message: 'GTD_PROJECTS_DIR is not configured in AppConfig.' };
   }
 
   const projectsBasePath = path.resolve(config.gtd.projectsDir);
-  const newProjectDir = path.join(projectsBasePath, projectName);
-  const projectFilePath = path.join(newProjectDir, `${projectName}.md`);
+  const newProjectDir = path.join(projectsBasePath, projectSlug);
+  const projectFilePath = path.join(newProjectDir, `${projectSlug}.md`);
 
   try {
     // Ensure the base projects directory exists
@@ -44,7 +47,7 @@ export async function createNewProject(
     if (fs.existsSync(newProjectDir)) {
       return {
         success: false,
-        message: `Project '${projectName}' already exists at ${newProjectDir}.`,
+        message: `Project '${projectSlug}' already exists at ${newProjectDir}.`,
         projectPath: newProjectDir,
         projectFilePath: fs.existsSync(projectFilePath) ? projectFilePath : undefined
       };
@@ -61,7 +64,7 @@ export async function createNewProject(
 
     return {
       success: true,
-      message: `Project '${projectName}' created successfully.`,
+      message: `Project '${projectName}' (${projectSlug}) created successfully.`,
       projectPath: newProjectDir,
       projectFilePath: projectFilePath,
     };
