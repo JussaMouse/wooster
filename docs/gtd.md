@@ -60,10 +60,10 @@ wooster-project/
 │   ├── someday_maybe.md
 │   └── waiting_for.md
 ├── projects/
-│   ├── ProjectAlpha/
-│   │   └── ProjectAlpha.md  # Journal for ProjectAlpha (tasks/ notes/ ref)
-│   └── ProjectBeta/
-│       └── ProjectBeta.md
+│   ├── project-alpha/
+│   │   └── project-alpha.md  # Journal for Project-Alpha
+│   └── project-beta/
+│       └── project-beta.md
 ├── logs/
 │   └── inboxArchive/       # Archived items
 └── .env                    # Your environment configuration
@@ -94,9 +94,9 @@ Here's how Wooster supports each step of the GTD workflow:
         *   `(d)one`: Marks the item as completed and archives it. (Useful for quick tasks found in inbox).
         *   `(n)ext Action`: Moves the item to your `gtd/next_actions.md` list. You can add project/context tags (e.g., `+ProjectAlpha @home`) and due dates (`due:YYYY-MM-DD`).
         *   `(p)roject`:
-            *   Create a new project: Wooster will create a new folder in your `GTD_PROJECTS_DIR` (e.g., `projects/MyNewProject/`) and a main notes file (e.g., `MyNewProject.md`) within it, adding the item as an initial task. All project-related notes, including reference material, should be added to this main file.
+            *   Create a new project: Wooster will create a new folder in your `GTD_PROJECTS_DIR`. The name you provide will be "slugified" (converted to lowercase, with spaces replaced by hyphens) to ensure consistent file and directory naming (e.g., "My New Project" becomes `projects/my-new-project/`). A main notes file (e.g., `my-new-project.md`) is also created, and the item is added as an initial task.
             *   Add to an existing project: Appends the item as a task to the selected project's main notes file.
-        *   `(r)eference`: Adds the item as reference material to a selected project's main notes file (e.g., `projects/ProjectAlpha/ProjectAlpha.md`).
+        *   `(r)eference`: Adds the item as reference material to a selected project's main notes file (e.g., `projects/project-alpha/project-alpha.md`).
         *   `(s)omeday/Maybe`: Moves the item to `gtd/someday_maybe.md`.
         *   `(w)aiting For`: Moves the item to `gtd/waiting_for.md`. You'll be prompted for details (e.g., "Waiting for response from Bob").
         *   `(c)alendar`: Schedule the item. Wooster will attempt to parse date/time information (e.g., "tomorrow 3pm for 1 hour") and, if the `gcal` plugin is configured and `CalendarService` is available, create an event in your Google Calendar. If scheduling fails or the service isn't available, the item is typically moved to `next_actions.md` as a fallback.

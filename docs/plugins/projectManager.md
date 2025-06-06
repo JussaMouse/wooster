@@ -27,25 +27,25 @@ The plugin relies on the `projects` base directory (typically `projects/` relati
 *   **Input:** `projectName: string` - The desired name for the new project. This should be a single string argument provided to the tool.
 *   **Functionality:**
     *   Takes the provided `projectName`.
-    *   Uses the `createNewProject` utility (`src/plugins/projectManager/createNewProject.ts`) to perform the actual file system operations. This involves creating a new directory named `projectName` (e.g., `projects/MyNewProject/`).
-    *   It also creates a project journal file (e.g., `projects/MyNewProject/MyNewProject.md` with a heading like `# Journal: MyNewProject`) populated with default sections.
+    *   Uses the `createNewProject` utility (`src/plugins/projectManager/createNewProject.ts`) to perform the actual file system operations. This involves creating a new directory based on a "slugified" version of the project name (e.g., "My New Project" becomes `my-new-project`).
+    *   It also creates a project journal file within that new directory, also based on the slug (e.g., `my-new-project.md`), but the title inside the file will use the original, un-slugified project name.
     *   **Crucially, it then attempts to set this newly created project as the active project within Wooster's core system.**
 *   **Output:**
-    *   On success: Returns a message like `"Project '[projectName]' created successfully. Path: [path/to/projectName.md]. It is now the active project."` or a message indicating if activation was not possible (though this is less likely with recent core changes).
+    *   On success: Returns a message like `"Project '[projectName]' (my-new-project) created successfully. Path: [path/to/my-new-project.md]. It is now the active project."`
     *   On failure (e.g., project already exists, invalid name, configuration issue, file system error): Returns an error message like `"Error creating project: [reason]"`.
 *   **Example Agent Interaction:**
     ```
     User: create new project AlphaFoxtrot
     Agent: (Calls `createProject` tool with "AlphaFoxtrot")
-    Tool Response: Project 'AlphaFoxtrot' created successfully. Path: projects/AlphaFoxtrot/AlphaFoxtrot.md. It is now the active project.
-    Agent: Okay, I've created the project "AlphaFoxtrot" for you, and it's now the active project. The project journal file is at projects/AlphaFoxtrot/AlphaFoxtrot.md.
+    Tool Response: Project 'AlphaFoxtrot' (alphafoxtrot) created successfully. Path: projects/alphafoxtrot/alphafoxtrot.md. It is now the active project.
+    Agent: Okay, I've created the project "AlphaFoxtrot" for you, and it's now the active project. The project journal file is at projects/alphafoxtrot/alphafoxtrot.md.
     ```
     Or in case of an error:
     ```
-    User: create new project MyExistingProject
-    Agent: (Calls `createProject` tool with "MyExistingProject")
-    Tool Response: Error creating project: Project 'MyExistingProject' already exists at projects/MyExistingProject.
-    Agent: It looks like a project named "MyExistingProject" already exists at projects/MyExistingProject.
+    User: create new project "My Existing Project"
+    Agent: (Calls `createProject` tool with "My Existing Project")
+    Tool Response: Error creating project: Project 'my-existing-project' already exists at projects/my-existing-project.
+    Agent: It looks like a project named "my-existing-project" already exists.
     ```
 
 ### 3.2. `openProject`
