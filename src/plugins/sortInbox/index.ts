@@ -9,6 +9,7 @@ import * as readline from 'readline';
 import { execSync } from 'child_process';
 import { mainReplManager } from '../../index'; // Import mainReplManager
 import * as chrono from 'chrono-node'; // Added for date parsing
+import slugify from 'slugify';
 
 // Default File and Directory Paths
 const DEFAULT_GTD_BASE_PATH = './gtd/';
@@ -308,13 +309,16 @@ Enter code: `;
         if (projectAction.startsWith('n')) {
           const newProjectName = await this.ask(rl, "New project name: ");
           if (newProjectName) {
-            const newProjectDir = path.join(this.projectsDirPath, newProjectName);
+            // Slugify the project name for directory and file naming
+            const projectSlug = slugify(newProjectName, { lower: true, strict: true });
+            const newProjectDir = path.join(this.projectsDirPath, projectSlug);
             this.ensureDirExists(this.getFullPath(newProjectDir));
-            const projectFilePath = path.join(newProjectDir, `${newProjectName}.md`); // Project journal file
-            
+            const projectFilePath = path.join(newProjectDir, `${projectSlug}.md`); // Project journal file
+
+            // Use the original project name in the header, but file is based on slug
             this.appendToMdFile(projectFilePath, `# Journal: ${newProjectName}\n\n## Initial Item\n\n- [ ] ${item.description}\n`);
 
-            console.log(`Project '${newProjectName}' created with item as initial task.`);
+            console.log(`Project '${newProjectName}' created as '${projectSlug}' with item as initial task.`);
             this.archiveInboxItem(item);
             this.removeLineFromFile(this.inboxFilePath, item.rawText);
             item.isProcessed = true;
