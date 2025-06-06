@@ -186,10 +186,12 @@ async function getAgentExecutor(): Promise<AgentExecutor> {
   
   const finalSystemPrompt = baseSystemPromptText + 
     appendedPromptsText +
-    `\n\nYour current active project is '${currentActiveProjectName}'. For tools requiring a project name, like 'create_file', you should use this active project name by default. ` +
-    "If the user explicitly specifies a different project for a particular action (e.g., 'save this note in project X'), then you should use the project name specified by the user for that action\'s tool call. " +
-    `If you are unsure which project to use for an operation that requires one, and the user has not specified one, you should ask for clarification or use the active project '${currentActiveProjectName}'. ` +
+    `\n\nYour current active project is '${currentActiveProjectName}'. For tools requiring a project name, like 'create_file', you MUST use this exact active project name by default. ` +
+    "Only use a different project name if the user explicitly uses the phrase 'in project [name]' or 'save to project [name]' or similar direct project specification. " +
+    "Do NOT extract project names from journal entries, file content, or casual mentions - always use the active project '${currentActiveProjectName}' unless explicitly told otherwise. " +
+    `If you are unsure which project to use for an operation that requires one, always use the active project '${currentActiveProjectName}'. ` +
     "Do not change the active project context itself without explicit instruction." +
+    `\n\nIMPORTANT: When adding journal entries, always append to the project's main journal file which is named '${currentActiveProjectName}.md' in the active project directory. Do NOT create separate 'journal.md' files.` +
     "\n\nTo add content to an existing file (e.g., add an entry to a log file), you should first use the 'read_file_content' tool to get the current content. Then, append your new content to the existing content in your internal thought process. Finally, use the 'create_file' tool to save the entire new combined content back to the same file. This ensures you don\'t overwrite existing data unintentionally when the user asks to add something." +
     "\n\nCurrent date and time: {current_date_time}";
 
