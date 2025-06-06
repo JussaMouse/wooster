@@ -39,8 +39,8 @@ function findMatchingProjectName(requestedName: string, actualProjectNames: stri
 
 export class ProjectManagerPlugin implements WoosterPlugin {
   static readonly pluginName = 'projectManager';
-  static readonly version = '0.1.4'; // Incremented version due to new tool
-  static readonly description = 'Manages projects: creating new projects (including a project journal), opening (with fuzzy matching), renaming, setting active project, and listing files in the active project.';
+  static readonly version = '0.1.5'; // Incremented version due to new tool
+  static readonly description = 'Manages projects: creating new projects (including a project journal), opening (with fuzzy matching), renaming, closing projects, setting active project, and listing files in the active project.';
 
   readonly name = ProjectManagerPlugin.pluginName;
   readonly version = ProjectManagerPlugin.version;
@@ -252,6 +252,30 @@ export class ProjectManagerPlugin implements WoosterPlugin {
       },
     });
     tools.push(listFilesInActiveProjectTool);
+
+    // Add a tool to close the active project by switching back to home
+    const closeProjectTool = new DynamicTool({
+      name: 'closeProject',
+      description: 'Closes the current project and switches active project back to home. Usage: closeProject',
+      func: async (_?: string | object) => {
+        this.logMsg(LogLevel.INFO, 'closeProject tool called.');
+        if (!this.services || typeof this.services.getActiveProjectName !== 'function') {
+          const errMsg = 'Error: Core services for getting active project are not available.';
+          this.logMsg(LogLevel.ERROR, errMsg);
+          return errMsg;
+        }
+        const activeProject = this.services.getActiveProjectName();
+        if (!activeProject || activeProject === 'home') {
+          const infoMsg = 'Home project is already the active project.';
+          this.logMsg(LogLevel.INFO, infoMsg);
+          return infoMsg;
+        }
+        const result = await setActiveProjectInCore('home', this.services, this.logMsg.bind(this));
+        this.logMsg(result.success ? LogLevel.INFO : LogLevel.WARN, `User feedback: ${result.messageForUser}`);
+        return result.messageForUser;
+      },
+    });
+    tools.push(closeProjectTool);
 
     return tools;
   }
