@@ -39,23 +39,27 @@ class CreateFileToolClass extends StructuredTool {
   protected async _call(args: CreateFileArgs): Promise<string> {
     log(LogLevel.DEBUG, '[Tool:create_file] Parsed args received by _call:', { args });
     const { relativeFilePath, content, currentProjectName } = args;
-
-    // Validation for empty strings (Zod checks min(1) for path and project name)
-    // Content can be empty, so no check needed here if schema allows.
+    // Adjust if tool is asked to write to 'journal.md' directly: redirect to the project's main journal file
+    let effectiveRelativeFilePath = relativeFilePath;
+    const parsedPath = path.parse(relativeFilePath);
+    if (parsedPath.base.toLowerCase() === 'journal.md') {
+      effectiveRelativeFilePath = path.join(parsedPath.dir, `${currentProjectName}.md`);
+      log(LogLevel.INFO, `[Tool:create_file] Redirecting 'journal.md' to project journal file: '${effectiveRelativeFilePath}'.`);
+    }
 
     const projectPath = getCurrentProjectPath(currentProjectName);
-    const absoluteFilePath = path.resolve(projectPath, relativeFilePath);
+    const absoluteFilePath = path.resolve(projectPath, effectiveRelativeFilePath);
 
     if (!absoluteFilePath.startsWith(projectPath + path.sep) && absoluteFilePath !== projectPath) {
       if (absoluteFilePath === projectPath && relativeFilePath === '') {
         return `Error: Empty file path is not allowed. Please provide a valid relative file path.`;
       }
       log(LogLevel.WARN, `Security: Attempt to write file outside of project directory blocked. Path: ${absoluteFilePath}, Project: ${projectPath}`);
-      return `Error: File path is outside the project directory. Blocked for security reasons. Please use a relative path within the project: ${relativeFilePath}`;
+      return `Error: File path is outside the project directory. Blocked for security reasons. Please use a relative path within the project: ${effectiveRelativeFilePath}`;
     }
     
-    if (relativeFilePath.trim() === '.' || relativeFilePath.includes('..')) {
-      return `Error: Invalid relative file path provided: "${relativeFilePath}". Path must not point to current or parent directories using '.' or '..'.`;
+    if (effectiveRelativeFilePath.trim() === '.' || effectiveRelativeFilePath.includes('..')) {
+      return `Error: Invalid relative file path provided: "${effectiveRelativeFilePath}". Path must not point to current or parent directories using '.' or '..'.`;
     }
 
     try {
@@ -66,10 +70,10 @@ class CreateFileToolClass extends StructuredTool {
 
       await fs.promises.writeFile(absoluteFilePath, content, 'utf8');
       log(LogLevel.INFO, `File created successfully by agent: ${absoluteFilePath} in project ${currentProjectName}`);
-      return `File '${relativeFilePath}' created successfully in project '${currentProjectName}'.`;
+      return `File '${effectiveRelativeFilePath}' created successfully in project '${currentProjectName}'.`;
     } catch (error: any) {
       log(LogLevel.ERROR, `Error creating file '${absoluteFilePath}' in project '${currentProjectName}':`, { errorMessage: error.message, error });
-      return `Error creating file '${relativeFilePath}': ${error.message}`;
+      return `Error creating file '${effectiveRelativeFilePath}': ${error.message}`;
     }
   }
 }
