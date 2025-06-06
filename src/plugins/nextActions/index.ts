@@ -389,11 +389,11 @@ class NextActionsPluginDefinition implements WoosterPlugin {
       let finalDescriptionToStore = parsedTask.description;
 
       if (projectChosenForPrepending && parsedTask.project !== projectChosenForPrepending) {
-          const escapedProjectString = projectChosenForPrepending.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
-          const projectRemovalRegex = new RegExp(`^${escapedProjectString}\\s*`);
+          this.logMsg(LogLevel.DEBUG, `addTask - Overriding parsed project. Original parsed: '${parsedTask.project}', Using intended: '${projectChosenForPrepending}'`);
           
+          // Use simple string manipulation instead of regex to avoid escaping issues with project names.
           if (parsedTask.description.startsWith(projectChosenForPrepending)) {
-               finalDescriptionToStore = parsedTask.description.replace(projectRemovalRegex, '').trim();
+               finalDescriptionToStore = parsedTask.description.slice(projectChosenForPrepending.length).trim();
                this.logMsg(LogLevel.DEBUG, `addTask - Cleaned description. Original: '${parsedTask.description}', New: '${finalDescriptionToStore}'`);
           } else {
               this.logMsg(LogLevel.DEBUG, `addTask - Parsed description did not start with prepended project. Desc: '${parsedTask.description}', Prepended: '${projectChosenForPrepending}'`);
@@ -570,6 +570,7 @@ class NextActionsPluginDefinition implements WoosterPlugin {
       if (updatableFields.description) {
           const tempRawForReparse = `- [ ] ${updatableFields.description}`;
           const parsedFromNewDesc = TaskParser.parse(tempRawForReparse);
+          
           if (parsedFromNewDesc) {
               updatedTaskFields.description = parsedFromNewDesc.description;
               updatedTaskFields.context = updatableFields.context ?? parsedFromNewDesc.context;
