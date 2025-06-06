@@ -640,7 +640,7 @@ ${archivedTaskString}
           return task.context || '';
         case 'project':
           if (!task.project || task.project.toLowerCase() === '+home') return '';
-          return `[${task.project.substring(1)}]`;
+          return task.project.substring(1);
         case 'description':
           return task.description || '(No description)';
         case 'dueDate':

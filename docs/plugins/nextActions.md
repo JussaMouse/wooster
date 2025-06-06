@@ -92,16 +92,18 @@ You can control the exact appearance of tasks by setting the `GTD_NEXT_ACTIONS_V
 **Available Placeholders:**
 *   `{checkbox}`: Displays the task's completion status, like `[ ]` or `[x]`.
 *   `{context}`: The task's context (e.g., `@work`).
-*   `{project}`: The project name, formatted as `[ProjectName]`.
+*   `{project}`: The project's name (e.g., `MyProject`). This no longer includes brackets by default. The `+home` project is omitted.
 *   `{description}`: The main text of the task.
 *   `{dueDate}`: The due date, formatted as `due:YYYY-MM-DD`.
 *   `{id}`: The unique identifier for the task.
 
+**Important Note on Formatting:** If you wrap a placeholder in characters (e.g., `[{project}]`), and a task does not have that data (e.g., no project is assigned), the output may contain empty characters (e.g., `[]`). The template replacement is literal, so plan your format string accordingly.
+
 **Example:**
 
-To format tasks as `[ ] @context [project] The task description`, you would set this in your `.env` file:
+To format tasks as `[ ] @context [ProjectName] The task description`, you would set this in your `.env` file:
 ```env
-GTD_NEXT_ACTIONS_VIEW_FORMAT='{checkbox} {context} {project} {description}'
+GTD_NEXT_ACTIONS_VIEW_FORMAT='{checkbox} {context} [{project}] {description}'
 ```
 
 This allows for flexible and personalized views of your next actions. 
