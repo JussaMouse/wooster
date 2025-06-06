@@ -28,6 +28,7 @@ export interface GtdConfig {
   nextActionsArchiveDirPath?: string;
   inboxPath?: string;
   nextActionsPath?: string;
+  nextActionsViewFormat?: string;
   somedayMaybePath?: string;
   waitingForPath?: string;
 }
@@ -158,6 +159,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     nextActionsArchiveDirPath: undefined,
     inboxPath: undefined,
     nextActionsPath: undefined,
+    nextActionsViewFormat: undefined,
     somedayMaybePath: undefined,
     waitingForPath: undefined,
   },
@@ -295,6 +297,7 @@ export function loadConfig(): AppConfig {
     loadedConfig.gtd.nextActionsArchiveDirPath = getEnvVar('GTD_NEXT_ACTIONS_ARCHIVE_DIR_PATH') || DEFAULT_CONFIG.gtd?.nextActionsArchiveDirPath;
     loadedConfig.gtd.inboxPath = getEnvVar('GTD_INBOX_PATH') || DEFAULT_CONFIG.gtd?.inboxPath;
     loadedConfig.gtd.nextActionsPath = getEnvVar('GTD_NEXT_ACTIONS_PATH') || DEFAULT_CONFIG.gtd?.nextActionsPath;
+    loadedConfig.gtd.nextActionsViewFormat = getEnvVar('GTD_NEXT_ACTIONS_VIEW_FORMAT') || DEFAULT_CONFIG.gtd?.nextActionsViewFormat;
     loadedConfig.gtd.somedayMaybePath = getEnvVar('GTD_SOMEDAY_MAYBE_PATH') || DEFAULT_CONFIG.gtd?.somedayMaybePath;
     loadedConfig.gtd.waitingForPath = getEnvVar('GTD_WAITING_FOR_PATH') || DEFAULT_CONFIG.gtd?.waitingForPath;
   }

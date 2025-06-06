@@ -12,6 +12,7 @@ import crypto from 'crypto';
 // Default file names, paths will be taken from config
 const DEFAULT_NEXT_ACTIONS_FILENAME = 'next_actions.md';
 const DEFAULT_ARCHIVE_DIR_PATH = './logs/inboxArchive/'; // Consistent with sortInbox
+const DEFAULT_VIEW_FORMAT = '{checkbox} {context} {project}: {description} {dueDate}';
 
 interface NextActionFilters {
   context?: string;
@@ -59,6 +60,7 @@ class NextActionsPluginDefinition implements WoosterPlugin {
   private coreServices!: CoreServices; // Renamed and properly typed
   private getOpenNextActionsService!: GetOpenNextActionsService; // Added for the service
   private fileOperationLock: Promise<void> = Promise.resolve();
+  private viewFormat: string = DEFAULT_VIEW_FORMAT;
 
   private logMsg(level: LogLevel, message: string, metadata?: object) {
     if (this.coreServices && this.coreServices.log) {
@@ -95,6 +97,7 @@ class NextActionsPluginDefinition implements WoosterPlugin {
     const basePath = gtdConfig?.basePath || 'gtd'; // Default base path if not specified
 
     this.nextActionsFilePath = gtdConfig?.nextActionsPath ?? path.join(basePath, DEFAULT_NEXT_ACTIONS_FILENAME);
+    this.viewFormat = gtdConfig?.nextActionsViewFormat ?? DEFAULT_VIEW_FORMAT;
     
     // Determine the archive path for next actions
     let defaultNextActionsArchiveDir = path.join(basePath, 'archives', 'nextActions');
@@ -627,6 +630,31 @@ ${archivedTaskString}
     this.logMsg(LogLevel.INFO, `Task '${task.description}' archived to ${archiveFilePath}`);
   }
 
+  private formatTaskForDisplay(task: TaskItem): string {
+    const formattedString = this.viewFormat.replace(/{\w+}/g, (placeholder) => {
+      const key = placeholder.slice(1, -1); // remove {}
+      switch (key) {
+        case 'checkbox':
+          return `[${task.isCompleted ? 'x' : ' '}]`;
+        case 'context':
+          return task.context || '';
+        case 'project':
+          if (!task.project || task.project.toLowerCase() === '+home') return '';
+          return `[${task.project.substring(1)}]`;
+        case 'description':
+          return task.description || '(No description)';
+        case 'dueDate':
+          return task.dueDate ? `due:${task.dueDate}` : '';
+        case 'id':
+          return task.id;
+        default:
+          return placeholder; // return unknown placeholders as-is
+      }
+    });
+    // Clean up extra spaces that might result from empty placeholders
+    return formattedString.replace(/\s\s+/g, ' ').trim();
+  }
+
   // --- Agent Tools ---
   getAgentTools?(): DynamicTool[] {
     const viewNextActionsTool = new DynamicTool({
@@ -661,26 +689,7 @@ ${archivedTaskString}
             
             const responseLines: string[] = [`Current Next Actions (${totalTasks} task${totalTasks === 1 ? '' : 's'}):`];
             tasks.forEach((task, index) => {
-                let prefix = "";
-                if (task.context) { // Context first in display
-                    prefix += `${task.context} `;
-                }
-                // Conditional project display: show only if project exists and is not '+home'
-                if (task.project && task.project.toLowerCase() !== '+home') { 
-                    prefix += `[${task.project.substring(1)}] `;
-                }
-
-                let taskLine = `- [${task.isCompleted ? 'x' : ' '}] `;
-                if (prefix.trim() !== "") { 
-                    taskLine += prefix.trim() + ": ";
-                }
-                taskLine += task.description;
-
-                if (task.dueDate) {
-                    taskLine += ` due:${task.dueDate}`;
-                }
-
-                responseLines.push(`${index + 1}. ${taskLine.trim()}`);
+                responseLines.push(`${index + 1}. ${this.formatTaskForDisplay(task)}`);
             });
             return responseLines.join('\n');
         } catch (e: any) {

@@ -5,6 +5,13 @@ export interface NextActionItem {
   displayIndex?: number;  // 1-based index for aggregated lists shown to user
 }
 
+export interface NextActionsUserConfig {
+  basePath?: string;
+  nextActionsPath?: string;
+  nextActionsArchiveDirPath?: string;
+  viewFormat?: string; // User-defined format for viewing tasks
+}
+
 // Describes the service this plugin will provide to other plugins
 export interface NextActionsService {
   /**

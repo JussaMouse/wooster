@@ -75,4 +75,33 @@ All tasks read from or written to `next_actions.md` by this plugin are processed
 *   When reading, `TaskParser.parse()` converts each line into a `TaskItem` object.
 *   When writing, `TaskParser.serialize()` converts a `TaskItem` object back into a correctly formatted string.
 
-This ensures data integrity and consistent formatting of your tasks. 
+This ensures data integrity and consistent formatting of your tasks.
+
+## Configuration
+
+The `nextActions` plugin is configured through environment variables in your `.env` file:
+
+*   `GTD_NEXT_ACTIONS_PATH`: The path to your `next_actions.md` file. Defaults to `gtd/next_actions.md` if `GTD_BASE_PATH` is set, or `./gtd/next_actions.md` otherwise.
+*   `GTD_NEXT_ACTIONS_ARCHIVE_DIR_PATH`: The path to the directory where completed tasks are archived. Defaults to a subdirectory within your GTD base path or `logs/nextActionsArchive/`.
+*   `GTD_NEXT_ACTIONS_VIEW_FORMAT`: A string to customize the display format of tasks when using the `show next actions` tool. If not set, it defaults to `'{checkbox} {context} {project}: {description} {dueDate}'`.
+
+##### Custom View Formatting
+
+You can control the exact appearance of tasks by setting the `GTD_NEXT_ACTIONS_VIEW_FORMAT` variable. The tool replaces placeholders in the string with task data.
+
+**Available Placeholders:**
+*   `{checkbox}`: Displays the task's completion status, like `[ ]` or `[x]`.
+*   `{context}`: The task's context (e.g., `@work`).
+*   `{project}`: The project name, formatted as `[ProjectName]`.
+*   `{description}`: The main text of the task.
+*   `{dueDate}`: The due date, formatted as `due:YYYY-MM-DD`.
+*   `{id}`: The unique identifier for the task.
+
+**Example:**
+
+To format tasks as `[ ] @context [project] The task description`, you would set this in your `.env` file:
+```env
+GTD_NEXT_ACTIONS_VIEW_FORMAT='{checkbox} {context} {project} {description}'
+```
+
+This allows for flexible and personalized views of your next actions. 
