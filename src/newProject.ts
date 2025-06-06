@@ -9,6 +9,7 @@ interface CreateProjectResult {
   message: string;
   projectPath?: string;
   projectFilePath?: string;
+  projectSlug?: string;
 }
 
 /**
@@ -67,6 +68,7 @@ export async function createNewProject(
       message: `Project '${projectName}' (${projectSlug}) created successfully.`,
       projectPath: newProjectDir,
       projectFilePath: projectFilePath,
+      projectSlug: projectSlug,
     };
   } catch (error: any) {
     log(LogLevel.ERROR, `createNewProject: Error creating project '${projectName}'`, { error: error.message, stack: error.stack });

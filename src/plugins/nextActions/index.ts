@@ -8,6 +8,8 @@ import { TaskItem } from '../../types/task';
 import { TaskParser } from '../../taskParser';
 import { mainReplManager } from '../../index'; // For interactive mode pausing
 import crypto from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
+import slugify from 'slugify';
 
 // Default file names, paths will be taken from config
 const DEFAULT_NEXT_ACTIONS_FILENAME = 'next_actions.md';
@@ -360,7 +362,13 @@ class NextActionsPluginDefinition implements WoosterPlugin {
       
       let combinedDescriptionForParser = taskStringParts.join(' ');
 
-      let rawTaskForParser = `- [ ] ${combinedDescriptionForParser}`;
+      // Before parsing, slugify any project names with spaces.
+      // This is a safe operation because a valid description won't have `+` followed by a space in a non-project context.
+      const processedDescription = combinedDescriptionForParser.replace(/\+\w+(\s\w+)+/g, (match) => {
+          return match.replace(/\s+/g, '-');
+      });
+
+      let rawTaskForParser = `- [ ] ${processedDescription}`;
       if (dueDate) {
         rawTaskForParser += ` due:${dueDate}`;
       }
@@ -638,9 +646,14 @@ ${archivedTaskString}
           return `[${task.isCompleted ? 'x' : ' '}]`;
         case 'context':
           return task.context || '';
-        case 'project':
+        case 'project': {
           if (!task.project || task.project.toLowerCase() === '+home') return '';
-          return task.project.substring(1);
+          const projectSlug = task.project.substring(1);
+
+          // De-slugify for display
+          // Capitalize first letter of each word
+          return projectSlug.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+        }
         case 'description':
           return task.description || '(No description)';
         case 'dueDate':

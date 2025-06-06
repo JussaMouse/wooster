@@ -89,10 +89,10 @@ export class ProjectManagerPlugin implements WoosterPlugin {
 
         try {
           const createResult = await createNewProject(trimmedProjectName, this.config);
-          if (createResult.success) {
+          if (createResult.success && createResult.projectSlug) {
             this.logMsg(LogLevel.INFO, `Project "${trimmedProjectName}" created successfully at ${createResult.projectFilePath}`);
             
-            const setActiveResult = await setActiveProjectInCore(trimmedProjectName, this.services, this.logMsg.bind(this));
+            const setActiveResult = await setActiveProjectInCore(createResult.projectSlug, this.services, this.logMsg.bind(this));
             this.logMsg(setActiveResult.success ? LogLevel.INFO : LogLevel.WARN, `User feedback: ${setActiveResult.messageForUser}`);
 
             return `${createResult.message} ${setActiveResult.messageForUser}` + (createResult.projectFilePath ? ` Path: ${createResult.projectFilePath}.` : '.');
