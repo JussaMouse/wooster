@@ -1,15 +1,14 @@
 import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
-import { Tool, DynamicTool } from "@langchain/core/tools";
+import { DynamicTool } from "@langchain/core/tools";
 import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents";
 import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
-import { BaseMessage, HumanMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
+import { BaseMessage } from "@langchain/core/messages";
 import { FaissStore } from "@langchain/community/vectorstores/faiss";
 import { createHistoryAwareRetriever } from "langchain/chains/history_aware_retriever";
 import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
 import { createRetrievalChain } from "langchain/chains/retrieval";
 import * as fs from 'fs';
 import * as path from 'path';
-import { calendar_v3 } from 'googleapis';
 
 import { AppConfig, getConfig } from "./configLoader";
 import { log, LogLevel } from "./logger";
@@ -20,7 +19,6 @@ import { scheduleAgentTaskTool } from "./schedulerTool";
 import { createFileTool, readFileTool } from './fileSystemTool';
 import { initializeProjectVectorStore } from './projectStoreManager';
 
-let userProfileStoreInstance: FaissStore | null = null;
 let projectVectorStoreInstance: FaissStore | null = null;
 let tools: any[] = [];
 let agentExecutorInstance: AgentExecutor | null = null;
@@ -32,7 +30,6 @@ let currentActiveProjectName: string | null = null;
 let currentActiveProjectPath: string | null = null;
 let embeddingsInstance: OpenAIEmbeddings | null = null;
 let projectStoreAppConfig: AppConfig | null = null; // To be used by initializeProjectVectorStore
-const projectBasePath = path.join(process.cwd(), 'projects');
 
 const historyAwarePrompt = ChatPromptTemplate.fromMessages([
     new MessagesPlaceholder("chat_history"),
@@ -239,6 +236,7 @@ export async function initializeAgentExecutorService(
   initialEmbeddings: OpenAIEmbeddings,
   configForProjectStore: AppConfig
 ): Promise<void> { // This function's primary purpose is to set module-level state.
+  agentExecutorInstance = null; // Reset agent executor to rebuild on re-initialization
   currentActiveProjectName = initialProjectName.trim();
   currentActiveProjectPath = initialProjectPath.trim(); // Also good practice to trim paths
   projectVectorStoreInstance = initialProjectStore;
@@ -258,7 +256,10 @@ export async function setActiveProject(newProjectName: string): Promise<void> {
   }
 
   log(LogLevel.INFO, `Attempting to set active project to: "${newProjectName}"`);
-  const projectDir = path.join(projectBasePath, newProjectName);
+  // Determine projects base path from config or default GTD_PROJECTS_DIR
+  const projectsDirRelative = projectStoreAppConfig?.gtd?.projectsDir ?? 'projects';
+  const projectsBasePath = path.resolve(process.cwd(), projectsDirRelative);
+  const projectDir = path.join(projectsBasePath, newProjectName);
   if (!fs.existsSync(projectDir) || !fs.statSync(projectDir).isDirectory()) {
     log(LogLevel.ERROR, `Project directory ${projectDir} not found for project "${newProjectName}".`);
     // Decide if we should throw an error or just log and not switch
