@@ -326,48 +326,71 @@ export class ProjectManagerPlugin implements WoosterPlugin {
     });
     tools.push(listProjectsTool);
 
-    // Tool to delete a project after confirmation, moving its folder to the OS trash
+    // Tool to delete a project after confirmation, using fuzzy matching and moving its folder to the OS trash
     const deleteProjectTool = new DynamicTool({
       name: 'deleteProject',
-      description: 'Deletes a project by name; requires confirmation. Usage: deleteProject {"projectName":"name","confirm":true}',
+      description: 'Deletes a project by name, moving it to the OS trash after confirmation. Usage: deleteProject {"projectName":"name","confirm":true}',
       func: async (input?: string | object) => {
         this.logMsg(LogLevel.INFO, 'deleteProject tool called.');
-        let projectName: string;
+        let requestedName: string;
         let confirm = false;
         if (!input) {
           return 'Error: projectName is required. Usage: deleteProject {"projectName":"name","confirm":true}';
         }
         if (typeof input === 'object') {
-          projectName = (input as any).projectName;
+          requestedName = (input as any).projectName;
           confirm = !!(input as any).confirm;
         } else {
           try {
             const parsed = JSON.parse(input as string);
-            projectName = parsed.projectName;
+            requestedName = parsed.projectName;
             confirm = !!parsed.confirm;
           } catch {
-            projectName = (input as string).trim();
+            requestedName = (input as string).trim();
           }
         }
-        if (!projectName) {
+        if (!requestedName) {
           return 'Error: projectName is required. Usage: deleteProject {"projectName":"name","confirm":true}';
         }
         const baseDir = this.getProjectsBaseDir();
-        const target = path.join(baseDir, projectName);
-        if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) {
-          return `Error: project '${projectName}' not found in '${baseDir}'.`;
+        if (!fs.existsSync(baseDir)) {
+          const errMsg = `Error: Projects directory '${baseDir}' not found.`;
+          this.logMsg(LogLevel.ERROR, errMsg);
+          return errMsg;
         }
+        let allSlugs: string[];
+        try {
+          allSlugs = fs.readdirSync(baseDir).filter(name =>
+            fs.statSync(path.join(baseDir, name)).isDirectory()
+          );
+        } catch (e: any) {
+          const errMsg = `Error reading projects directory: ${e.message}`;
+          this.logMsg(LogLevel.ERROR, errMsg, { stack: e.stack });
+          return errMsg;
+        }
+        const matched = findMatchingProjectName(requestedName, allSlugs);
+        if (!matched) {
+          return `Error: Project like '${requestedName}' not found in '${baseDir}'.`;
+        }
+        if (Array.isArray(matched)) {
+          const ambiguousMsg = `Multiple projects match '${requestedName}': ${matched.join(', ')}. Please be more specific.`;
+          this.logMsg(LogLevel.WARN, ambiguousMsg);
+          return ambiguousMsg;
+        }
+        const projectSlug = matched;
+        const humanName = this.formatProjectName(projectSlug);
+        const target = path.join(baseDir, projectSlug);
         if (!confirm) {
-          return `Are you sure you want to delete project '${projectName}'? To confirm, call deleteProject with {"projectName":"${projectName}","confirm":true}`;
+          return `Are you sure you want to delete project '${humanName}'? To confirm, call deleteProject with {"projectName":"${humanName}","confirm":true}`;
         }
         try {
           await trash([target]);
-          return `Project '${projectName}' deleted (moved to trash).`;
-        } catch (err: any) {
-          this.logMsg(LogLevel.ERROR, `Error deleting project '${projectName}'`, { error: err.message, stack: err.stack });
-          return `Error deleting project: ${err.message}`;
+          return `Project '${humanName}' deleted (moved to trash).`;
+        } catch (e: any) {
+          this.logMsg(LogLevel.ERROR, `Error deleting project '${projectSlug}'`, { error: e.message, stack: e.stack });
+          return `Error deleting project: ${e.message}`;
         }
-      }
+      },
     });
     tools.push(deleteProjectTool);
 
