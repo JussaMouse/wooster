@@ -39,8 +39,8 @@ function findMatchingProjectName(requestedName: string, actualProjectNames: stri
 
 export class ProjectManagerPlugin implements WoosterPlugin {
   static readonly pluginName = 'projectManager';
-  static readonly version = '0.1.5'; // Incremented version due to new tool
-  static readonly description = 'Manages projects: creating new projects (including a project journal), opening (with fuzzy matching), renaming, closing projects, setting active project, and listing files in the active project.';
+  static readonly version = '0.1.7'; // Patch bump for first-letter-only capitalization
+  static readonly description = 'Manages projects: creating new projects (including a project journal), opening (with fuzzy matching), renaming, closing projects, listing projects, setting active project, and listing files in the active project.';
 
   readonly name = ProjectManagerPlugin.pluginName;
   readonly version = ProjectManagerPlugin.version;
@@ -56,6 +56,21 @@ export class ProjectManagerPlugin implements WoosterPlugin {
     } else {
       console.log(`[${level.toUpperCase()}] ${fullMessage}`, details || '');
     }
+  }
+
+  // Helper to determine where projects live
+  private getProjectsBaseDir(): string {
+    return this.config.gtd && this.config.gtd.projectsDir
+      ? path.resolve(this.config.gtd.projectsDir)
+      : path.join(process.cwd(), 'projects');
+  }
+  
+  // Convert a slug (hyphens/underscores) into spaced, capitalized words
+  private formatProjectName(slug: string): string {
+    return slug
+      .split(/[-_]/g)
+      .map(token => token.charAt(0).toUpperCase() + token.slice(1))
+      .join(' ');
   }
 
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
@@ -276,6 +291,38 @@ export class ProjectManagerPlugin implements WoosterPlugin {
       },
     });
     tools.push(closeProjectTool);
+
+    // Tool to list all existing projects, de-slugified and capitalized
+    const listProjectsTool = new DynamicTool({
+      name: 'listProjects',
+      description: 'Lists all existing projects with human-friendly names. Usage: listProjects',
+      func: async (_?: string | object) => {
+        this.logMsg(LogLevel.INFO, 'listProjects tool called.');
+        const baseDir = this.getProjectsBaseDir();
+        if (!fs.existsSync(baseDir)) {
+          const err = `Error: Projects directory '${baseDir}' not found.`;
+          this.logMsg(LogLevel.ERROR, err);
+          return err;
+        }
+        let entries: string[];
+        try {
+          entries = fs.readdirSync(baseDir).filter(name => fs.statSync(path.join(baseDir, name)).isDirectory());
+        } catch (e: any) {
+          const err = `Error reading projects directory: ${e.message}`;
+          this.logMsg(LogLevel.ERROR, err, { stack: e.stack });
+          return err;
+        }
+        if (entries.length === 0) {
+          const msg = `No projects found in '${baseDir}'.`;
+          this.logMsg(LogLevel.INFO, msg);
+          return msg;
+        }
+        const formatted = entries.map(slug => this.formatProjectName(slug));
+        this.logMsg(LogLevel.INFO, `Found ${entries.length} projects.`);
+        return `Projects:\n${formatted.join('\n')}`;
+      }
+    });
+    tools.push(listProjectsTool);
 
     return tools;
   }
