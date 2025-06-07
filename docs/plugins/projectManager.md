@@ -1,12 +1,10 @@
 # Wooster Plugin: Project Manager (`projectManager`)
 
-**Version: 0.1.4**
+**Version: 0.1.8**
 
 ## 1. Purpose
 
-The `ProjectManagerPlugin` provides tools for managing projects within Wooster. Its key capabilities include creating new projects (which includes a project journal file), opening existing ones (automatically setting them as the active project), renaming projects, and listing files within the active project.
-
-Future enhancements could include listing projects or other project-specific operations.
+The `ProjectManagerPlugin` provides tools for managing projects within Wooster. Its key capabilities include creating new projects (including a project journal file), opening existing ones (automatically setting them as the active project), renaming projects, closing projects (switching back to home), deleting projects (with confirmation to trash), listing all projects, and listing files within the active project.
 
 ## 2. Setup & Configuration
 
@@ -120,6 +118,77 @@ The plugin relies on the `projects` base directory (typically `projects/` relati
     Agent: Okay, here are the files in your active project "MyNotes":\n- main_notes.md\n- ideas.txt\n- research_links.md
     ```
 
+### 3.5. `closeProject`
+
+*   **Name:** `closeProject`
+*   **Description:** Closes the current active project and switches back to the "home" project. Usage: `closeProject`
+*   **Input:** None. This tool takes no parameters.
+*   **Functionality:**
+    *   If no project is active or already on home, returns a message indicating so.
+    *   Otherwise, calls the `setActiveProjectInCore('home', ...)` utility to switch context.
+*   **Output:**
+    *   On success: `"Project 'home' is now the active project."`
+    *   If already on home: `"Home project is already the active project."`
+    *   On error: An error message describing the failure.
+*   **Example Agent Interaction:**
+    ```
+    User: close current project
+    Agent: (Calls `closeProject` tool)
+    Tool Response: Project 'home' is now the active project.
+    Agent: Okay, I've closed your current project and returned to home.
+    ```
+
+### 3.6. `listProjects`
+
+*   **Name:** `listProjects`
+*   **Description:** Lists all existing project directories, de-slugifying and title-casing each name. Usage: `listProjects`
+*   **Input:** None. This tool takes no parameters.
+*   **Functionality:**
+    *   Reads the projects base directory.
+    *   Filters to only directory names.
+    *   Formats each slug into a human-friendly name.
+*   **Output:**
+    *   If projects exist: `"Projects:\nName One\nName Two\n..."` listing each on a new line.
+    *   If no projects found: `"No projects found in '[baseDir]'."`
+    *   On error: An error message detailing the issue.
+*   **Example Agent Interaction:**
+    ```
+    User: list my projects
+    Agent: (Calls `listProjects` tool)
+    Tool Response: Projects:
+    Alpha Foxtrot
+    Beta Project
+    Gamma Delta
+    Agent: Here are your projects: Alpha Foxtrot, Beta Project, Gamma Delta.
+    ```
+
+### 3.7. `deleteProject`
+
+*   **Name:** `deleteProject`
+*   **Description:** Deletes a project by name, moving it to the OS trash after confirmation. Usage: `deleteProject {"projectName":"name","confirm":true}`
+*   **Input:** JSON string or object with:
+    *   `projectName` (string): The slug of the project to delete.
+    *   `confirm` (boolean): Must be `true` to perform deletion.
+*   **Functionality:**
+    *   Parses input; if `confirm` is omitted or `false`, returns a prompt to confirm deletion.
+    *   If confirmed, moves the project folder to the OS trash via the `trash` package.
+*   **Output:**
+    *   Confirmation prompt: `"Are you sure you want to delete project 'name'? To confirm, call deleteProject with {\"projectName\":\"name\",\"confirm\":true}`
+    *   On success: `"Project 'name' deleted (moved to trash)."`
+    *   On error: An error message describing the failure.
+*   **Example Agent Interaction:**
+    ```
+    User: delete project alphafoxtrot
+    Agent: (Calls `deleteProject` tool with {"projectName":"alphafoxtrot"})
+    Tool Response: Are you sure you want to delete project 'alphafoxtrot'? To confirm, call deleteProject with {"projectName":"alphafoxtrot","confirm":true}
+    Agent: Okay, please confirm deletion of "alphafoxtrot" when ready.
+
+    User: {"projectName":"alphafoxtrot","confirm":true}
+    Agent: (Calls `deleteProject` tool)
+    Tool Response: Project 'alphafoxtrot' deleted (moved to trash).
+    Agent: Project "alphafoxtrot" has been deleted.
+    ```
+
 ## 4. Dependencies
 
 *   `createNewProject` utility from `src/plugins/projectManager/createNewProject.ts` for project creation logic.
@@ -133,5 +202,6 @@ The plugin relies on the `projects` base directory (typically `projects/` relati
 
 ## 5. Future Enhancements
 
-*   Tool to list existing projects (distinct from files in active project).
-*   Tools for archiving or deleting projects.
+*   Archiving projects to zip or other archival formats.
+*   Import/export project templates and settings.
+*   Integration with remote or git-backed project repositories.
