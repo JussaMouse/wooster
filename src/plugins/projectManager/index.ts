@@ -326,69 +326,43 @@ export class ProjectManagerPlugin implements WoosterPlugin {
     });
     tools.push(listProjectsTool);
 
-    // Tool to delete a project after confirmation, using fuzzy matching and moving its folder to the OS trash
+    // Tool to delete a project by name, moving its folder to the OS trash after confirmation
     const deleteProjectTool = new DynamicTool({
       name: 'deleteProject',
-      description: 'Deletes a project by name, moving it to the OS trash after confirmation. Usage: deleteProject {"projectName":"name","confirm":true}',
-      func: async (input?: string | object) => {
-        this.logMsg(LogLevel.INFO, 'deleteProject tool called.');
-        let requestedName: string;
-        let confirm = false;
-        if (!input) {
-          return 'Error: projectName is required. Usage: deleteProject {"projectName":"name","confirm":true}';
+      description: 'Deletes a project by name, moving it to the OS trash after confirmation. Usage: deleteProject JSON string with projectName and optional confirm flag.',
+      func: async (input: string) => {
+        this.logMsg(LogLevel.INFO, `deleteProject tool called with input: ${input}`);
+        let parsed: any;
+        try {
+          parsed = JSON.parse(input);
+        } catch {
+          return 'Error: Could not parse input. Expecting JSON: {"projectName":"name","confirm":true}';
         }
-        if (typeof input === 'object') {
-          requestedName = (input as any).projectName;
-          confirm = !!(input as any).confirm;
-        } else {
-          try {
-            const parsed = JSON.parse(input as string);
-            requestedName = parsed.projectName;
-            confirm = !!parsed.confirm;
-          } catch {
-            requestedName = (input as string).trim();
-          }
-        }
-        if (!requestedName) {
-          return 'Error: projectName is required. Usage: deleteProject {"projectName":"name","confirm":true}';
-        }
-        // If the user wrapped the name in quotes, extract it
-        const quotedMatch = requestedName.match(/"(.*?)"/);
-        if (quotedMatch) {
-          requestedName = quotedMatch[1];
-        }
-        // Strip leading verbs like 'delete' or 'remove' and optional 'project'
-        const verbMatch = requestedName.match(/^(?:delete|remove)\s+(?:projects?\s*)?(.*)$/i);
-        if (verbMatch && verbMatch[1]) {
-          requestedName = verbMatch[1].trim();
-        }
-        // Normalize whitespace
-        requestedName = requestedName.trim();
-        if (!requestedName) {
-          return 'Error: projectName could not be parsed. Usage: deleteProject {"projectName":"name","confirm":true}';
+        const projectName = parsed.projectName;
+        const confirm = !!parsed.confirm;
+        if (!projectName || typeof projectName !== 'string') {
+          return 'Error: projectName (string) is required. Usage: deleteProject {"projectName":"name","confirm":true}';
         }
         const baseDir = this.getProjectsBaseDir();
         if (!fs.existsSync(baseDir)) {
-          const errMsg = `Error: Projects directory '${baseDir}' not found.`;
-          this.logMsg(LogLevel.ERROR, errMsg);
-          return errMsg;
+          const err = `Error: Projects directory '${baseDir}' not found.`;
+          this.logMsg(LogLevel.ERROR, err);
+          return err;
         }
         let allSlugs: string[];
         try {
-          allSlugs = fs.readdirSync(baseDir).filter(name =>
-            fs.statSync(path.join(baseDir, name)).isDirectory()
-          );
+          allSlugs = fs.readdirSync(baseDir).filter(name => fs.statSync(path.join(baseDir, name)).isDirectory());
         } catch (e: any) {
-          const errMsg = `Error reading projects directory: ${e.message}`;
-          this.logMsg(LogLevel.ERROR, errMsg, { stack: e.stack });
-          return errMsg;
+          const err = `Error reading projects directory: ${e.message}`;
+          this.logMsg(LogLevel.ERROR, err, { stack: e.stack });
+          return err;
         }
-        const matched = findMatchingProjectName(requestedName, allSlugs);
+        const matched = findMatchingProjectName(projectName, allSlugs);
         if (!matched) {
-          return `Error: Project like '${requestedName}' not found in '${baseDir}'.`;
+          return `Error: Project like '${projectName}' not found.`;
         }
         if (Array.isArray(matched)) {
-          const ambiguousMsg = `Multiple projects match '${requestedName}': ${matched.join(', ')}. Please be more specific.`;
+          const ambiguousMsg = `Multiple projects match '${projectName}': ${matched.join(', ')}. Please be more specific.`;
           this.logMsg(LogLevel.WARN, ambiguousMsg);
           return ambiguousMsg;
         }
@@ -396,7 +370,7 @@ export class ProjectManagerPlugin implements WoosterPlugin {
         const humanName = this.formatProjectName(projectSlug);
         const target = path.join(baseDir, projectSlug);
         if (!confirm) {
-          return `Are you sure you want to delete project '${humanName}'? To confirm, call deleteProject with {"projectName":"${humanName}","confirm":true}`;
+          return `Are you sure you want to delete project '${humanName}'? To confirm, call deleteProject {"projectName":"${humanName}","confirm":true}`;
         }
         try {
           await trash([target]);
@@ -405,7 +379,7 @@ export class ProjectManagerPlugin implements WoosterPlugin {
           this.logMsg(LogLevel.ERROR, `Error deleting project '${projectSlug}'`, { error: e.message, stack: e.stack });
           return `Error deleting project: ${e.message}`;
         }
-      },
+      }
     });
     tools.push(deleteProjectTool);
 
