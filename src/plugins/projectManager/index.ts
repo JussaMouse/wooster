@@ -352,6 +352,21 @@ export class ProjectManagerPlugin implements WoosterPlugin {
         if (!requestedName) {
           return 'Error: projectName is required. Usage: deleteProject {"projectName":"name","confirm":true}';
         }
+        // If the user wrapped the name in quotes, extract it
+        const quotedMatch = requestedName.match(/"(.*?)"/);
+        if (quotedMatch) {
+          requestedName = quotedMatch[1];
+        }
+        // Strip leading verbs like 'delete' or 'remove' and optional 'project'
+        const verbMatch = requestedName.match(/^(?:delete|remove)\s+(?:projects?\s*)?(.*)$/i);
+        if (verbMatch && verbMatch[1]) {
+          requestedName = verbMatch[1].trim();
+        }
+        // Normalize whitespace
+        requestedName = requestedName.trim();
+        if (!requestedName) {
+          return 'Error: projectName could not be parsed. Usage: deleteProject {"projectName":"name","confirm":true}';
+        }
         const baseDir = this.getProjectsBaseDir();
         if (!fs.existsSync(baseDir)) {
           const errMsg = `Error: Projects directory '${baseDir}' not found.`;
