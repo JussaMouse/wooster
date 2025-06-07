@@ -6,6 +6,8 @@ import { LogLevel } from '../../logger'; // Keep for LogLevel enum
 import * as fs from 'fs'; // Import fs for checking directory existence
 import * as path from 'path'; // Import path for constructing paths
 import { performRenameProject, RenameProjectResult } from './renameProject'; // Import the new utility
+// @ts-ignore: no type declarations for 'trash'
+import trash from 'trash'; // Send deleted project to the OS trash/recycle bin
 
 // Helper function to find a matching project name
 function findMatchingProjectName(requestedName: string, actualProjectNames: string[]): string | string[] | null {
@@ -39,8 +41,8 @@ function findMatchingProjectName(requestedName: string, actualProjectNames: stri
 
 export class ProjectManagerPlugin implements WoosterPlugin {
   static readonly pluginName = 'projectManager';
-  static readonly version = '0.1.7'; // Patch bump for first-letter-only capitalization
-  static readonly description = 'Manages projects: creating new projects (including a project journal), opening (with fuzzy matching), renaming, closing projects, listing projects, setting active project, and listing files in the active project.';
+  static readonly version = '0.1.8'; // Patch bump for deleteProject tool
+  static readonly description = 'Manages projects: creating new projects (including a project journal), opening (with fuzzy matching), renaming, closing projects, deleting projects, listing projects, setting active project, and listing files in the active project.';
 
   readonly name = ProjectManagerPlugin.pluginName;
   readonly version = ProjectManagerPlugin.version;
@@ -323,6 +325,51 @@ export class ProjectManagerPlugin implements WoosterPlugin {
       }
     });
     tools.push(listProjectsTool);
+
+    // Tool to delete a project after confirmation, moving its folder to the OS trash
+    const deleteProjectTool = new DynamicTool({
+      name: 'deleteProject',
+      description: 'Deletes a project by name; requires confirmation. Usage: deleteProject {"projectName":"name","confirm":true}',
+      func: async (input?: string | object) => {
+        this.logMsg(LogLevel.INFO, 'deleteProject tool called.');
+        let projectName: string;
+        let confirm = false;
+        if (!input) {
+          return 'Error: projectName is required. Usage: deleteProject {"projectName":"name","confirm":true}';
+        }
+        if (typeof input === 'object') {
+          projectName = (input as any).projectName;
+          confirm = !!(input as any).confirm;
+        } else {
+          try {
+            const parsed = JSON.parse(input as string);
+            projectName = parsed.projectName;
+            confirm = !!parsed.confirm;
+          } catch {
+            projectName = (input as string).trim();
+          }
+        }
+        if (!projectName) {
+          return 'Error: projectName is required. Usage: deleteProject {"projectName":"name","confirm":true}';
+        }
+        const baseDir = this.getProjectsBaseDir();
+        const target = path.join(baseDir, projectName);
+        if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) {
+          return `Error: project '${projectName}' not found in '${baseDir}'.`;
+        }
+        if (!confirm) {
+          return `Are you sure you want to delete project '${projectName}'? To confirm, call deleteProject with {"projectName":"${projectName}","confirm":true}`;
+        }
+        try {
+          await trash([target]);
+          return `Project '${projectName}' deleted (moved to trash).`;
+        } catch (err: any) {
+          this.logMsg(LogLevel.ERROR, `Error deleting project '${projectName}'`, { error: err.message, stack: err.stack });
+          return `Error deleting project: ${err.message}`;
+        }
+      }
+    });
+    tools.push(deleteProjectTool);
 
     return tools;
   }
