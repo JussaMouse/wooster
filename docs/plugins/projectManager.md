@@ -188,6 +188,7 @@ The plugin relies on the `projects` base directory (typically `projects/` relati
     Tool Response: Project 'alphafoxtrot' deleted (moved to trash).
     Agent: Project "alphafoxtrot" has been deleted.
     ```
+    **Supported Operating Systems:** This tool uses the cross-platform `trash` package to move folders to the system Recycle Bin/Trash on macOS, Windows, and Linux (requires a FreeDesktop-compliant trash CLI on Linux).
 
 ## 4. Dependencies
 
