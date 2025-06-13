@@ -1,5 +1,35 @@
 # Frontend WIP: HTMX + Alpine.js
 
+## Setup & Install Steps
+
+1. **Install Express and TypeScript types**
+   ```sh
+   pnpm add express @types/express
+   ```
+   Adds the Express web server and its TypeScript definitions for serving the frontend and handling endpoints.
+
+2. **Create the server entry point**
+   - Place your server code in `src/server/index.ts`.
+   - This file sets up the Express server, serves static files, and defines endpoints for project management.
+
+3. **Create the public HTML file**
+   - Place your main HTML file at `src/server/public/index.html`.
+   - This file includes HTMX and Alpine.js via CDN and provides the UI skeleton.
+
+4. **Install the `trash` package**
+   ```sh
+   pnpm add trash
+   ```
+   This package is used to move deleted project folders to the system's recycle bin (for safe deletion from the UI).
+
+5. **Run the server**
+   ```sh
+   pnpm tsx src/server/index.ts
+   ```
+   Starts the frontend server on `http://localhost:3000` by default.
+
+---
+
 A zero-build, hyper-lightweight approach to adding interactivity on top of server-driven HTML.
 
 ## 1. Include the scripts
