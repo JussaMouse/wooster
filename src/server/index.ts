@@ -8,6 +8,7 @@ const app = express();
 const port = 3000;
 
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.urlencoded({ extended: true }));
 
 // Convert a slug (hyphens/underscores) into spaced, capitalized words
 function formatProjectName(slug: string): string {
@@ -72,6 +73,37 @@ app.get('/projects/delete/:slug', async (req, res) => {
         console.error(`Error deleting project ${slug}: ${err.message}`);
         res.status(500).send('Error deleting project.');
     }
+});
+
+app.post('/projects/create', (req, res) => {
+    const name = req.body.name?.trim();
+    if (!name) {
+        res.status(400).send('Project name required');
+        return;
+    }
+    const config = loadConfig();
+    const projectsBaseDir = config.gtd?.projectsDir ? path.resolve(config.gtd.projectsDir) : path.join(process.cwd(), 'projects');
+    if (!fs.existsSync(projectsBaseDir)) {
+        fs.mkdirSync(projectsBaseDir, { recursive: true });
+    }
+    // Slugify: lowercase, replace spaces with hyphens, remove non-alphanum
+    const slug = name.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-');
+    const projectDir = path.join(projectsBaseDir, slug);
+    if (fs.existsSync(projectDir)) {
+        res.status(409).send('Project already exists');
+        return;
+    }
+    fs.mkdirSync(projectDir);
+    // Create a journal file (optional, matches terminal behavior)
+    const journalPath = path.join(projectDir, 'journal.md');
+    fs.writeFileSync(journalPath, `# Journal for ${name}\n\n`);
+    // Return updated project list
+    const projectSlugs = fs.readdirSync(projectsBaseDir).filter(n => fs.statSync(path.join(projectsBaseDir, n)).isDirectory());
+    const projectListItems = projectSlugs.map(slug => {
+        const humanName = formatProjectName(slug);
+        return `<li hx-get=\"/projects/delete/${slug}\" hx-confirm=\"Really delete ${humanName}?\" hx-swap=\"outerHTML\">${humanName}</li>`;
+    }).join('');
+    res.send(`<ul id=\"project-list\">${projectListItems}</ul>`);
 });
 
 app.listen(port, () => {
