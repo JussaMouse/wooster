@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { loadConfig } from '../configLoader';
+import trash from 'trash';
 
 const app = express();
 const port = 3000;
@@ -50,6 +51,26 @@ app.get('/projects/list', (req, res) => {
     } catch (err: any) {
         console.error(`Error reading project directories from ${projectsBaseDir}: ${err.message}`);
         res.status(500).send('Error: Could not list project directories.');
+    }
+});
+
+app.get('/projects/delete/:slug', async (req, res) => {
+    const { slug } = req.params;
+    const config = loadConfig();
+    const projectsBaseDir = config.gtd?.projectsDir ? path.resolve(config.gtd.projectsDir) : path.join(process.cwd(), 'projects');
+    const projectDir = path.join(projectsBaseDir, slug);
+
+    if (!fs.existsSync(projectDir)) {
+        res.status(404).send('Project not found.');
+        return;
+    }
+
+    try {
+        await trash([projectDir]);
+        res.send(''); // HTMX will remove the element
+    } catch (err: any) {
+        console.error(`Error deleting project ${slug}: ${err.message}`);
+        res.status(500).send('Error deleting project.');
     }
 });
 
