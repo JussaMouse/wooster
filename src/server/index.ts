@@ -106,6 +106,10 @@ app.post('/projects/create', (req, res) => {
     res.send(`<ul id=\"project-list\">${projectListItems}</ul>`);
 });
 
+app.get('/next-actions', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'next-actions.html'));
+});
+
 app.listen(port, () => {
   console.log(`Server is running at http://localhost:${port}`);
 }); 
