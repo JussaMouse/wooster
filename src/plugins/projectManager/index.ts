@@ -50,6 +50,8 @@ export class ProjectManagerPlugin implements WoosterPlugin {
 
   private config!: AppConfig;
   private services!: CoreServices;
+  // Holds the project pending deletion confirmation
+  private pendingDeleteProject: { slug: string; humanName: string } | null = null;
 
   private logMsg(level: LogLevel, message: string, details?: object) {
     const fullMessage = `[${ProjectManagerPlugin.pluginName} Plugin v${ProjectManagerPlugin.version}] ${message}`;
@@ -329,56 +331,106 @@ export class ProjectManagerPlugin implements WoosterPlugin {
     // Tool to delete a project by name, moving its folder to the OS trash after confirmation
     const deleteProjectTool = new DynamicTool({
       name: 'deleteProject',
-      description: 'Deletes a project by name, moving it to the OS trash after confirmation. Usage: deleteProject JSON string with projectName and optional confirm flag.',
+      description: 'Deletes a project by name, moving it to the OS trash after confirmation. Usage: deleteProject {"projectName":"name","confirm":true}',
       func: async (input: string) => {
         this.logMsg(LogLevel.INFO, `deleteProject tool called with input: ${input}`);
+        // Try JSON parse first
         let parsed: any;
         try {
           parsed = JSON.parse(input);
         } catch {
-          return 'Error: Could not parse input. Expecting JSON: {"projectName":"name","confirm":true}';
+          parsed = null;
         }
-        const projectName = parsed.projectName;
-        const confirm = !!parsed.confirm;
-        if (!projectName || typeof projectName !== 'string') {
-          return 'Error: projectName (string) is required. Usage: deleteProject {"projectName":"name","confirm":true}';
+        if (parsed && typeof parsed.projectName === 'string') {
+          const projectName = parsed.projectName;
+          const confirm = !!parsed.confirm;
+          const baseDir = this.getProjectsBaseDir();
+          if (!fs.existsSync(baseDir)) {
+            const err = `Error: Projects directory '${baseDir}' not found.`;
+            this.logMsg(LogLevel.ERROR, err);
+            return err;
+          }
+          let allSlugs: string[];
+          try {
+            allSlugs = fs.readdirSync(baseDir).filter(name => fs.statSync(path.join(baseDir, name)).isDirectory());
+          } catch (e: any) {
+            const err = `Error reading projects directory: ${e.message}`;
+            this.logMsg(LogLevel.ERROR, err, { stack: e.stack });
+            return err;
+          }
+          const matched = findMatchingProjectName(projectName, allSlugs);
+          if (!matched) {
+            return `Error: Project like '${projectName}' not found.`;
+          }
+          if (Array.isArray(matched)) {
+            const ambiguousMsg = `Multiple projects match '${projectName}': ${matched.join(', ')}. Please be more specific.`;
+            this.logMsg(LogLevel.WARN, ambiguousMsg);
+            return ambiguousMsg;
+          }
+          const projectSlug = matched;
+          const humanName = this.formatProjectName(projectSlug);
+          const target = path.join(baseDir, projectSlug);
+          if (!confirm) {
+            // Set pending and ask
+            this.pendingDeleteProject = { slug: projectSlug, humanName };
+            return `Are you sure you want to delete project '${humanName}'? Reply 'yes' to confirm.`;
+          }
+          // Confirmed path: delete
+          this.pendingDeleteProject = null;
+          try {
+            await trash([target]);
+            return `Project '${humanName}' deleted (moved to trash).`;
+          } catch (e: any) {
+            this.logMsg(LogLevel.ERROR, `Error deleting project '${projectSlug}'`, { error: e.message, stack: e.stack });
+            return `Error deleting project: ${e.message}`;
+          }
         }
-        const baseDir = this.getProjectsBaseDir();
-        if (!fs.existsSync(baseDir)) {
-          const err = `Error: Projects directory '${baseDir}' not found.`;
-          this.logMsg(LogLevel.ERROR, err);
-          return err;
+        // Handle confirmation replies ('yes'/'y')
+        const normalized = input.trim().toLowerCase();
+        if (['yes','y'].includes(normalized) && this.pendingDeleteProject) {
+          const { slug: projectSlug, humanName } = this.pendingDeleteProject;
+          this.pendingDeleteProject = null;
+          const target = path.join(this.getProjectsBaseDir(), projectSlug);
+          try {
+            await trash([target]);
+            return `Project '${humanName}' deleted (moved to trash).`;
+          } catch (e: any) {
+            this.logMsg(LogLevel.ERROR, `Error deleting project '${projectSlug}'`, { error: e.message, stack: e.stack });
+            return `Error deleting project: ${e.message}`;
+          }
         }
-        let allSlugs: string[];
-        try {
-          allSlugs = fs.readdirSync(baseDir).filter(name => fs.statSync(path.join(baseDir, name)).isDirectory());
-        } catch (e: any) {
-          const err = `Error reading projects directory: ${e.message}`;
-          this.logMsg(LogLevel.ERROR, err, { stack: e.stack });
-          return err;
+        // Free-text delete request: fuzzy-match input and ask for confirmation
+        const requestedName = input.trim();
+        if (requestedName) {
+          const baseDir = this.getProjectsBaseDir();
+          if (!fs.existsSync(baseDir)) {
+            const err = `Error: Projects directory '${baseDir}' not found.`;
+            this.logMsg(LogLevel.ERROR, err);
+            return err;
+          }
+          let allSlugs: string[];
+          try {
+            allSlugs = fs.readdirSync(baseDir).filter(name => fs.statSync(path.join(baseDir, name)).isDirectory());
+          } catch (e: any) {
+            const err = `Error reading projects directory: ${e.message}`;
+            this.logMsg(LogLevel.ERROR, err, { stack: e.stack });
+            return err;
+          }
+          const matched = findMatchingProjectName(requestedName, allSlugs);
+          if (!matched) {
+            return `Error: Project like '${requestedName}' not found.`;
+          }
+          if (Array.isArray(matched)) {
+            const ambiguousMsg = `Multiple projects match '${requestedName}': ${matched.join(', ')}. Please be more specific.`;
+            this.logMsg(LogLevel.WARN, ambiguousMsg);
+            return ambiguousMsg;
+          }
+          const projectSlug = matched;
+          const humanName = this.formatProjectName(projectSlug);
+          this.pendingDeleteProject = { slug: projectSlug, humanName };
+          return `Are you sure you want to delete project '${humanName}'? Reply 'yes' to confirm.`;
         }
-        const matched = findMatchingProjectName(projectName, allSlugs);
-        if (!matched) {
-          return `Error: Project like '${projectName}' not found.`;
-        }
-        if (Array.isArray(matched)) {
-          const ambiguousMsg = `Multiple projects match '${projectName}': ${matched.join(', ')}. Please be more specific.`;
-          this.logMsg(LogLevel.WARN, ambiguousMsg);
-          return ambiguousMsg;
-        }
-        const projectSlug = matched;
-        const humanName = this.formatProjectName(projectSlug);
-        const target = path.join(baseDir, projectSlug);
-        if (!confirm) {
-          return `Are you sure you want to delete project '${humanName}'? To confirm, call deleteProject {"projectName":"${humanName}","confirm":true}`;
-        }
-        try {
-          await trash([target]);
-          return `Project '${humanName}' deleted (moved to trash).`;
-        } catch (e: any) {
-          this.logMsg(LogLevel.ERROR, `Error deleting project '${projectSlug}'`, { error: e.message, stack: e.stack });
-          return `Error deleting project: ${e.message}`;
-        }
+        return 'Deletion not confirmed. To delete a project, provide a project name or reply "yes" when prompted.';
       }
     });
     tools.push(deleteProjectTool);
