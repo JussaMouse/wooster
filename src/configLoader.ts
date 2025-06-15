@@ -48,7 +48,7 @@ export interface AppConfig {
   tavily: TavilyConfig;
   google?: GoogleConfig;
   userProfile: UserProfileConfig;
-  plugins: Record<string, boolean>;
+  plugins: Record<string, any>;
   projects: ProjectConfig;
   gtd?: GtdConfig; // For sortInbox paths
   gmail?: GmailConfig;
@@ -150,7 +150,11 @@ export const DEFAULT_CONFIG: AppConfig = {
     enabled: false,
     storePath: undefined,
   },
-  plugins: {},
+  plugins: {
+    // Note: Default plugin enablement can be set here if needed,
+    // but it's often better handled by the default.json to keep this file clean.
+    // Example: projectManager: true
+  },
   projects: {}, // Kept simple
   gtd: {
     basePath: undefined,
