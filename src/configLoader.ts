@@ -351,10 +351,24 @@ export function loadConfig(): AppConfig {
   // Dynamically load plugin enablement status
   const pluginFiles = getPluginFileNames();
   pluginFiles.forEach(pluginName => {
-    // Default to false if not specified in DEFAULT_CONFIG.plugins
-    const defaultStatus = DEFAULT_CONFIG.plugins[pluginName] === undefined ? false : DEFAULT_CONFIG.plugins[pluginName];
-    // Environment variable takes precedence, e.g., PLUGIN_MyPlugin_ENABLED=true
-    loadedConfig.plugins[pluginName] = parseBoolean(getEnvVar(`PLUGIN_${pluginName.toUpperCase()}_ENABLED`), defaultStatus);
+    const envVar = `PLUGIN_${pluginName.toUpperCase()}_ENABLED`;
+    const envValue = getEnvVar(envVar);
+
+    // If there's no specific environment variable for this plugin, we don't need to do anything,
+    // as the default from config/default.json will be used by node-config.
+    if (envValue === undefined) {
+      return;
+    }
+
+    const isEnabled = parseBoolean(envValue, false);
+
+    // If a detailed config object already exists for this plugin, update its 'enabled' property.
+    if (typeof loadedConfig.plugins[pluginName] === 'object' && loadedConfig.plugins[pluginName] !== null) {
+      loadedConfig.plugins[pluginName].enabled = isEnabled;
+    } else {
+      // Otherwise, set it as a simple boolean (maintaining backward compatibility).
+      loadedConfig.plugins[pluginName] = isEnabled;
+    }
   });
 
   currentConfig = loadedConfig;
