@@ -30,6 +30,10 @@ export function startServer(config: AppConfig, services: CoreServices): Promise<
     app.use(express.urlencoded({ extended: true }));
     app.use(express.json());
 
+    app.get('/', (req, res) => {
+        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    });
+
     app.get('/projects/list', (req, res) => {
         if (!fs.existsSync(projectsBaseDir)) {
             fs.mkdirSync(projectsBaseDir, { recursive: true });
