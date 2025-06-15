@@ -13,7 +13,7 @@ export { LogLevel };
 export type AppConfig = Configuration & {
   plugins: {
     [key: string]: any; // Allow other plugins
-    frontend: {
+    frontend?: {
       enabled: boolean;
       port: number;
     };
