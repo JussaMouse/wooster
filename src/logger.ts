@@ -43,11 +43,8 @@ export function applyLoggerConfig(config: LoggingConfig): void {
   configuredConsoleQuietMode = config.consoleQuietMode || false;
 
   if (config.logFile) {
-    if (!path.isAbsolute(config.logFile) && !config.logFile.includes(path.sep)) {
-      currentLogFile = path.resolve(process.cwd(), 'logs', config.logFile);
-    } else {
-      currentLogFile = path.resolve(process.cwd(), config.logFile);
-    }
+    // Always resolve the log file path relative to the current working directory.
+    currentLogFile = path.resolve(process.cwd(), config.logFile);
 
     const logDir = path.dirname(currentLogFile);
     if (!fs.existsSync(logDir)) {
