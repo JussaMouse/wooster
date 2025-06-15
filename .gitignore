@@ -72,3 +72,13 @@ config/*
 
 # But DO NOT ignore (re-include) dailyReview.example.json
 !config/dailyReview.example.json
+
+# Configuration files
+# Note: default.json should be version-controlled, but environment-specific
+# files like local.json or production.json should be ignored if they contain secrets.
+!config/default.json
+config/local.json
+config/local-*.json
+
+# Environment variables
+# ... existing code ...

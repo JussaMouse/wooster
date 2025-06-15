@@ -1,0 +1,86 @@
+{
+  "env": "development",
+  "appName": "Wooster",
+  "version": "1.0.0",
+  "logLevel": "info",
+  "logging": {
+    "consoleLogLevel": "info",
+    "fileLogLevel": "info",
+    "logFile": "logs/wooster_session.log",
+    "logAgentLLMInteractions": false,
+    "consoleQuietMode": true
+  },
+  "openai": {
+    "apiKey": "YOUR_OPENAI_API_KEY_HERE",
+    "modelName": "gpt-4o-mini",
+    "embeddingModelName": "text-embedding-3-small",
+    "temperature": 0.7,
+    "maxTokens": 2048
+  },
+  "tavily": {
+    "apiKey": null
+  },
+  "google": {
+    "calendar": {
+      "clientId": null,
+      "clientSecret": null,
+      "refreshToken": null,
+      "calendarId": "primary",
+      "defaultAttendeeEmail": null
+    }
+  },
+  "userProfile": {
+    "enabled": true,
+    "storePath": "./vector_data/user_profile_store"
+  },
+  "gtd": {
+    "basePath": "./gtd",
+    "projectsDir": "./projects",
+    "archiveDir": "./gtd/archive",
+    "nextActionsArchiveDirPath": "./gtd/archive/nextActions",
+    "inboxPath": "./gtd/inbox.md",
+    "nextActionsPath": "./gtd/next_actions.md",
+    "nextActionsViewFormat": "list",
+    "somedayMaybePath": "./gtd/someday_maybe.md",
+    "waitingForPath": "./gtd/waiting_for.md"
+  },
+  "gmail": {
+    "senderEmailAddress": null,
+    "userPersonalEmailAddress": null,
+    "emailAppPassword": null
+  },
+  "weather": {
+    "city": null,
+    "openWeatherMapApiKey": null,
+    "units": "F"
+  },
+  "dailyReview": {
+    "scheduleCronExpression": "30 6 * * *"
+  },
+  "captureApi": {
+    "enabled": false,
+    "port": 3002,
+    "apiKey": null,
+    "ipWhitelistEnabled": false,
+    "allowedIps": []
+  },
+  "apiPlugin": {
+    "enabled": false,
+    "port": 3000,
+    "apiKey": null,
+    "globalIpWhitelistEnabled": false,
+    "globalAllowedIps": []
+  },
+  "personalHealth": {
+    "healthDir": "./health"
+  },
+  "plugins": {
+    "projectManager": {
+      "enabled": true
+    },
+    "frontend": {
+      "enabled": true,
+      "port": 3000
+    }
+  }
+} 

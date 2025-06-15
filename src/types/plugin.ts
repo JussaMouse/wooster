@@ -3,11 +3,20 @@ import { AppConfig as Configuration } from "../configLoader";
 import { ScheduledTaskSetupOptions as SchedulerOptions } from './scheduler';
 import { LogLevel } from '../logger';
 import { FaissStore } from '@langchain/community/vectorstores/faiss';
+import type { GmailPluginEmailArgs, GmailPluginSendEmailResult } from '../plugins/gmail/types';
+import type { NextActionsService as NextActionsServiceType } from '../plugins/nextActions/types';
 
 export { LogLevel };
 
 // Use the AppConfig directly from the refactored configLoader
 export type AppConfig = Configuration;
+
+/**
+ * Interface for a basic Email sending service that plugins can provide or consume.
+ */
+export interface EmailService {
+  send: (args: GmailPluginEmailArgs) => Promise<GmailPluginSendEmailResult>;
+}
 
 /**
  * A collection of core services that can be passed to plugins during initialization.
@@ -26,6 +35,10 @@ export interface CoreServices {
   getActiveProjectPath: () => string | null;
   getActiveProjectName: () => string | null;
   getProjectVectorStore?: () => FaissStore | null;
+
+  // Specific, commonly used services can be explicitly typed for convenience
+  emailService?: EmailService;
+  NextActionsService?: NextActionsServiceType;
 }
 
 /**

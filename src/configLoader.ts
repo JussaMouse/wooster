@@ -12,24 +12,99 @@ export interface LoggingConfig {
   consoleQuietMode: boolean;
 }
 
-export interface GtdConfig {
-  projectsDir: string;
+export interface OpenAIConfig {
+    apiKey: string;
+    modelName: string;
+    embeddingModelName: string;
+    temperature: number;
+    maxTokens: number;
 }
 
-export interface FrontendPluginConfig {
-  enabled: boolean;
-  port: number;
+export interface TavilyConfig {
+    apiKey: string | null;
+}
+
+export interface GoogleConfig {
+    calendar?: {
+      clientId: string | null;
+      clientSecret: string | null;
+      refreshToken: string | null;
+      calendarId: string;
+      defaultAttendeeEmail?: string | null;
+    };
+}
+
+export interface UserProfileConfig {
+    enabled: boolean;
+    storePath?: string;
+}
+
+export interface GtdConfig {
+  projectsDir?: string;
+  basePath?: string;
+  archiveDir?: string;
+  nextActionsArchiveDirPath?: string;
+  inboxPath?: string;
+  nextActionsPath?: string;
+  nextActionsViewFormat?: string;
+  somedayMaybePath?: string;
+  waitingForPath?: string;
+}
+
+export interface GmailConfig {
+    senderEmailAddress: string | null;
+    userPersonalEmailAddress: string | null;
+    emailAppPassword: string | null;
+}
+
+export interface WeatherConfig {
+    city: string | null;
+    openWeatherMapApiKey: string | null;
+    units?: "C" | "F";
+}
+
+export interface DailyReviewConfig {
+    scheduleCronExpression: string;
+}
+
+export interface CaptureApiConfig {
+    enabled: boolean;
+    port: number;
+    apiKey: string | null;
+    ipWhitelistEnabled: boolean;
+    allowedIps: string[];
+}
+
+export interface ApiPluginConfig {
+    enabled: boolean;
+    port: number;
+    apiKey: string | null;
+    globalIpWhitelistEnabled: boolean;
+    globalAllowedIps: string[];
+}
+  
+export interface PersonalHealthConfig {
+    healthDir?: string;
 }
 
 export interface AppConfig {
-  logLevel: LogLevel;
-  gtd: GtdConfig;
+  env: string;
+  appName: string;
+  version: string;
+  logging: LoggingConfig;
+  openai: OpenAIConfig;
+  tavily: TavilyConfig;
+  google?: GoogleConfig;
+  userProfile: UserProfileConfig;
+  gtd?: GtdConfig;
+  gmail?: GmailConfig;
+  weather?: WeatherConfig;
+  dailyReview?: DailyReviewConfig;
+  captureApi?: CaptureApiConfig;
+  apiPlugin?: ApiPluginConfig;
+  personalHealth?: PersonalHealthConfig;
   plugins: {
     [key: string]: any;
-    frontend?: FrontendPluginConfig;
-    projectManager?: {
-        enabled: boolean;
-    }
   };
 }
 

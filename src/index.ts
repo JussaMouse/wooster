@@ -1,7 +1,7 @@
 import 'dotenv/config'; // Load .env file into process.env
 import readline from 'readline';
 import { bootstrapLogger, applyLoggerConfig, log, LogLevel } from './logger';
-import { loadConfig, getConfig, AppConfig, DEFAULT_CONFIG } from './configLoader';
+import { loadConfig, getConfig, AppConfig } from './configLoader';
 import { initSchedulerService, processCatchUpTasks } from './scheduler/schedulerService';
 import { initializeAgentExecutorService } from './agentExecutorService';
 import { setAgentConfig, agentRespond } from './agent';
@@ -144,9 +144,9 @@ async function main() {
   log(LogLevel.INFO, `Wooster starting up... v${appConfig.version}`);
   log(LogLevel.DEBUG, 'Application Config:', { appConfig });
 
-  if (!appConfig.openai.apiKey || appConfig.openai.apiKey === DEFAULT_CONFIG.openai.apiKey) {
-    log(LogLevel.ERROR, "OpenAI API key is not configured. Please set OPENAI_API_KEY in your .env file.");
-    process.exit(1); 
+  // Check for OpenAI API key
+  if (!appConfig.openai.apiKey || appConfig.openai.apiKey.startsWith('YOUR_OPENAI_API_KEY')) {
+    log(LogLevel.WARN, 'OpenAI API key is not set. AI-related features will be disabled.');
   }
 
   initSchedulerDB();
