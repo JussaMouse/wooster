@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "LANGCHAIN_VERBOSE=true tsx src/index.ts 2>&1 | tee -a wooster_session.log",
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "start": "pnpm run build && node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -20,6 +20,7 @@
     "better-sqlite3": "^11.9.1",
     "chalk": "^5.3.0",
     "chrono-node": "^2.8.0",
+    "config": "^4.0.0",
     "croner": "^9.0.0",
     "diff": "^5.2.0",
     "dotenv": "^16.5.0",
@@ -41,6 +42,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/chalk": "^2.2.0",
+    "@types/config": "^3.3.5",
     "@types/diff": "^5.2.1",
     "@types/express": "^5.0.2",
     "@types/jest": "^29.5.14",
