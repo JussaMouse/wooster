@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wooster</title>
+    <script src="https://unpkg.com/htmx.org@1.9.2"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x" defer></script>
+</head>
+<body>
+    <h1>Wooster Projects</h1>
+
+    <div x-data="{ showNew: false, message: '', error: false }" @htmx:afterOnLoad.window="if($event.detail.target.id === 'project-list') { message = ''; error = false; $el.querySelector('input[name=\'name\']').value = ''; }">
+        <button @click="showNew = true">+ New Project</button>
+
+        <div x-show="showNew" @click.away="showNew = false">
+            <form hx-post="/projects/create" hx-target="#project-list" hx-swap="innerHTML" @htmx:beforeRequest="message = ''; error = false" @htmx:afterRequest="
+                if($event.detail.xhr.status === 200) {
+                    message = 'Project created!'; error = false;
+                    $el.querySelector('input[name=\'name\']').value = '';
+                } else {
+                    message = $event.detail.xhr.responseText; error = true;
+                }
+            ">
+                <input name="name" placeholder="Project name" />
+                <button type="submit">Create</button>
+            </form>
+            <template x-if="message">
+                <div :style="error ? 'color:red' : 'color:green'" x-html="message"></div>
+            </template>
+        </div>
+
+        <div id="project-list" hx-get="/projects/list" hx-trigger="load" hx-swap="innerHTML">
+            <!-- Project list will be loaded here -->
+        </div>
+    </div>
+</body>
+</html> 

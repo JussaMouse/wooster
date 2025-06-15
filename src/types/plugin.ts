@@ -6,8 +6,19 @@ import type { GmailPluginEmailArgs, GmailPluginSendEmailResult } from '../plugin
 import { FaissStore } from '@langchain/community/vectorstores/faiss';
 import type { NextActionsService as NextActionsServiceType } from '../plugins/nextActions/types'; // Import the specific type
 
+// Re-export LogLevel so it's available to plugins
+export { LogLevel };
+
 // Export AppConfig (which is an alias for Configuration from configLoader)
-export type AppConfig = Configuration;
+export type AppConfig = Configuration & {
+  plugins: {
+    [key: string]: any; // Allow other plugins
+    frontend: {
+      enabled: boolean;
+      port: number;
+    };
+  };
+};
 
 /**
  * Interface for a basic Email sending service that plugins can provide or consume.
@@ -83,9 +94,14 @@ export interface WoosterPlugin {
    */
   getScheduledTaskSetups?: () => SchedulerOptions | SchedulerOptions[] | undefined;
 
+  /**
+   * An optional asynchronous function called when Wooster is shutting down.
+   * Useful for graceful cleanup.
+   */
+  shutdown?: () => Promise<void>;
+
   // Future potential extensions:
   // getApiRoutes?(): any; // For plugins that expose HTTP endpoints
-  // shutdown?(): Promise<void>; // For graceful shutdown logic
 
   // Optional method to provide services to other plugins or core.
   // Example: EmailPlugin could provide an 'EmailService'
