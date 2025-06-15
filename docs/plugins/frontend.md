@@ -1,94 +1,44 @@
-# Frontend Plugin Plan
+# Wooster Frontend Plugin
 
-## 1. Objective
+This document provides an overview of the `frontend` plugin, which serves the web-based user interface for Wooster.
 
-To encapsulate the Wooster web UI server within a dedicated `frontend` plugin. This aligns with Wooster's modular architecture, allowing the web server to be managed by the `PluginManager` and be enabled or disabled via configuration. This approach keeps the core application decoupled from the UI.
+## 1. Design Philosophy & Technology Stack
 
-## 2. Guiding Principles
+The primary goal for the Wooster frontend is **simplicity, speed, and maintainability**. We deliberately chose a stack that avoids heavy client-side frameworks and complex build steps, allowing for rapid development while keeping the focus on server-driven logic.
 
--   **Simplicity (KISS):** The plugin's sole responsibility is to manage the lifecycle of the web server. It will not contain the business logic for routes, which will remain in a dedicated server file.
--   **Maintainability:** By separating the plugin's "wiring" from the Express application logic, both can be modified independently. The server code remains a standard Express app, while the plugin code is purely for integration with Wooster.
--   **Durability:** The plugin will implement a graceful shutdown procedure for the web server, ensuring clean exits.
+-   **Technology Stack:**
+    -   **Express.js:** A minimal and flexible Node.js web application framework that provides a robust set of features for web and mobile applications.
+    -   **HTMX:** Allows access to modern browser features directly from HTML, without using JavaScript. The core principle is that the server returns HTML, not JSON, which simplifies both the frontend and backend logic.
+    -   **Alpine.js:** A rugged, minimal framework for composing behavior directly in your markup. It provides the small amount of client-side interactivity needed (like toggling visibility) without the overhead of a larger framework like React or Vue.
 
-## 3. Implementation Plan
+-   **Key Design Decisions:**
+    -   **Server-Side Rendering (SSR) via HTMX:** The server is the single source of truth. It generates and returns HTML fragments in response to user actions. This eliminates the need for complex state management on the client.
+    -   **Zero Build Step:** By using CDN-hosted versions of HTMX and Alpine.js, we avoid the need for bundlers like Webpack or Vite, which simplifies the development setup and deployment process.
+    -   **Modular & Decoupled:** The entire web server is encapsulated within a Wooster plugin. This allows it to be enabled or disabled easily via configuration and keeps the UI concerns separate from the core application logic.
 
-### Step 1: File & Directory Restructuring
+## 2. Architecture & File Structure
 
-1.  **Create Plugin Directory:**
-    -   `mkdir -p src/plugins/frontend`
-2.  **Move Server Logic:**
-    -   Move the existing `src/server/` directory into the new plugin directory: `mv src/server src/plugins/frontend/server`
-3.  **Adjust Naming:**
-    -   Rename `src/plugins/frontend/server/index.ts` to `src/plugins/frontend/server/app.ts` to better reflect its role as the Express application setup.
-    -   Static assets will now be at `src/plugins/frontend/server/public/`.
+The frontend is managed by the `PluginManager` just like any other plugin.
 
-### Step 2: Create the Plugin Entrypoint
+-   `src/plugins/frontend/index.ts`: The main plugin entry point.
+    -   Implements the `WoosterPlugin` interface.
+    -   **`initialize()`**: Checks if the plugin is enabled in the configuration, then starts the Express server.
+    -   **`shutdown()`**: Gracefully stops the Express server when Wooster shuts down.
 
--   Create the main plugin file: `src/plugins/frontend/index.ts`.
+-   `src/plugins/frontend/server/app.ts`: The Express server application.
+    -   Exports a `startServer` function that is called by the plugin.
+    -   Contains all route handlers (e.g., `/projects/list`, `/projects/create`).
+    -   Route handlers perform their logic and respond with HTML fragments for HTMX to inject into the page.
 
-### Step 3: Develop the `FrontendPlugin` Class
+-   `src/plugins/frontend/server/public/`: Static assets.
+    -   `index.html`: The main entry point for the web UI. It includes the HTMX and Alpine.js scripts and contains the initial layout.
+    -   Other static files (CSS, images) would go here.
 
--   Inside `src/plugins/frontend/index.ts`, create a `FrontendPlugin` class that implements the `WoosterPlugin` interface.
--   **Static Properties:** Define the required static properties for the `PluginManager`:
-    ```typescript
-    static readonly pluginName = 'frontend';
-    static readonly version = '0.1.0';
-    static readonly description = 'Manages and serves the Wooster web UI.';
-    ```
--   **Instance Properties:** Include a private property to hold the running `http.Server` instance.
-    ```typescript
-    private server: http.Server | null = null;
-    ```
+## 3. Configuration
 
-### Step 4: Adapt the Express Application
+The frontend plugin's behavior is controlled by environment variables, which are documented in `.env.example`.
 
--   Modify `src/plugins/frontend/server/app.ts`. Instead of starting the server directly, it will export a function, `startServer`, that:
-    -   Accepts the `config` and `services` objects.
-    -   Sets up all Express middleware and routes.
-    -   Calls `app.listen()` and returns the resulting `http.Server` instance.
-    -   Updates the path for serving static files from `public/` to `path.join(__dirname, 'public')`.
+-   `PLUGIN_FRONTEND_ENABLED`: (default: `true`) Toggles the entire web server on or off.
+-   `PLUGIN_FRONTEND_PORT`: (default: `3000`) Sets the port on which the web server will listen.
 
-### Step 5: Implement Plugin Lifecycle Methods
-
--   **`initialize(config, services)`:**
-    -   Check if `config.plugins.frontend.enabled` is `true`. If not, log a message and exit.
-    -   Import `startServer` from `./server/app.ts`.
-    -   Call `startServer(config, services)` to launch the web server.
-    -   Store the returned `http.Server` instance in `this.server`.
--   **`shutdown()`:**
-    -   If `this.server` exists, call `this.server.close()` to stop it gracefully.
-
-### Step 6: Update Configuration
-
-1.  **`config/default.json`:** Add a configuration block for the plugin:
-    ```json
-    "plugins": {
-      "projectManager": { ... },
-      "frontend": {
-        "enabled": true,
-        "port": 3000
-      }
-    }
-    ```
-2.  **`config/custom-environment-variables.json`:** Map environment variables:
-    ```json
-    "plugins": {
-      "projectManager": { ... },
-      "frontend": {
-        "enabled": "PLUGIN_FRONTEND_ENABLED",
-        "port": "PLUGIN_FRONTEND_PORT"
-      }
-    }
-    ```
-3.  **`.env.example`:** Add the new variables for users:
-    ```
-    PLUGIN_FRONTEND_ENABLED=true
-    PLUGIN_FRONTEND_PORT=3000
-    ```
-
-### Step 7: Final Cleanup
-
--   Update `tsconfig.json` or any build/run scripts if the file restructuring requires path changes.
--   Delete the original (and now empty) `src/server` directory if it still exists.
-
-This plan establishes a clear and modular foundation for the web UI, ensuring it integrates cleanly with Wooster's architecture. 
+This setup ensures that the web UI is a modular, maintainable, and simple extension of the core Wooster application, adhering to our development principles. 
