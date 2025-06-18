@@ -37,6 +37,8 @@ export function bootstrapLogger() {
  * @param config The logging configuration object.
  */
 export function applyLoggerConfig(config: LoggingConfig): void {
+  console.log('[DIAGNOSTIC] Applying logger config:', config); // Diagnostic log
+
   configuredConsoleLogLevel = config.consoleLogLevel || LogLevel.INFO;
   configuredFileLogLevel = config.fileLogLevel || LogLevel.INFO;
   logAgentLLMInteractionsEnabled = config.logAgentLLMInteractions || false;
@@ -45,17 +47,20 @@ export function applyLoggerConfig(config: LoggingConfig): void {
   if (config.logFile) {
     // Always resolve the log file path relative to the current working directory.
     currentLogFile = path.resolve(process.cwd(), config.logFile);
+    console.log('[DIAGNOSTIC] Resolved log file path:', currentLogFile); // Diagnostic log
 
     const logDir = path.dirname(currentLogFile);
     if (!fs.existsSync(logDir)) {
       try {
         fs.mkdirSync(logDir, { recursive: true });
+        console.log('[DIAGNOSTIC] Created log directory:', logDir); // Diagnostic log
       } catch (err) {
         console.error(`[${new Date().toLocaleString()}] [ERROR] Failed to create log directory: ${logDir}. File logging will be disabled. Error: ${util.format(err)}`);
         currentLogFile = null;
       }
     }
   } else {
+    console.log('[DIAGNOSTIC] config.logFile is not set. Disabling file logging.'); // Diagnostic log
     currentLogFile = null; // Explicitly disable file logging if logFile is null/empty
   }
   // Log the finalized configuration
