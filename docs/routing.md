@@ -34,6 +34,162 @@
 
 **Migration**: Backward compatible - existing `.env` configs work unchanged, routing is opt-in via `MODEL_ROUTING_ENABLED=true`.
 
+## User Configuration Examples
+
+### Basic Setup (.env file)
+
+```bash
+# Enable routing system
+MODEL_ROUTING_ENABLED=true
+MODEL_ROUTING_STRATEGY=speed
+
+# Existing OpenAI config (unchanged)
+OPENAI_API_KEY=sk-your-key-here
+OPENAI_MODEL_NAME=gpt-4o-mini
+OPENAI_TEMPERATURE=0.7
+
+# Local MLX models
+LOCAL_MODEL_ENABLED=true
+LOCAL_MODEL_SERVER_URL=http://localhost:8000
+LOCAL_MODEL_DEFAULT=mlx-community/Mistral-7B-Instruct-v0.3-4bit
+LOCAL_MODEL_MODELS_DIR=/Users/yourname/.cache/mlx_models
+
+# Fallback chain (comma-separated, priority order)
+MODEL_ROUTING_FALLBACK_CHAIN=local-small,gpt-4o-mini,gpt-4o
+```
+
+### Advanced Configuration (config/default.json)
+
+```json
+{
+  "routing": {
+    "enabled": true,
+    "strategy": "quality",
+    "fallbackChain": ["local-coder", "gpt-4o", "gpt-4o-mini"],
+    "providers": {
+      "openai": {
+        "models": {
+          "fast": "gpt-4o-mini",
+          "quality": "gpt-4o",
+          "creative": "gpt-4o"
+        },
+        "rateLimiting": true,
+        "costTracking": true
+      },
+      "local": {
+        "enabled": true,
+        "serverUrl": "http://localhost:8000",
+        "autoStart": true,
+        "models": {
+          "small": "mlx-community/Qwen2.5-3B-Instruct-4bit",
+          "medium": "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
+          "large": "mlx-community/Llama-3.1-8B-Instruct-4bit",
+          "coder": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
+          "creative": "mlx-community/Mistral-7B-Instruct-v0.3-4bit"
+        }
+      }
+    },
+    "profiles": {
+      "TOOL_EXECUTION": {
+        "preferred": ["local-small", "gpt-4o-mini"],
+        "temperature": 0.1,
+        "maxTokens": 512
+      },
+      "CODE_ASSISTANCE": {
+        "preferred": ["local-coder", "gpt-4o"],
+        "temperature": 0.2,
+        "maxTokens": 1024
+      },
+      "CREATIVE_WRITING": {
+        "preferred": ["local-creative", "gpt-4o"],
+        "temperature": 0.8,
+        "maxTokens": 1024
+      }
+    }
+  }
+}
+```
+
+### Project-Specific Settings (projects/my-coding-project/wooster.config.json)
+
+```json
+{
+  "modelPreferences": {
+    "primaryModel": "local-coder",
+    "fallback": ["gpt-4o", "gpt-4o-mini"],
+    "profiles": {
+      "CODE_ASSISTANCE": {
+        "preferred": ["local-coder"],
+        "temperature": 0.1
+      },
+      "TOOL_EXECUTION": {
+        "preferred": ["local-small"]
+      }
+    },
+    "privacy": {
+      "requireLocal": true,
+      "allowCloudFallback": false
+    }
+  }
+}
+```
+
+### User Preference Examples
+
+**Speed-Focused User:**
+```bash
+MODEL_ROUTING_STRATEGY=speed
+MODEL_ROUTING_FALLBACK_CHAIN=local-small,local-medium,gpt-4o-mini
+```
+
+**Quality-Focused User:**
+```bash
+MODEL_ROUTING_STRATEGY=quality
+MODEL_ROUTING_FALLBACK_CHAIN=gpt-4o,claude-3.5-sonnet,local-large
+```
+
+**Privacy-Focused User:**
+```bash
+MODEL_ROUTING_STRATEGY=privacy
+MODEL_ROUTING_FALLBACK_CHAIN=local-small,local-medium,local-large
+LOCAL_MODEL_ONLY=true
+```
+
+**Cost-Conscious User:**
+```bash
+MODEL_ROUTING_STRATEGY=cost
+MODEL_ROUTING_FALLBACK_CHAIN=local-small,gpt-4o-mini,local-medium
+OPENAI_COST_LIMIT_DAILY=5.00
+```
+
+### Runtime Model Selection (REPL Commands)
+
+```bash
+# Check current model status
+> routing status
+Current Strategy: speed
+Active Models: local-small (healthy), gpt-4o-mini (healthy)
+Fallback Chain: local-small → gpt-4o-mini → gpt-4o
+
+# List available models
+> list models
+✅ local-small (mlx-community/Qwen2.5-3B-Instruct-4bit) - 45ms avg
+✅ local-coder (mlx-community/Qwen2.5-Coder-7B-Instruct-4bit) - 120ms avg
+✅ gpt-4o-mini (OpenAI) - 280ms avg
+⚠️  gpt-4o (OpenAI) - Rate limited
+❌ claude-3.5-sonnet - Not configured
+
+# Temporarily override model for current session
+> switch model local-coder
+Switched to local-coder for current session
+
+# Check model performance
+> model stats
+Tool Execution: local-small (89% usage, 45ms avg)
+Code Assistance: local-coder (95% usage, 120ms avg)
+Complex Reasoning: gpt-4o (78% usage, 450ms avg)
+```
+
 ---
 
 ## 1. Overview

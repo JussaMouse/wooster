@@ -46,7 +46,7 @@ export function applyLoggerConfig(config: LoggingConfig): void {
 
   if (config.logFile) {
     // Always resolve the log file path relative to the current working directory.
-    currentLogFile = path.resolve(process.cwd(), config.logFile);
+      currentLogFile = path.resolve(process.cwd(), config.logFile);
     console.log('[DIAGNOSTIC] Resolved log file path:', currentLogFile); // Diagnostic log
 
     const logDir = path.dirname(currentLogFile);

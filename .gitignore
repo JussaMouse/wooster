@@ -77,6 +77,7 @@ config/*
 # Note: default.json should be version-controlled, but environment-specific
 # files like local.json or production.json should be ignored if they contain secrets.
 !config/default.json
+!config/custom-environment-variables.json
 config/local.json
 config/local-*.json
 

@@ -32,6 +32,9 @@ importers:
       chrono-node:
         specifier: ^2.8.0
         version: 2.8.0
+      config:
+        specifier: ^4.0.0
+        version: 4.0.0
       croner:
         specifier: ^9.0.0
         version: 9.0.0
@@ -90,6 +93,9 @@ importers:
       '@types/chalk':
         specifier: ^2.2.0
         version: 2.2.4
+      '@types/config':
+        specifier: ^3.3.5
+        version: 3.3.5
       '@types/diff':
         specifier: ^5.2.1
         version: 5.2.3
@@ -1539,6 +1545,9 @@ packages:
     resolution: {integrity: sha512-pb/QoGqtCpH2famSp72qEsXkNzcErlVmiXlQ/ww+5AddD8TmmYS7EWg5T20YiNCAiTgs8pMf2G8SJG5h/ER1ZQ==}
     deprecated: This is a stub types definition. chalk provides its own type definitions, so you do not need this installed.
 
+  '@types/config@3.3.5':
+    resolution: {integrity: sha512-itq2HtXQBrNUKwMNZnb9mBRE3T99VYCdl1gjST9rq+9kFaB1iMMGuDeZnP88qid73DnpAMKH9ZolqDpS1Lz7+w==}
+
   '@types/connect@3.4.38':
     resolution: {integrity: sha512-K6uROf1LD88uDQqJCktA4yzL1YYAK6NgfsI0v/mTgyPKWsX1CnJ0XPSDhViejru1GcRkLWb8RlzFYJRqGUbaug==}
 
@@ -2066,6 +2075,10 @@ packages:
 
   concat-map@0.0.1:
     resolution: {integrity: sha512-/Srv4dswyQNBfohGpz9o6Yb3Gz3SrUDqBH5rTuhGR7ahtlbYKnVxw2bCFMRljaA7EXHaXZ8wsHdodFvbkhKmqg==}
+
+  config@4.0.0:
+    resolution: {integrity: sha512-zOzfDfcpaBUMRvTH+pbj111Gfb+1BMvCy9EcE5ckuugfAcks3FIQMyt8TRA30dhuGnZNBxfbPBUKtuM03ih/nA==}
+    engines: {node: '>= 20.0.0'}
 
   console-table-printer@2.12.1:
     resolution: {integrity: sha512-wKGOQRRvdnd89pCeH96e2Fn4wkbenSP6LMHfjfyNLMbGuHEFbMqQNuxXqd0oXG9caIOQ1FTvc5Uijp9/4jujnQ==}
@@ -5818,6 +5831,8 @@ snapshots:
     dependencies:
       chalk: 5.4.1
 
+  '@types/config@3.3.5': {}
+
   '@types/connect@3.4.38':
     dependencies:
       '@types/node': 22.15.3
@@ -6490,6 +6505,10 @@ snapshots:
   commander@13.1.0: {}
 
   concat-map@0.0.1: {}
+
+  config@4.0.0:
+    dependencies:
+      json5: 2.2.3
 
   console-table-printer@2.12.1:
     dependencies:

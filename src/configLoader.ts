@@ -52,39 +52,78 @@ export interface GtdConfig {
 }
 
 export interface GmailConfig {
-    senderEmailAddress: string | null;
-    userPersonalEmailAddress: string | null;
-    emailAppPassword: string | null;
+  senderEmailAddress: string | null;
+  userPersonalEmailAddress: string | null;
+  emailAppPassword: string | null;
 }
 
 export interface WeatherConfig {
-    city: string | null;
-    openWeatherMapApiKey: string | null;
-    units?: "C" | "F";
+  city: string | null;
+  openWeatherMapApiKey: string | null;
+  units?: "C" | "F";
 }
 
 export interface DailyReviewConfig {
-    scheduleCronExpression: string;
+  scheduleCronExpression: string;
 }
 
 export interface CaptureApiConfig {
-    enabled: boolean;
-    port: number;
-    apiKey: string | null;
-    ipWhitelistEnabled: boolean;
-    allowedIps: string[];
+  enabled: boolean;
+  port: number;
+  apiKey: string | null;
+  ipWhitelistEnabled: boolean;
+  allowedIps: string[];
 }
 
 export interface ApiPluginConfig {
-    enabled: boolean;
-    port: number;
-    apiKey: string | null;
-    globalIpWhitelistEnabled: boolean;
-    globalAllowedIps: string[];
+  enabled: boolean;
+  port: number;
+  apiKey: string | null;
+  globalIpWhitelistEnabled: boolean;
+  globalAllowedIps: string[];
 }
-  
+
 export interface PersonalHealthConfig {
     healthDir?: string;
+}
+
+export interface ModelRoutingConfig {
+  enabled: boolean;
+  strategy: 'cost' | 'speed' | 'quality' | 'availability' | 'privacy';
+  fallbackChain: string[];
+  providers: {
+    openai: {
+      enabled: boolean;
+      models: Record<string, string>;
+      rateLimiting: boolean;
+      costTracking: boolean;
+      maxRequestsPerMinute?: number;
+    };
+    local: {
+      enabled: boolean;
+      serverUrl: string;
+      autoStart: boolean;
+      models: Record<string, string>;
+      modelsDir?: string;
+      healthCheckInterval?: number;
+    };
+    anthropic?: {
+      enabled: boolean;
+      models: Record<string, string>;
+      rateLimiting: boolean;
+    };
+  };
+  profiles: Record<string, any>;
+  healthCheck: {
+    interval: number;
+    timeout: number;
+    retries: number;
+  };
+  logging: {
+    decisions: boolean;
+    performance: boolean;
+    errors: boolean;
+  };
 }
 
 export interface AppConfig {
@@ -103,6 +142,7 @@ export interface AppConfig {
   captureApi?: CaptureApiConfig;
   apiPlugin?: ApiPluginConfig;
   personalHealth?: PersonalHealthConfig;
+  routing?: ModelRoutingConfig;
   plugins: {
     [key: string]: any;
   };
@@ -119,7 +159,7 @@ let currentConfig: AppConfig;
 export function loadConfig(): AppConfig {
   // The 'config' package automatically handles loading and merging.
   const loadedConfig = config.util.toObject() as AppConfig;
-  
+
   currentConfig = loadedConfig;
   log(LogLevel.DEBUG, 'Application Config Loaded:', { appConfig: currentConfig });
   return currentConfig;
@@ -137,4 +177,4 @@ export function getConfig(): AppConfig {
 }
 
 // Initial load of the configuration when this module is imported.
-loadConfig(); 
+loadConfig();

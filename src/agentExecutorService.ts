@@ -51,11 +51,16 @@ interface ScheduleAgentTaskArgs {
 
 async function initializeTools() {
   appConfig = await getConfig();
-  agentLlm = new ChatOpenAI({
-    modelName: appConfig.openai.modelName,
-    temperature: appConfig.openai.temperature,
-    openAIApiKey: appConfig.openai.apiKey,
-  });
+  
+  // Initialize model router
+  const { initializeModelRouter } = await import('./routing/ModelRouterService');
+  const modelRouter = initializeModelRouter(appConfig);
+  
+  // Get model through router (Phase 1: returns existing ChatOpenAI)
+  agentLlm = await modelRouter.selectModel({ 
+    task: 'COMPLEX_REASONING',
+    context: modelRouter.createContext('COMPLEX_REASONING')
+  }) as ChatOpenAI;
 
   const coreTools: any[] = [];
 

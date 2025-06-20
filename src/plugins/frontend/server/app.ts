@@ -23,19 +23,19 @@ export function startServer(config: AppConfig, services: CoreServices): Promise<
     
     if (!config.gtd?.projectsDir) {
         throw new Error('GTD projectsDir is not defined in the configuration.');
-    }
+}
     const projectsBaseDir = path.resolve(config.gtd.projectsDir);
 
     app.use(express.static(path.join(__dirname, 'public')));
     app.use(express.urlencoded({ extended: true }));
     app.use(express.json());
 
-    app.get('/', (req, res) => {
-        res.sendFile(path.join(__dirname, 'public', 'index.html'));
-    });
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
-    app.get('/projects/list', (req, res) => {
-        if (!fs.existsSync(projectsBaseDir)) {
+app.get('/projects/list', (req, res) => {
+    if (!fs.existsSync(projectsBaseDir)) {
             fs.mkdirSync(projectsBaseDir, { recursive: true });
         }
         const projectSlugs = fs.readdirSync(projectsBaseDir).filter(name => {
@@ -48,28 +48,28 @@ export function startServer(config: AppConfig, services: CoreServices): Promise<
             return `<li id="project-item-${slug}">${humanName} <button hx-delete="${deleteUrl}" hx-confirm="Are you sure you want to delete ${humanName}?" hx-target="#project-item-${slug}" hx-swap="outerHTML">Delete</button></li>`;
         }).join('');
         res.send(`<ul id="project-list">${projectListItems}</ul>`);
-    });
+});
 
-    app.post('/projects/create', (req, res) => {
-        const name = req.body.name?.trim();
-        if (!name) {
-            res.status(400).send('<div style="color:red">Project name required</div>');
-            return;
-        }
+app.post('/projects/create', (req, res) => {
+    const name = req.body.name?.trim();
+    if (!name) {
+        res.status(400).send('<div style="color:red">Project name required</div>');
+        return;
+    }
 
         const slug = slugify(name, { lower: true, strict: true });
-        const projectDir = path.join(projectsBaseDir, slug);
+    const projectDir = path.join(projectsBaseDir, slug);
 
-        if (fs.existsSync(projectDir)) {
-            res.status(409).send('<div style="color:red">Project already exists</div>');
-            return;
-        }
+    if (fs.existsSync(projectDir)) {
+        res.status(409).send('<div style="color:red">Project already exists</div>');
+        return;
+    }
 
         fs.mkdirSync(projectDir, { recursive: true });
-        const journalPath = path.join(projectDir, 'journal.md');
-        fs.writeFileSync(journalPath, `# Journal for ${name}\n\n`);
+    const journalPath = path.join(projectDir, 'journal.md');
+    fs.writeFileSync(journalPath, `# Journal for ${name}\n\n`);
 
-        const projectSlugs = fs.readdirSync(projectsBaseDir).filter(n => fs.statSync(path.join(projectsBaseDir, n)).isDirectory());
+    const projectSlugs = fs.readdirSync(projectsBaseDir).filter(n => fs.statSync(path.join(projectsBaseDir, n)).isDirectory());
         const projectListItems = projectSlugs.map(s => {
             const humanName = formatProjectName(s);
             const deleteUrl = `/projects/delete/${s}`;
