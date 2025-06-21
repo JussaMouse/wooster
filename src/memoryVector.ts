@@ -13,7 +13,7 @@ let embeddingsModel: HuggingFaceTransformersEmbeddings | null = null;
 export function getEmbeddingsModel() {
   if (!embeddingsModel) {
     embeddingsModel = new HuggingFaceTransformersEmbeddings({
-      modelName: "Xenova/all-MiniLM-L6-v2",
+      modelName: "sentence-transformers/all-MiniLM-L12-v2",
     });
   }
   return embeddingsModel;
