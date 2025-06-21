@@ -1,102 +1,255 @@
 # 03 Agent Architecture
 
-This document describes the internal architecture of Wooster's conversational agent, which is responsible for understanding user input, deciding on actions, and generating responses.
+This document describes Wooster's intelligent agent system, which orchestrates conversational AI, tool execution, and multi-model routing to provide a sophisticated productivity assistant.
 
-## 1. Core Framework: LangChain AgentExecutor
+## 1. Overview: Multi-Model Agent System
 
-Wooster employs a sophisticated agent model built using **LangChain's `AgentExecutor` framework**. This framework orchestrates the interaction between a Large Language Model (LLM), a set of available tools, and the user's input to drive intelligent behavior.
+Wooster employs a **multi-model agent architecture** that intelligently routes different tasks to optimal AI models based on performance requirements, cost considerations, and availability. The system is built on **LangChain's AgentExecutor framework** with a custom **ModelRouterService** that manages model selection and fallback strategies.
 
-The agent is specifically an **OpenAI Tools Agent**, designed to leverage the function/tool-calling capabilities of OpenAI's chat models (e.g., `gpt-4o-mini`).
+### Key Architectural Principles:
+- **Task-Specific Routing**: Different AI models for different types of work (speed vs. quality vs. cost)
+- **Local-First**: Prefer local models when available, fallback to cloud models as needed
+- **Zero-Latency Design**: Routing adds minimal overhead to response times
+- **Backward Compatibility**: Existing configurations work unchanged
 
-## 2. Key Components
+## 2. Model Architecture
 
-The agent system, managed by `src/agentExecutorService.ts`, comprises several key components:
+### 2.1. Current Model Distribution
 
-### a. Large Language Model (LLM)
-- **Model**: `ChatOpenAI` (from `@langchain/openai`), typically configured to use a model like `gpt-4o-mini` (or as specified by `OPENAI_MODEL_NAME` in `.env`).
-- **Role**: The LLM is the "brain" of the agent. It processes the input, chat history, and tool descriptions to decide the next step.
+Wooster uses **5 distinct AI models** for different purposes:
 
-### b. Prompt Template
-- The agent uses a structured `ChatPromptTemplate` to format the input for the LLM. This template is crucial for guiding the LLM's reasoning and tool usage. It typically includes:
-    - **System Message**: A directive that defines Wooster's persona, overall goal, general instructions on tool usage, and the current date/time.
-    - **`MessagesPlaceholder("chat_history")`**: For incorporating previous turns of the conversation.
-    - **`MessagesPlaceholder("input")`**: For the current user query.
-    - **`MessagesPlaceholder("agent_scratchpad")`**: A special placeholder where the agent records its internal thought process, tool calls, and tool observations. This allows the agent to perform multi-step reasoning.
+#### **Primary Conversational Agent**
+```typescript
+// Routed through ModelRouterService
+agentLlm = ChatOpenAI → gpt-4o-mini (default)
+```
+- **Purpose**: Main conversation handling, tool execution decisions, complex reasoning
+- **Routing**: Via `ModelRouterService` (Phase 1: passthrough, Phase 2+: intelligent selection)
+- **Configuration**: `OPENAI_MODEL_NAME` in `.env`
 
-### c. Tools: Extending Agent Capabilities
-Tools are specialized functions that the agent can use to interact with external services, access specific data stores, or perform actions beyond its immediate knowledge. They are fundamental to Wooster's ability to perform a wide range of tasks.
+#### **Project Knowledge Embeddings**
+```typescript
+OpenAIEmbeddings → text-embedding-3-small
+```
+- **Purpose**: Project document embeddings for RAG/knowledge base queries
+- **Usage**: When user asks questions about project documents
+- **Location**: Project vector stores (`projects/*/vectorStore/`)
 
-- **Tool Definition**: Each tool is an instance of LangChain's `DynamicTool` (or a similar compatible class) and is defined with:
-    - `name`: A unique string identifier (e.g., `web_search`, `send_email`). This is how the agent refers to the tool.
-    - `description`: **This is the most critical part for the agent.** The description tells the LLM what the tool does, when it should be used, the expected input format, and what kind of output to expect. The agent's ability to correctly choose and use tools depends heavily on the clarity and accuracy of these descriptions.
-    - `func`: The actual TypeScript `async` function that gets executed when the agent decides to use the tool. It takes an input (often a string or a structured object parsed from a string) and returns a string result (the "observation") to the agent.
-- **Source of Tools**: Tools are provided to the agent from two main sources:
-    - **Core Tools**: Defined directly within `src/agentExecutorService.ts` or closely related core files (e.g., `src/fileSystemTool.ts`, `src/schedulerTool.ts`).
-    - **Plugin-Provided Tools**: Discovered and loaded from enabled plugins via the `pluginManager.ts`. See `./plugin_development_guide.md` for how plugins provide tools.
-- **Agent Decision Making**: The `AgentExecutor` presents the names and descriptions of all available tools to the LLM. Based on the user's query and the conversation history, the LLM decides:
-    1.  Whether a tool is needed to fulfill the request.
-    2.  Which specific tool is most appropriate.
-    3.  What input to provide to that tool.
-- **Iterative Process**: After a tool is executed, its output (observation) is fed back to the LLM. The LLM can then decide to use another tool, or generate a final response to the user. This iterative process allows for complex, multi-step tasks.
+#### **User Profile & Memory Embeddings**
+```typescript
+HuggingFaceTransformersEmbeddings → Xenova/all-MiniLM-L6-v2
+```
+- **Purpose**: User profile vector store, persistent memory operations
+- **Usage**: Learning and recalling user preferences, context, facts
+- **Location**: `./vector_data/user_profile_store`
 
-### d. The Importance of Tool Descriptions (Reiteration)
-It cannot be overstated: **the quality of tool descriptions directly impacts the agent's intelligence and reliability.**
-- A good description is clear, concise, and action-oriented.
-- It should explicitly state the tool's purpose and the kind of input it expects (e.g., "Input should be a search query string," or "Input must be a JSON object with keys: 'to', 'subject', 'body'").
-- It helps the LLM distinguish between tools with similar capabilities (e.g., when to use `queryKnowledgeBase` vs. `web_search`).
-- Refer to individual tool documentation files (in `docs/tools/`) for the exact descriptions provided to the agent for specific tools.
+#### **Legacy Project Ingestion**
+```typescript
+HuggingFaceTransformersEmbeddings → Xenova/all-MiniLM-L6-v2
+```
+- **Purpose**: Document processing during project creation/ingestion
+- **Usage**: Converting project files into searchable embeddings
 
-### e. Example Core & Plugin-Provided Tools
-The following are examples of tools available to the Wooster agent. This list is not exhaustive and expands as more capabilities and plugins are added. Each often has detailed documentation in `docs/tools/TOOL_*.MD`.
+#### **Standalone RAG Operations**
+```typescript
+ChatOpenAI (separate instance)
+```
+- **Purpose**: Independent RAG chains when not using the main agent
+- **Usage**: Direct document Q&A without full agent context
 
-- **`web_search`** (from WebSearch Plugin)
-    - Documentation: `docs/tools/TOOL_WebSearch.MD`
-    - Briefly: Performs real-time internet searches for up-to-date information.
-- **`recall_user_profile`** (from UserProfile Plugin)
-    - Documentation: `docs/tools/TOOL_UserProfileRecall.MD` (or similar, path may vary based on plugin docs)
-    - Briefly: Retrieves previously learned user-specific facts, preferences, or context.
-- **`save_user_profile`** (from UserProfile Plugin)
-    - Documentation: (see UserProfile plugin docs)
-    - Briefly: Saves new facts or preferences about the user.
-- **`queryKnowledgeBase`** (Core Tool)
-    - Documentation: `docs/tools/TOOL_KnowledgeBaseQuery.MD`
-    - Briefly: Searches and answers questions based exclusively on documents within the currently active project.
-- **`send_email`** (from Gmail Plugin)
-    - Documentation: `docs/tools/TOOL_Email.MD` (or similar, path may vary based on plugin docs)
-    - Briefly: Composes and sends emails on behalf of the user.
-- **Google Calendar Tools** (from GCal Plugin)
-    - Example Tools: `get_calendar_events`, `create_calendar_event`
-    - Documentation: `docs/tools/TOOL_GoogleCalendar.MD` (or similar, path may vary based on plugin docs)
-    - Briefly: Lists events, creates new events in Google Calendar.
-- **`scheduleAgentTask`** (Core Tool, from `src/schedulerTool.ts`)
-    - Documentation: `docs/tools/TOOL_TaskScheduler.MD`
-    - Briefly: Schedules a task for the agent to perform at a specified future time.
-- **`get_weather_forecast`** (from Weather Plugin)
-    - Documentation: `docs/tools/TOOL_Weather.MD` (or similar, path may vary based on plugin docs)
-    - Briefly: Fetches the current weather forecast.
-- **`create_file`** (Core Tool, from `src/fileSystemTool.ts`)
-    - Documentation: (See comments in `src/fileSystemTool.ts` or a dedicated doc if created)
-    - Briefly: Creates a new file with specified content within a project.
+### 2.2. Model Routing System (Phase 1: Operational, Phase 2+: Planned)
 
-## 3. Agent's Decision-Making Loop (Simplified)
+The `ModelRouterService` provides intelligent model selection:
 
-The `AgentExecutor` manages the following cycle:
+```typescript
+// Current: Phase 1 (Zero-latency passthrough)
+const router = initializeModelRouter(config);
+const model = await router.selectModel({
+  task: 'COMPLEX_REASONING',
+  context: router.createContext('COMPLEX_REASONING')
+});
+```
 
-1.  **Input Processing**: The user's input and chat history are formatted using the agent's prompt template.
-2.  **LLM Invocation**: The formatted prompt (including available tool descriptions) is sent to the LLM.
-3.  **Decision**: The LLM responds in one of two ways:
-    *   **Tool Call**: If the LLM decides a tool is needed, it outputs a structured request specifying the tool's name and the input for that tool.
-    *   **Direct Answer**: If the LLM believes it can answer directly without a tool, it generates a final response for the user.
-4.  **Tool Execution (if applicable)**:
-    *   If a tool call was requested, the `AgentExecutor` invokes the specified tool with the provided input.
-    *   The tool executes its function and returns an "observation" (the result or output of the tool).
-5.  **Scratchpad Update**: The tool call request and the resulting observation are added to the `agent_scratchpad` part of the prompt.
-6.  **Re-evaluate**: The process loops back to step 2. The LLM now has the additional context from the tool interaction in its scratchpad and can decide on the next action (another tool call or a final answer).
-7.  **Final Response**: Once the LLM generates a direct answer, the `AgentExecutor` returns this as the agent's final output to the user.
+#### **Task Types & Routing Profiles:**
+- **`TOOL_EXECUTION`**: Fast responses for tool calls → `local-small`, `gpt-4o-mini`
+- **`COMPLEX_REASONING`**: High-quality reasoning → `gpt-4o`, `claude-3.5-sonnet`, `local-large`
+- **`CODE_ASSISTANCE`**: Code analysis/generation → `local-coder`, `gpt-4o`
+- **`CREATIVE_WRITING`**: Content generation → `local-creative`, `gpt-4o`
+- **`BACKGROUND_TASK`**: Scheduled operations → `local-small`, `gpt-4o-mini`
+- **`RAG_PROCESSING`**: Document analysis → `local-medium`, `gpt-4o-mini`
 
-## 4. Configuration
+#### **Local Model Support (Phase 2+):**
+When enabled, Wooster can use local MLX models:
+- **Speed Tier**: `Qwen2.5-3B` (~2GB RAM, ~50ms response)
+- **Balanced Tier**: `Mistral-7B`, `Qwen2.5-7B` (~4GB RAM, ~120ms response)
+- **Quality Tier**: `Qwen2.5-72B` (~40GB RAM, ~800ms response)
+- **Specialized**: `Qwen2.5-Coder` for code tasks
 
-- The agent's LLM model (`OPENAI_MODEL_NAME`) and temperature (`OPENAI_TEMPERATURE`) are configured via the `.env` file.
-- Tool-specific configurations (e.g., API keys, enablement status for plugin-provided tools) are also managed in `.env`.
-- See `06 CONFIG.MD` for a comprehensive list of relevant environment variables.
-- Individual tool documentation files (`docs/tools/TOOL_*.MD`) and plugin documentation (`docs/plugins/PLUGIN_*.MD`) also highlight their specific configuration requirements. 
+## 3. Agent System Components
+
+### 3.1. AgentExecutor Framework
+Built on **LangChain's OpenAI Tools Agent**, optimized for function calling:
+
+```typescript
+const agent = await createOpenAIToolsAgent({
+  llm: agentLlm,  // Routed through ModelRouterService
+  tools,          // Dynamic tool discovery from core + plugins
+  prompt,         // Context-aware prompt template
+});
+```
+
+### 3.2. Prompt Architecture
+The agent uses a sophisticated prompt template:
+
+```typescript
+const prompt = ChatPromptTemplate.fromMessages([
+  ["system", finalSystemPrompt],           // Wooster's persona + instructions
+  new MessagesPlaceholder("chat_history"), // Conversation context
+  ["human", "{input}"],                    // Current user query
+  new MessagesPlaceholder("agent_scratchpad"), // Tool execution trace
+]);
+```
+
+#### **Dynamic System Prompt Components:**
+- **Base Persona**: Loaded from `prompts/base_system_prompt.txt`
+- **Additional Instructions**: All `.txt` files in `prompts/` directory
+- **Active Project Context**: Current project name and file handling rules
+- **Current DateTime**: Real-time context injection
+
+### 3.3. Tool System Architecture
+
+#### **Tool Discovery & Loading:**
+```typescript
+// Core tools (always available)
+const coreTools = [queryKnowledgeBase, scheduleAgentTask, createFileTool, readFileTool];
+
+// Plugin tools (dynamically loaded)
+const pluginTools = getPluginAgentTools();
+
+// Conflict resolution (core tools take precedence)
+const allTools = mergeTool(coreTools, pluginTools);
+```
+
+#### **Knowledge Base Integration:**
+The `queryKnowledgeBase` tool provides RAG capabilities:
+
+```typescript
+const retriever = projectVectorStoreInstance.asRetriever();
+const ragChain = await createRetrievalChain({
+  retriever: historyAwareRetrieverChain,
+  combineDocsChain: documentChain,
+});
+```
+
+## 4. Decision-Making Flow
+
+### 4.1. Request Processing Pipeline
+1. **Input Reception**: User query + conversation history
+2. **Model Selection**: `ModelRouterService` selects optimal model for task
+3. **Context Assembly**: System prompt + project context + chat history
+4. **Agent Invocation**: LLM processes input with available tools
+5. **Tool Execution**: Agent calls tools as needed (iterative)
+6. **Response Generation**: Final answer synthesis
+7. **Context Update**: Conversation history maintained
+
+### 4.2. Tool Execution Loop
+```
+User Input → Agent LLM → Tool Selection → Tool Execution → Observation → 
+    ↑                                                                    ↓
+    ← Final Response ← Response Generation ← Continue? ←─────────────────┘
+```
+
+### 4.3. Multi-Step Reasoning
+The agent can perform complex multi-step tasks:
+- **Scratchpad Tracking**: All tool calls and results are logged
+- **Iterative Refinement**: Agent can use tool results to inform next actions
+- **Error Recovery**: Failed tool calls are analyzed and alternative approaches attempted
+
+## 5. Configuration & Customization
+
+### 5.1. Model Configuration
+```bash
+# Primary agent model
+OPENAI_MODEL_NAME=gpt-4o-mini
+OPENAI_TEMPERATURE=0.7
+
+# Routing system (Phase 2+)
+MODEL_ROUTING_ENABLED=true
+MODEL_ROUTING_STRATEGY=speed
+LOCAL_MODEL_ENABLED=true
+LOCAL_MODEL_SERVER_URL=http://localhost:8000
+```
+
+### 5.2. Project-Specific Behavior
+```typescript
+// Active project context automatically injected
+finalSystemPrompt += `
+Your current active project is '${currentActiveProjectName}'. 
+For tools requiring a project name, use this exact active project name by default.
+Always append to the project's main journal file '${currentActiveProjectName}.md'.
+`;
+```
+
+### 5.3. Tool Configuration
+- **Core Tools**: Always enabled, defined in `src/agentExecutorService.ts`
+- **Plugin Tools**: Configurable via individual plugin settings
+- **Conflict Resolution**: Core tools take precedence over plugin tools with same names
+
+## 6. Performance & Monitoring
+
+### 6.1. Routing Metrics
+```typescript
+const stats = router.getRoutingStats();
+// Returns: enabled status, decision count, recent decisions, model metrics
+```
+
+### 6.2. Debug Logging
+- **Agent Interactions**: `logAgentLLMInteractions=true` in config
+- **Routing Decisions**: Tracked when routing logging enabled
+- **Tool Execution**: Detailed logging of all tool calls and results
+
+### 6.3. Callback Handlers
+```typescript
+// Optional debug file logging
+if (appConfig.logging.logAgentLLMInteractions) {
+  agentExecutorOptions.callbacks = [new ChatDebugFileCallbackHandler()];
+}
+```
+
+## 7. Integration Points
+
+### 7.1. Plugin System
+- **Tool Registration**: Plugins provide tools via `getAgentTools()` method
+- **Model Requirements**: Plugins can specify preferred models for their operations
+- **Configuration**: Plugin-specific model settings in config files
+
+### 7.2. Project Management
+- **Active Project Context**: Automatically injected into agent prompt
+- **Knowledge Base**: Per-project vector stores for document Q&A
+- **File Operations**: Project-scoped file creation and management
+
+### 7.3. Scheduler Integration
+- **Background Tasks**: Scheduled agent invocations for automated operations
+- **Task Context**: Special handling for scheduled vs. interactive tasks
+- **Error Recovery**: Automated retry logic for failed scheduled tasks
+
+## 8. Future Enhancements
+
+### 8.1. Phase 2: Local Model Integration
+- **Health Monitoring**: Automatic local model availability checking
+- **Fallback Logic**: Seamless cloud fallback when local models unavailable
+- **Performance Optimization**: Model warming and caching strategies
+
+### 8.2. Phase 3: Intelligent Routing
+- **Usage Analytics**: Model performance tracking and optimization
+- **Cost Management**: Automatic cost-based routing decisions
+- **User Preferences**: Personalized routing based on user behavior patterns
+
+### 8.3. Advanced Features
+- **Multi-Modal Support**: Integration with vision and audio models
+- **Specialized Agents**: Task-specific agent instances with optimized prompts
+- **Collaborative Reasoning**: Multi-agent systems for complex problem solving
+
+---
+
+This agent architecture provides Wooster with sophisticated AI capabilities while maintaining flexibility, performance, and cost-effectiveness through intelligent model routing and comprehensive tool integration. 
