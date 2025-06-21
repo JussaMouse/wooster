@@ -160,6 +160,14 @@ export function loadConfig(): AppConfig {
   // The 'config' package automatically handles loading and merging.
   const loadedConfig = config.util.toObject() as AppConfig;
 
+  // Fix: Ensure temperature is a number (environment variables come as strings)
+  if (typeof loadedConfig.openai.temperature === 'string') {
+    loadedConfig.openai.temperature = parseFloat(loadedConfig.openai.temperature);
+  }
+  if (typeof loadedConfig.openai.maxTokens === 'string') {
+    loadedConfig.openai.maxTokens = parseInt(loadedConfig.openai.maxTokens, 10);
+  }
+
   currentConfig = loadedConfig;
   log(LogLevel.DEBUG, 'Application Config Loaded:', { appConfig: currentConfig });
   return currentConfig;

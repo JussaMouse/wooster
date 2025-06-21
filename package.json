@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "LANGCHAIN_VERBOSE=true tsx src/index.ts 2>&1 | tee -a wooster_session.log",
+    "dev": "LANGCHAIN_VERBOSE=true tsx src/index.ts",
     "build": "rm -rf dist && tsc",
     "start": "pnpm run build && node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
