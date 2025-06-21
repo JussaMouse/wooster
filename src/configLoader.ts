@@ -183,6 +183,3 @@ export function getConfig(): AppConfig {
   }
   return currentConfig;
 }
-
-// Initial load of the configuration when this module is imported.
-loadConfig();
