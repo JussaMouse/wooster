@@ -44,41 +44,57 @@ openai: {
 - src/agentExecutorService.ts (OpenAIEmbeddings)
 ```
 
-## 2. Target Architecture: Qwen3-Embedding-4B
+## 2. Target Architecture: Plugin-Based Local Embeddings
 
-### 2.1. Qwen3-Embedding-4B Specifications
+### 2.1. Design Principles
 
-- **Model**: `Qwen/Qwen3-Embedding-4B`
-- **Dimensions**: 4096 (significantly larger than current models)
-- **Context Length**: 32,768 tokens
-- **Languages**: Multilingual support (English, Chinese, etc.)
-- **Performance**: State-of-the-art embedding quality
-- **Local Deployment**: Can run via MLX, vLLM, or custom server
+**KISS**: Keep current embeddings as default, add local as optional plugin
+**Modularity**: Route all local model functionality through existing local-model plugin  
+**Maintainability**: No breaking changes, backwards compatible, contained complexity
 
-### 2.2. Unified Embedding Architecture
+### 2.2. Proposed Architecture
 
-Instead of 3 different embedding models, we'll use **Qwen3-Embedding-4B** for all embedding tasks:
-
+**Default Behavior (No Changes)**:
 ```
 ┌─────────────────────────────────────────┐
-│        Qwen3-Embedding-4B Server        │
-│         (Local MLX/vLLM)                │
-└─────────────────────────────────────────┘
-                    │
-                    │ HTTP API
-                    │
-┌─────────────────────────────────────────┐
-│     EmbeddingRouterService              │
-│   (Health checks, fallback logic)      │
+│           Current System                │
+│   OpenAI embeddings + HuggingFace      │
+│        (Works exactly as today)         │
 └─────────────────────────────────────────┘
                     │
         ┌───────────┼───────────┐
         │           │           │
 ┌───────▼─────┐ ┌───▼────┐ ┌───▼──────┐
 │Project      │ │User    │ │Legacy    │
-│Knowledge    │ │Profile │ │Ingestion │
-│Embeddings   │ │Memory  │ │          │
-└─────────────┘ └────────┘ └──────────┘
+│(OpenAI)     │ │Profile │ │Ingestion │
+│1536-dim     │ │(HF)    │ │(HF)      │
+└─────────────┘ │384-dim │ │384-dim   │
+                └────────┘ └──────────┘
+```
+
+**With Local-Model Plugin Enabled**:
+```
+┌─────────────────────────────────────────┐
+│         Local-Model Plugin              │
+│  ┌─────────────┐ ┌─────────────────────┐ │
+│  │ Qwen3 Chat  │ │ Qwen3-Embedding-4B  │ │
+│  │   Server    │ │      Server         │ │
+│  └─────────────┘ └─────────────────────┘ │
+└─────────────────────────────────────────┘
+                    │
+              ┌─────┴──────┐
+              │ Plugin     │
+              │ Routing    │
+              │ Logic      │
+              └─────┬──────┘
+        ┌───────────┼───────────┐
+        │           │           │
+┌───────▼─────┐ ┌───▼────┐ ┌───▼──────┐
+│Project      │ │User    │ │Legacy    │
+│(Qwen3)      │ │Profile │ │Ingestion │
+│4096-dim     │ │(Qwen3) │ │(Qwen3)   │
+└─────────────┘ │4096-dim│ │4096-dim  │
+                └────────┘ └──────────┘
 ```
 
 ## 3. Codebase Components to Replace
@@ -167,51 +183,57 @@ export interface EmbeddingConfig {
 }
 ```
 
-## 4. New Components to Create
+## 4. Implementation Strategy: Extend Local-Model Plugin
 
-### 4.1. Qwen3 Embedding Server
+### 4.1. Plugin Architecture Benefits
 
-#### **Server Implementation Options**
+**Leverage Existing Infrastructure**:
+- Reuse existing `ModelRouterService` for embedding routing
+- Extend current `local-model` plugin instead of creating new systems
+- Follow established plugin patterns in Wooster
 
-**Option A: MLX Server (macOS Apple Silicon)**
-```bash
-# MLX-based server for Apple Silicon
-mlx_lm.server --model Qwen/Qwen3-Embedding-4B --port 8002
+**Clean Separation of Concerns**:
+- Default users: No changes, no complexity
+- Local model users: All local functionality in one place
+- Easy to enable/disable entire local model stack
+
+### 4.2. Plugin Extension Points
+
+#### **Extend: `src/plugins/local-model/index.ts`**
+**Current**: Only handles chat model routing
+**Add**: Embedding model routing and health checks
+
+#### **Extend: `src/routing/ModelRouterService.ts`**  
+**Current**: Routes chat models based on task
+**Add**: Route embeddings based on provider configuration
+
+#### **Add: Local Model Server Management**
+**Option A**: MLX server for both chat + embeddings
+**Option B**: Separate servers (chat on :8000, embeddings on :8001)
+**Option C**: Unified server with multiple endpoints
+
+### 4.3. Configuration Integration
+
+**Extend existing local model config**:
+```json
+"routing": {
+  "providers": {
+    "local": {
+      "enabled": false,
+      "serverUrl": "http://localhost:8000",
+      "models": {
+        "chat": "mlx-community/Qwen2.5-7B-Instruct-4bit",
+        "embedding": "Qwen/Qwen3-Embedding-4B"
+      },
+      "embeddings": {
+        "enabled": false,
+        "serverUrl": "http://localhost:8001",
+        "fallbackToCloud": true
+      }
+    }
+  }
+}
 ```
-
-**Option B: vLLM Server (Linux/CUDA)**
-```bash
-# vLLM server for CUDA/ROCm
-python -m vllm.entrypoints.openai.api_server \
-  --model Qwen/Qwen3-Embedding-4B \
-  --port 8002 \
-  --embedding-mode
-```
-
-**Option C: Custom Python Server**
-```python
-# Custom server using transformers + FastAPI
-# For maximum control and compatibility
-```
-
-### 4.2. Wooster Integration Components
-
-#### **File: `src/embeddings/Qwen3EmbeddingService.ts`** (New)
-- LangChain-compatible `Embeddings` class
-- Health checks for Qwen3 server
-- Batch processing optimization
-- Error handling and fallbacks
-
-#### **File: `src/embeddings/EmbeddingRouterService.ts`** (New)
-- Route embedding requests to appropriate service
-- Health monitoring for local Qwen3 server
-- Fallback to cloud services when local unavailable
-- Configuration-driven provider selection
-
-#### **File: `src/embeddings/index.ts`** (New)
-- Factory functions for creating embedding services
-- Unified interface for all embedding operations
-- Migration utilities for existing vector stores
 
 ## 5. Vector Store Migration Challenges
 
@@ -291,29 +313,29 @@ projects/my-project/vectorStore/
 
 ## 7. Implementation Phases
 
-### 7.1. Phase 1: Infrastructure (Week 1)
-- [ ] Deploy Qwen3-Embedding-4B local server
-- [ ] Create `Qwen3EmbeddingService` class
-- [ ] Add embedding configuration to config system
-- [ ] Implement health checks and fallback logic
+### 7.1. Phase 1: Plugin Extension (Week 1)
+- [ ] Extend `local-model` plugin with embedding support
+- [ ] Add embedding routing to `ModelRouterService`
+- [ ] Create embedding server health check system
+- [ ] Update plugin configuration schema
 
-### 7.2. Phase 2: Integration (Week 2)  
-- [ ] Replace embedding services in core modules
-- [ ] Update project store manager
-- [ ] Modify user profile embedding system
-- [ ] Test compatibility with existing workflows
+### 7.2. Phase 2: Core Integration (Week 2)  
+- [ ] Modify embedding factory functions to check local-model plugin
+- [ ] Add fallback logic: local → cloud embeddings
+- [ ] Update vector store initialization to use routed embeddings
+- [ ] Test embedding routing with existing workflows
 
-### 7.3. Phase 3: Migration (Week 3)
-- [ ] Create vector store migration utilities
-- [ ] Implement gradual migration strategy
-- [ ] Rebuild critical project vector stores
-- [ ] Validate embedding quality and performance
+### 7.3. Phase 3: Optional Migration (Week 3)
+- [ ] Create **optional** vector store migration utilities
+- [ ] Allow users to choose: keep current or migrate to local
+- [ ] Provide migration validation and rollback tools
+- [ ] Document migration process and trade-offs
 
-### 7.4. Phase 4: Production (Week 4)
-- [ ] Switch default embedding provider to Qwen3
-- [ ] Monitor performance and stability
-- [ ] Clean up legacy embedding references
-- [ ] Update documentation and user guides
+### 7.4. Phase 4: Documentation & Polish (Week 4)
+- [ ] Update local-model plugin documentation
+- [ ] Create setup guide for local embedding server
+- [ ] Add configuration examples and troubleshooting
+- [ ] Monitor plugin adoption and gather feedback
 
 ## 8. Risk Assessment
 
@@ -345,18 +367,29 @@ projects/my-project/vectorStore/
 
 ## 10. Conclusion
 
-The migration to Qwen3-Embedding-4B represents a significant architectural change that will:
+The **plugin-based approach** for local embeddings respects Wooster's core principles:
 
-✅ **Benefits**:
-- Complete local privacy for embeddings
-- State-of-the-art embedding quality  
-- No API rate limits or costs
-- Unified embedding model across all use cases
+✅ **KISS (Keep It Simple)**:
+- Default behavior unchanged - no complexity for existing users
+- Local embeddings only added when explicitly enabled
+- Leverages existing plugin architecture
 
-⚠️ **Challenges**:
-- Complete vector store rebuild required
-- Significant hardware requirements
-- Complex migration process
-- Potential performance impact
+✅ **Modularity**:
+- All local model functionality contained in local-model plugin
+- Clean separation between local and cloud embedding providers
+- Easy to enable/disable entire local stack
 
-The migration should be approached carefully with a phased rollout, comprehensive testing, and robust fallback mechanisms to ensure system stability throughout the transition. 
+✅ **Maintainability**:
+- No breaking changes to existing codebase
+- Reuses existing `ModelRouterService` infrastructure
+- Optional migration - users choose when/if to switch
+- Fallback mechanisms ensure system reliability
+
+### **Recommended Approach**:
+
+1. **Default**: Keep current mixed embedding architecture (OpenAI + HuggingFace)
+2. **Optional**: Extend local-model plugin to support embeddings
+3. **User Choice**: Allow gradual, project-by-project migration to local embeddings
+4. **Fallback**: Always support cloud embeddings as backup
+
+This approach minimizes risk, maximizes user choice, and maintains system stability while providing a clear path for users who want complete local model deployment. 
