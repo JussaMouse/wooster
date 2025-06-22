@@ -106,6 +106,20 @@ export interface ModelRoutingConfig {
       models: Record<string, string>;
       modelsDir?: string;
       healthCheckInterval?: number;
+      embeddings?: {
+        enabled: boolean;
+        serverUrl: string;
+        projects?: {
+          enabled: boolean;
+          model: string;
+          dimensions: number;
+        };
+        userProfile?: {
+          enabled: boolean;
+          model: string;
+          dimensions: number;
+        };
+      };
     };
     anthropic?: {
       enabled: boolean;

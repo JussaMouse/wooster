@@ -1,22 +1,16 @@
 import { Document } from 'langchain/document'
 import { FaissStore } from '@langchain/community/vectorstores/faiss'
-import { HuggingFaceTransformersEmbeddings } from '@langchain/community/embeddings/hf_transformers'
 import path from 'path';
 import fs from 'fs';
+import { EmbeddingService } from './embeddings/EmbeddingService';
+import { getConfig } from './configLoader';
 
 const DEFAULT_VECTOR_STORE_PATH = path.join(process.cwd(), 'vector_data', 'default_store');
 export const USER_PROFILE_VECTOR_STORE_PATH = path.join(process.cwd(), 'vector_data', 'user_profile_store');
 
-// Initialize the embeddings model (using a singleton pattern)
-let embeddingsModel: HuggingFaceTransformersEmbeddings | null = null;
-
 export function getEmbeddingsModel() {
-  if (!embeddingsModel) {
-    embeddingsModel = new HuggingFaceTransformersEmbeddings({
-      modelName: "sentence-transformers/all-MiniLM-L12-v2",
-    });
-  }
-  return embeddingsModel;
+  const config = getConfig();
+  return EmbeddingService.getUserProfileEmbeddings(config).getEmbeddings();
 }
 
 /**
