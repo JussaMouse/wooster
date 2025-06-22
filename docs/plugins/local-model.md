@@ -337,4 +337,700 @@ LOCALMLX_ENABLE_CACHE=true
 
 ---
 
+## 12. Local Embedding Models Implementation Plan
+
+### 12.1. Current Embedding Architecture in Wooster
+
+Wooster currently uses **3 different embedding models** across different components:
+
+#### **Project Knowledge Embeddings**
+- **Model**: `OpenAI text-embedding-3-small` (1536 dimensions)
+- **Usage**: Project document embeddings for RAG/knowledge base queries  
+- **Location**: `projects/*/vectorStore/`
+- **Files**: `src/projectStoreManager.ts`, `src/agentExecutorService.ts`
+
+#### **User Profile & Memory Embeddings**
+- **Model**: `HuggingFace sentence-transformers/all-MiniLM-L12-v2` (384 dimensions)
+- **Usage**: User profile vector store, persistent memory operations
+- **Location**: `./vector_data/user_profile_store`
+- **Files**: `src/memoryVector.ts`, `src/plugins/userProfile/userProfileVectorStore.ts`
+
+#### **Legacy Project Ingestion**
+- **Model**: `HuggingFace sentence-transformers/all-MiniLM-L12-v2` (384 dimensions)
+- **Usage**: Document processing during project creation/ingestion
+- **Files**: `src/projectIngestor.ts`
+
+### 12.2. Local Embedding Integration Strategy
+
+#### **Design Principles**
+1. **Independent Configuration**: Projects and user profile embeddings can be configured separately
+2. **Plugin-Based**: All local embedding functionality lives in the local-model plugin
+3. **Fallback Support**: Graceful degradation to cloud embeddings when local unavailable
+4. **Zero Breaking Changes**: Default behavior unchanged, local embeddings are opt-in
+
+#### **Target Architecture**
+```typescript
+// Enhanced configuration in config/default.json
+"routing": {
+  "providers": {
+    "local": {
+      "enabled": false,
+      "serverUrl": "http://localhost:8000",
+      "models": {
+        "chat": "mlx-community/Qwen2.5-7B-Instruct-4bit",
+        "embedding": "BAAI/bge-large-en-v1.5"
+      },
+      "embeddings": {
+        "enabled": false,
+        "serverUrl": "http://localhost:8001", // Separate embedding server
+        "projects": {
+          "enabled": false,
+          "model": "BAAI/bge-large-en-v1.5",
+          "dimensions": 1024,
+          "fallbackToCloud": true
+        },
+        "userProfile": {
+          "enabled": false, 
+          "model": "sentence-transformers/all-MiniLM-L12-v2",
+          "dimensions": 384,
+          "fallbackToCloud": true
+        }
+      }
+    }
+  }
+}
+```
+
+### 12.3. Implementation Plan
+
+#### **Phase 1: Core Infrastructure (Week 1)**
+
+##### **Step 1: Extend LocalModelClient for Embeddings**
+**File**: `src/routing/LocalModelClient.ts`
+```typescript
+// Add embedding support to existing LocalModelClient
+export class LocalModelClient {
+  // ... existing chat methods ...
+
+  /**
+   * Generate embeddings using local model
+   */
+  async generateEmbeddings(texts: string[], options?: {
+    model?: string;
+    normalize?: boolean;
+  }): Promise<number[][]> {
+    const payload = {
+      model: options?.model || this.embeddingModel,
+      input: texts,
+      normalize: options?.normalize ?? true
+    };
+    
+    const res = await axios.post(`${this.embeddingServerUrl}/v1/embeddings`, payload, { 
+      timeout: this.timeout 
+    });
+    
+    if (res.status === 200 && res.data?.data) {
+      return res.data.data.map((item: any) => item.embedding);
+    }
+    throw new Error('Local embedding generation failed');
+  }
+
+  /**
+   * Health check for embedding server
+   */
+  async isEmbeddingServerHealthy(): Promise<boolean> {
+    try {
+      const res = await axios.get(`${this.embeddingServerUrl}/health`, { 
+        timeout: this.timeout 
+      });
+      return res.status === 200 && res.data?.status === 'ok';
+    } catch (err) {
+      return false;
+    }
+  }
+}
+```
+
+##### **Step 2: Create Local Embedding Service**
+**File**: `src/plugins/local-model/LocalEmbeddingService.ts` (new)
+```typescript
+import { Embeddings } from '@langchain/core/embeddings';
+import { LocalModelClient } from '../../routing/LocalModelClient';
+import { log, LogLevel } from '../../logger';
+
+export class LocalEmbeddingService extends Embeddings {
+  private client: LocalModelClient;
+  private model: string;
+  private dimensions: number;
+  private fallbackService?: Embeddings;
+
+  constructor(options: {
+    client: LocalModelClient;
+    model: string;
+    dimensions: number;
+    fallbackService?: Embeddings;
+  }) {
+    super();
+    this.client = options.client;
+    this.model = options.model;
+    this.dimensions = options.dimensions;
+    this.fallbackService = options.fallbackService;
+  }
+
+  async embedDocuments(texts: string[]): Promise<number[][]> {
+    try {
+      // Check if local embedding server is healthy
+      const isHealthy = await this.client.isEmbeddingServerHealthy();
+      if (!isHealthy) {
+        throw new Error('Local embedding server unavailable');
+      }
+
+      const embeddings = await this.client.generateEmbeddings(texts, {
+        model: this.model
+      });
+      
+      log(LogLevel.DEBUG, `Generated ${embeddings.length} embeddings locally using ${this.model}`);
+      return embeddings;
+      
+    } catch (error) {
+      log(LogLevel.WARN, `Local embedding failed: ${error.message}, falling back to cloud`);
+      
+      if (this.fallbackService) {
+        return await this.fallbackService.embedDocuments(texts);
+      }
+      throw error;
+    }
+  }
+
+  async embedQuery(text: string): Promise<number[]> {
+    const embeddings = await this.embedDocuments([text]);
+    return embeddings[0];
+  }
+}
+```
+
+##### **Step 3: Extend ModelRouterService for Embeddings**
+**File**: `src/routing/ModelRouterService.ts`
+```typescript
+export class ModelRouterService {
+  // ... existing properties ...
+  
+  // New embedding routing properties
+  private projectEmbeddingService: Embeddings | null = null;
+  private userProfileEmbeddingService: Embeddings | null = null;
+
+  constructor(config: AppConfig) {
+    // ... existing initialization ...
+    
+    // Initialize embedding services if local embeddings enabled
+    this.initializeEmbeddingServices();
+  }
+
+  private initializeEmbeddingServices(): void {
+    const embeddingConfig = this.routingConfig.providers.local?.embeddings;
+    if (!embeddingConfig?.enabled) return;
+
+    // Initialize project embeddings
+    if (embeddingConfig.projects?.enabled) {
+      const fallback = new OpenAIEmbeddings({
+        modelName: this.config.openai.embeddingModelName,
+        openAIApiKey: this.config.openai.apiKey
+      });
+
+      this.projectEmbeddingService = new LocalEmbeddingService({
+        client: this.localModelClient!,
+        model: embeddingConfig.projects.model,
+        dimensions: embeddingConfig.projects.dimensions,
+        fallbackService: embeddingConfig.projects.fallbackToCloud ? fallback : undefined
+      });
+    }
+
+    // Initialize user profile embeddings  
+    if (embeddingConfig.userProfile?.enabled) {
+      const fallback = new HuggingFaceTransformersEmbeddings({
+        modelName: "sentence-transformers/all-MiniLM-L12-v2"
+      });
+
+      this.userProfileEmbeddingService = new LocalEmbeddingService({
+        client: this.localModelClient!,
+        model: embeddingConfig.userProfile.model,
+        dimensions: embeddingConfig.userProfile.dimensions,
+        fallbackService: embeddingConfig.userProfile.fallbackToCloud ? fallback : undefined
+      });
+    }
+  }
+
+  /**
+   * Get embedding service for project knowledge
+   */
+  getProjectEmbeddingService(): Embeddings {
+    return this.projectEmbeddingService || new OpenAIEmbeddings({
+      modelName: this.config.openai.embeddingModelName,
+      openAIApiKey: this.config.openai.apiKey
+    });
+  }
+
+  /**
+   * Get embedding service for user profile/memory
+   */
+  getUserProfileEmbeddingService(): Embeddings {
+    return this.userProfileEmbeddingService || new HuggingFaceTransformersEmbeddings({
+      modelName: "sentence-transformers/all-MiniLM-L12-v2"
+    });
+  }
+}
+```
+
+#### **Phase 2: Integration Points (Week 2)**
+
+##### **Step 4: Update Project Store Manager**
+**File**: `src/projectStoreManager.ts`
+```typescript
+// Replace direct OpenAI embedding instantiation
+import { ModelRouterService } from './routing/ModelRouterService';
+
+export async function initializeProjectVectorStore(
+  projectName: string, 
+  projectPath: string, 
+  embeddings: OpenAIEmbeddings, // Keep for backward compatibility
+  appConfig: AppConfig
+): Promise<FaissStore> {
+  // Use router service if available, otherwise use provided embeddings
+  const routerService = ModelRouterService.getInstance();
+  const embeddingService = routerService ? 
+    routerService.getProjectEmbeddingService() : 
+    embeddings;
+
+  // ... rest of function uses embeddingService instead of embeddings
+}
+```
+
+##### **Step 5: Update Memory Vector Service**
+**File**: `src/memoryVector.ts`
+```typescript
+import { ModelRouterService } from './routing/ModelRouterService';
+
+let embeddingsModel: Embeddings | null = null;
+
+export function getEmbeddingsModel(): Embeddings {
+  if (!embeddingsModel) {
+    // Try to use local model router first
+    const routerService = ModelRouterService.getInstance();
+    if (routerService) {
+      embeddingsModel = routerService.getUserProfileEmbeddingService();
+    } else {
+      // Fallback to current HuggingFace model
+      embeddingsModel = new HuggingFaceTransformersEmbeddings({
+        modelName: "sentence-transformers/all-MiniLM-L12-v2",
+      });
+    }
+  }
+  return embeddingsModel;
+}
+```
+
+##### **Step 6: Update Project Ingestion**
+**File**: `src/projectIngestor.ts`
+```typescript
+// Update to use router service
+import { ModelRouterService } from './routing/ModelRouterService';
+
+export async function ingestProjectDocuments(
+  projectPath: string,
+  projectName: string
+): Promise<void> {
+  const routerService = ModelRouterService.getInstance();
+  const embeddings = routerService ? 
+    routerService.getUserProfileEmbeddingService() :
+    new HuggingFaceTransformersEmbeddings({ 
+      modelName: 'sentence-transformers/all-MiniLM-L12-v2' 
+    });
+
+  // ... rest of function uses embeddings service
+}
+```
+
+#### **Phase 3: Local Embedding Server Setup (Week 3)**
+
+##### **Step 7: Python Embedding Server**
+**File**: `scripts/embedding_server.py` (new)
+```python
+#!/usr/bin/env python3
+"""
+Local embedding server for Wooster
+Provides OpenAI-compatible embedding API using local models
+"""
+
+import asyncio
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import List, Optional
+import torch
+from sentence_transformers import SentenceTransformer
+import uvicorn
+import os
+from pathlib import Path
+
+app = FastAPI(title="Wooster Local Embedding Server")
+
+# Model cache
+models = {}
+
+class EmbeddingRequest(BaseModel):
+    input: List[str]
+    model: str
+    normalize: Optional[bool] = True
+
+class EmbeddingResponse(BaseModel):
+    data: List[dict]
+    model: str
+    usage: dict
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "models_loaded": list(models.keys())}
+
+@app.post("/v1/embeddings")
+async def create_embeddings(request: EmbeddingRequest):
+    try:
+        # Load model if not cached
+        if request.model not in models:
+            models[request.model] = SentenceTransformer(request.model)
+        
+        model = models[request.model]
+        
+        # Generate embeddings
+        embeddings = model.encode(
+            request.input,
+            normalize_embeddings=request.normalize,
+            convert_to_tensor=False
+        )
+        
+        # Format response to match OpenAI API
+        data = []
+        for i, embedding in enumerate(embeddings):
+            data.append({
+                "object": "embedding",
+                "index": i,
+                "embedding": embedding.tolist()
+            })
+        
+        return EmbeddingResponse(
+            data=data,
+            model=request.model,
+            usage={
+                "prompt_tokens": sum(len(text.split()) for text in request.input),
+                "total_tokens": sum(len(text.split()) for text in request.input)
+            }
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    port = int(os.getenv("EMBEDDING_SERVER_PORT", 8001))
+    uvicorn.run(app, host="0.0.0.0", port=port)
+```
+
+##### **Step 8: Server Management Script**
+**File**: `scripts/start_embedding_server.sh` (new)
+```bash
+#!/bin/bash
+# Start local embedding server for Wooster
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EMBEDDING_PORT=${EMBEDDING_SERVER_PORT:-8001}
+MODELS_DIR=${LOCAL_EMBEDDING_MODELS_DIR:-"$HOME/.cache/wooster_embeddings"}
+
+echo "🚀 Starting Wooster Local Embedding Server..."
+echo "   Port: $EMBEDDING_PORT"
+echo "   Models cache: $MODELS_DIR"
+
+# Create models directory
+mkdir -p "$MODELS_DIR"
+
+# Set environment variables
+export TRANSFORMERS_CACHE="$MODELS_DIR"
+export SENTENCE_TRANSFORMERS_HOME="$MODELS_DIR"
+export EMBEDDING_SERVER_PORT="$EMBEDDING_PORT"
+
+# Check if Python environment exists
+if [ ! -d "$SCRIPT_DIR/../.venv" ]; then
+    echo "⚠️  Python virtual environment not found. Setting up..."
+    python3 -m venv "$SCRIPT_DIR/../.venv"
+    source "$SCRIPT_DIR/../.venv/bin/activate"
+    pip install fastapi uvicorn sentence-transformers torch
+else
+    source "$SCRIPT_DIR/../.venv/bin/activate"
+fi
+
+# Start server
+echo "🔥 Server starting on http://localhost:$EMBEDDING_PORT"
+python "$SCRIPT_DIR/embedding_server.py"
+```
+
+#### **Phase 4: Configuration & Documentation (Week 4)**
+
+##### **Step 9: Update Configuration Schema**
+**File**: `src/configLoader.ts`
+```typescript
+export interface LocalEmbeddingConfig {
+  enabled: boolean;
+  serverUrl: string;
+  projects: {
+    enabled: boolean;
+    model: string;
+    dimensions: number;
+    fallbackToCloud: boolean;
+  };
+  userProfile: {
+    enabled: boolean;
+    model: string;
+    dimensions: number;
+    fallbackToCloud: boolean;
+  };
+}
+
+export interface LocalProviderConfig {
+  enabled: boolean;
+  serverUrl: string;
+  autoStart: boolean;
+  models: Record<string, string>;
+  modelsDir?: string;
+  healthCheckInterval?: number;
+  embeddings?: LocalEmbeddingConfig; // Add embedding config
+}
+```
+
+##### **Step 10: Update Plugin Registration**
+**File**: `src/plugins/local-model/index.ts`
+```typescript
+export default class LocalModelPlugin implements Plugin {
+  // ... existing properties ...
+
+  async initialize(): Promise<void> {
+    // ... existing initialization ...
+
+    // Initialize embedding services if enabled
+    const embeddingConfig = this.config.routing?.providers?.local?.embeddings;
+    if (embeddingConfig?.enabled) {
+      await this.initializeEmbeddingServices();
+    }
+  }
+
+  private async initializeEmbeddingServices(): Promise<void> {
+    const embeddingConfig = this.config.routing!.providers.local!.embeddings!;
+    
+    log(LogLevel.INFO, 'LocalModelPlugin: Initializing local embedding services');
+    
+    // Health check embedding server
+    const client = new LocalModelClient({
+      serverUrl: embeddingConfig.serverUrl,
+      model: 'dummy', // Not used for embeddings
+      timeout: 5000
+    });
+
+    const isHealthy = await client.isEmbeddingServerHealthy();
+    if (!isHealthy) {
+      log(LogLevel.WARN, 'LocalModelPlugin: Embedding server not available, will use fallback');
+    } else {
+      log(LogLevel.INFO, 'LocalModelPlugin: Local embedding server is healthy');
+    }
+  }
+
+  getAgentTools(): DynamicTool[] {
+    const tools = [...this.baseTools];
+
+    // Add embedding management tools
+    if (this.config.routing?.providers?.local?.embeddings?.enabled) {
+      tools.push(
+        this.createEmbeddingHealthCheckTool(),
+        this.createEmbeddingModelListTool()
+      );
+    }
+
+    return tools;
+  }
+
+  private createEmbeddingHealthCheckTool(): DynamicTool {
+    return new DynamicTool({
+      name: "check_local_embedding_health",
+      description: "Check if local embedding server is running and healthy",
+      func: async () => {
+        // Implementation for health check
+        return "Local embedding server status: healthy";
+      }
+    });
+  }
+
+  private createEmbeddingModelListTool(): DynamicTool {
+    return new DynamicTool({
+      name: "list_embedding_models",
+      description: "List available local embedding models",
+      func: async () => {
+        // Implementation for model listing
+        return "Available embedding models: BAAI/bge-large-en-v1.5, sentence-transformers/all-MiniLM-L12-v2";
+      }
+    });
+  }
+}
+```
+
+### 12.4. Recommended Embedding Models
+
+#### **For Project Knowledge (High Quality)**
+- **BAAI/bge-large-en-v1.5** (1024 dimensions)
+  - Excellent for document retrieval
+  - Good balance of quality vs. size
+  - Widely used and well-tested
+
+- **sentence-transformers/all-mpnet-base-v2** (768 dimensions)
+  - High quality semantic understanding
+  - Good for diverse document types
+
+#### **For User Profile/Memory (Efficiency)**
+- **sentence-transformers/all-MiniLM-L12-v2** (384 dimensions)
+  - Current model, proven performance
+  - Fast inference, low memory usage
+  - Good for personal data embeddings
+
+- **BAAI/bge-small-en-v1.5** (384 dimensions)
+  - Alternative to MiniLM with potentially better quality
+  - Similar dimensions for easy migration
+
+### 12.5. Migration Strategy
+
+#### **Dimension Compatibility**
+- **User Profile**: Keep 384 dimensions (no migration needed)
+- **Projects**: Support both 1536 (OpenAI) and 1024 (local) dimensions
+- **New Projects**: Use local embeddings by default when enabled
+- **Existing Projects**: Keep current embeddings, optional migration
+
+#### **Gradual Migration Approach**
+1. **Phase 1**: New projects use local embeddings
+2. **Phase 2**: Provide migration tool for existing projects
+3. **Phase 3**: User choice on per-project basis
+4. **Phase 4**: Optional bulk migration utility
+
+### 12.6. Performance Considerations
+
+#### **Local Embedding Server Performance**
+- **Cold Start**: 10-30 seconds (model loading)
+- **Inference**: 10-100ms per batch (depending on model size)
+- **Memory Usage**: 1-4GB (depending on model)
+- **Throughput**: 500-2000 embeddings/second
+
+#### **Resource Requirements**
+- **CPU**: Modern multi-core processor (Apple Silicon preferred)
+- **RAM**: 8GB minimum, 16GB recommended
+- **Storage**: 2-8GB for model weights
+- **Network**: Not required once models downloaded
+
+### 12.7. Configuration Examples
+
+#### **Basic Local Embeddings (User Profile Only)**
+```json
+{
+  "routing": {
+    "providers": {
+      "local": {
+        "enabled": true,
+        "embeddings": {
+          "enabled": true,
+          "serverUrl": "http://localhost:8001",
+          "userProfile": {
+            "enabled": true,
+            "model": "sentence-transformers/all-MiniLM-L12-v2",
+            "dimensions": 384,
+            "fallbackToCloud": true
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+#### **Full Local Embeddings (Projects + User Profile)**
+```json
+{
+  "routing": {
+    "providers": {
+      "local": {
+        "enabled": true,
+        "embeddings": {
+          "enabled": true,
+          "serverUrl": "http://localhost:8001",
+          "projects": {
+            "enabled": true,
+            "model": "BAAI/bge-large-en-v1.5",
+            "dimensions": 1024,
+            "fallbackToCloud": true
+          },
+          "userProfile": {
+            "enabled": true,
+            "model": "sentence-transformers/all-MiniLM-L12-v2", 
+            "dimensions": 384,
+            "fallbackToCloud": true
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+#### **Privacy-First Configuration (No Fallback)**
+```json
+{
+  "routing": {
+    "providers": {
+      "local": {
+        "enabled": true,
+        "embeddings": {
+          "enabled": true,
+          "serverUrl": "http://localhost:8001",
+          "projects": {
+            "enabled": true,
+            "model": "BAAI/bge-large-en-v1.5",
+            "dimensions": 1024,
+            "fallbackToCloud": false
+          },
+          "userProfile": {
+            "enabled": true,
+            "model": "sentence-transformers/all-MiniLM-L12-v2",
+            "dimensions": 384,
+            "fallbackToCloud": false
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### 12.8. Benefits of Local Embeddings
+
+#### **Privacy & Security**
+- **Complete Privacy**: No document content sent to external APIs
+- **Data Sovereignty**: All embeddings generated and stored locally
+- **Compliance**: Easier to meet data protection requirements
+- **Offline Capability**: Works without internet connection
+
+#### **Cost & Performance**
+- **No API Costs**: Unlimited embedding generation
+- **Consistent Performance**: No network latency or rate limits
+- **Batch Processing**: Efficient bulk document processing
+- **Custom Models**: Option to fine-tune models for specific domains
+
+#### **Control & Flexibility**
+- **Model Choice**: Select optimal models for specific use cases
+- **Version Control**: Pin specific model versions
+- **Custom Configuration**: Tune parameters for specific needs
+- **Independent Scaling**: Scale embedding generation independently
+
+---
+
 *This document provides a comprehensive overview of local MLX integration options. Implementation will begin with the OpenAI-compatible server approach for fastest time-to-value, with expansion to more advanced features based on user needs and feedback.* 
