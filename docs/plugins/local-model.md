@@ -1034,3 +1034,445 @@ export default class LocalModelPlugin implements Plugin {
 ---
 
 *This document provides a comprehensive overview of local MLX integration options. Implementation will begin with the OpenAI-compatible server approach for fastest time-to-value, with expansion to more advanced features based on user needs and feedback.* 
+
+# Local Model Plugin
+
+The Local Model Plugin enables Wooster to route chat requests and embeddings to locally running models instead of cloud APIs. This provides enhanced privacy, cost control, and offline capabilities.
+
+## Features
+
+- **Chat Model Routing**: Route conversations to local MLX, Ollama, or other local language models
+- **Local Embeddings**: Use local embedding models for projects and user profiles  
+- **Health Monitoring**: Track status and performance of local model services
+- **Graceful Fallbacks**: Automatically fall back to cloud services when local models are unavailable
+- **Zero Configuration**: Works out of the box with sensible defaults
+
+## Quick Start
+
+1. **Enable the plugin** in your Wooster configuration
+2. **Start your local model server** (see guides below)
+3. **Configure routing** to use local models
+4. **Enjoy private, local AI** with Wooster
+
+## Configuration
+
+### Basic Configuration
+
+Add to your `config/default.json`:
+
+```json
+{
+  "routing": {
+    "providers": {
+      "local": {
+        "enabled": true,
+        "chat": {
+          "baseURL": "http://localhost:8080",
+          "model": "mlx-community/Llama-3.2-3B-Instruct-4bit"
+        },
+        "embeddings": {
+          "enabled": true,
+          "projects": {
+            "enabled": true,
+            "model": "sentence-transformers/all-mpnet-base-v2",
+            "dimensions": 768
+          },
+          "userProfile": {
+            "enabled": true,
+            "model": "sentence-transformers/all-mpnet-base-v2", 
+            "dimensions": 768
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### Privacy-First Configuration
+
+For maximum privacy, route everything locally:
+
+```json
+{
+  "routing": {
+    "defaultProvider": "local",
+    "providers": {
+      "local": {
+        "enabled": true,
+        "chat": {
+          "baseURL": "http://localhost:8080",
+          "model": "mlx-community/Llama-3.2-3B-Instruct-4bit"
+        },
+        "embeddings": {
+          "enabled": true,
+          "projects": {
+            "enabled": true,
+            "model": "sentence-transformers/all-mpnet-base-v2",
+            "dimensions": 768
+          },
+          "userProfile": {
+            "enabled": true,
+            "model": "sentence-transformers/all-mpnet-base-v2",
+            "dimensions": 768
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+## Local Server Setup Guides
+
+### Option 1: MLX Chat Server (Recommended for macOS)
+
+MLX provides excellent performance on Apple Silicon Macs.
+
+#### Installation
+
+```bash
+# Install MLX LM
+pip install mlx-lm
+
+# Or with conda
+conda install -c conda-forge mlx-lm
+```
+
+#### Running the Server
+
+**Same Machine as Wooster:**
+```bash
+# Start MLX server on localhost
+mlx_lm.server \
+  --model mlx-community/Llama-3.2-3B-Instruct-4bit \
+  --host 127.0.0.1 \
+  --port 8080 \
+  --max-tokens 2048
+```
+
+**Different Machine (Network Access):**
+```bash
+# Start MLX server accessible from network
+mlx_lm.server \
+  --model mlx-community/Llama-3.2-3B-Instruct-4bit \
+  --host 0.0.0.0 \
+  --port 8080 \
+  --max-tokens 2048
+
+# Update Wooster config to point to the server:
+# "baseURL": "http://YOUR_SERVER_IP:8080"
+```
+
+#### Recommended Models
+
+**Small & Fast (2-4GB RAM):**
+- `mlx-community/Llama-3.2-1B-Instruct-4bit`
+- `mlx-community/Qwen2.5-3B-Instruct-4bit`
+
+**Balanced (6-8GB RAM):**
+- `mlx-community/Llama-3.2-3B-Instruct-4bit` 
+- `mlx-community/Qwen2.5-7B-Instruct-4bit`
+
+**High Quality (12-16GB RAM):**
+- `mlx-community/Llama-3.1-8B-Instruct-4bit`
+- `mlx-community/Qwen2.5-14B-Instruct-4bit`
+
+### Option 2: Ollama (Cross-Platform)
+
+Ollama provides easy model management across platforms.
+
+#### Installation
+
+```bash
+# macOS/Linux
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Windows: Download from https://ollama.ai/download
+```
+
+#### Running the Server
+
+**Same Machine as Wooster:**
+```bash
+# Start Ollama (runs on localhost:11434 by default)
+ollama serve
+
+# Pull and run a model
+ollama pull llama3.2:3b
+ollama run llama3.2:3b
+```
+
+**Wooster Configuration for Ollama:**
+```json
+{
+  "routing": {
+    "providers": {
+      "local": {
+        "chat": {
+          "baseURL": "http://localhost:11434/v1",
+          "model": "llama3.2:3b"
+        }
+      }
+    }
+  }
+}
+```
+
+### Option 3: Local Embedding Server
+
+For projects that need local embeddings, you can run a dedicated embedding server.
+
+> **📖 Complete Setup Guide**: See [Local Embedding Server Setup Guide](../local-embedding-server-setup.md) for detailed installation, configuration, and troubleshooting instructions.
+
+#### Quick Start
+
+```bash
+# Install dependencies
+pip install fastapi uvicorn sentence-transformers torch
+
+# Create and run the server (see full guide for complete code)
+python embedding_server.py
+
+# Server will be available at http://localhost:8081
+```
+
+#### Wooster Configuration
+
+```json
+{
+  "routing": {
+    "providers": {
+      "local": {
+        "embeddings": {
+          "enabled": true,
+          "baseURL": "http://localhost:8081/v1",
+          "projects": {
+            "enabled": true,
+            "model": "sentence-transformers/all-mpnet-base-v2",
+            "dimensions": 768
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+## Performance Recommendations
+
+### Hardware Requirements
+
+**Minimum (Chat Only):**
+- 8GB RAM
+- 4 CPU cores
+- Apple Silicon M1+ or modern x64 CPU
+
+**Recommended (Chat + Embeddings):**
+- 16GB RAM  
+- 8 CPU cores
+- Apple Silicon M2+ or modern x64 CPU with AVX2
+
+**Optimal (Multiple Models):**
+- 32GB RAM
+- 12+ CPU cores
+- Apple Silicon M3+ or modern x64 CPU with AVX-512
+
+### Model Selection Guide
+
+**For Chat Models:**
+
+| Use Case | Model | RAM | Quality | Speed |
+|----------|-------|-----|---------|-------|
+| Quick responses | Llama-3.2-1B | 2-3GB | Good | Very Fast |
+| Balanced | Llama-3.2-3B | 4-6GB | Very Good | Fast |
+| High quality | Llama-3.1-8B | 12-16GB | Excellent | Moderate |
+
+**For Embedding Models:**
+
+| Model | Dimensions | RAM | Quality | Speed |
+|-------|------------|-----|---------|-------|
+| all-MiniLM-L6-v2 | 384 | ~100MB | Good | Very Fast |
+| all-MiniLM-L12-v2 | 384 | ~130MB | Very Good | Fast |
+| all-mpnet-base-v2 | 768 | ~440MB | Excellent | Moderate |
+
+## Troubleshooting
+
+### Common Issues
+
+**"Connection refused" errors:**
+- Check if the server is running: `curl http://localhost:8080/health`
+- Verify the port matches your configuration
+- Ensure firewall isn't blocking the port
+
+**"Model not found" errors:**
+- Verify the model name is correct
+- Check if the model is downloaded (for Ollama: `ollama list`)
+- Ensure sufficient disk space for model downloads
+
+**Slow performance:**
+- Reduce model size or use quantized versions
+- Increase system RAM
+- Use faster storage (SSD vs HDD)
+- Close other memory-intensive applications
+
+**Out of memory errors:**
+- Use smaller models or quantized versions
+- Reduce batch sizes in server configuration
+- Increase system swap/virtual memory
+
+### Health Monitoring
+
+The local-model plugin provides health checking tools:
+
+```bash
+# Check if local models are responding
+pnpm run dev -- --plugin local-model --action health-check
+
+# View local model status
+pnpm run dev -- --plugin local-model --action status
+```
+
+## Security Considerations
+
+### Network Security
+
+**Same Machine (Recommended):**
+- Use `127.0.0.1` or `localhost` for maximum security
+- No network exposure
+- Fastest performance
+
+**Network Access:**
+- Use `0.0.0.0` only when necessary
+- Consider VPN or private networks
+- Add authentication if exposing to internet
+- Use HTTPS in production
+
+### Data Privacy
+
+**Local Processing Benefits:**
+- No data sent to external APIs
+- Complete control over model and data
+- Compliance with strict privacy requirements
+- Offline operation capability
+
+## Advanced Configuration
+
+### Multiple Model Instances
+
+Run different models for different use cases:
+
+```bash
+# Terminal 1: Fast model for quick responses
+mlx_lm.server --model mlx-community/Llama-3.2-1B-Instruct-4bit --port 8080
+
+# Terminal 2: High-quality model for complex tasks  
+mlx_lm.server --model mlx-community/Llama-3.1-8B-Instruct-4bit --port 8081
+
+# Terminal 3: Embedding server
+python embedding_server.py --port 8082
+```
+
+### Load Balancing
+
+For high-throughput scenarios, run multiple instances:
+
+```bash
+# Instance 1
+mlx_lm.server --model llama-3.2-3b --port 8080 &
+
+# Instance 2  
+mlx_lm.server --model llama-3.2-3b --port 8081 &
+
+# Use a load balancer or configure Wooster to round-robin
+```
+
+### Docker Deployment
+
+Create `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+services:
+  mlx-server:
+    image: mlx-community/mlx-server:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - MODEL=mlx-community/Llama-3.2-3B-Instruct-4bit
+    volumes:
+      - ./models:/models
+    
+  embedding-server:
+    build: .
+    ports:
+      - "8081:8081"
+    environment:
+      - MODEL=sentence-transformers/all-mpnet-base-v2
+```
+
+## Integration Examples
+
+### TypeScript/JavaScript
+
+```typescript
+// Test local chat model
+const response = await fetch('http://localhost:8080/v1/chat/completions', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    model: 'llama-3.2-3b',
+    messages: [{ role: 'user', content: 'Hello!' }]
+  })
+});
+
+// Test local embeddings
+const embeddings = await fetch('http://localhost:8081/v1/embeddings', {
+  method: 'POST', 
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    input: 'Test text for embedding',
+    model: 'sentence-transformers/all-mpnet-base-v2'
+  })
+});
+```
+
+### Python
+
+```python
+import requests
+
+# Test chat model
+response = requests.post('http://localhost:8080/v1/chat/completions', json={
+    'model': 'llama-3.2-3b',
+    'messages': [{'role': 'user', 'content': 'Hello!'}]
+})
+
+# Test embeddings
+embeddings = requests.post('http://localhost:8081/v1/embeddings', json={
+    'input': 'Test text for embedding',
+    'model': 'sentence-transformers/all-mpnet-base-v2'
+})
+```
+
+## Best Practices
+
+1. **Start Small**: Begin with smaller models and scale up based on needs
+2. **Monitor Resources**: Keep an eye on RAM, CPU, and disk usage
+3. **Test Thoroughly**: Verify model responses meet your quality requirements
+4. **Plan for Fallbacks**: Always configure cloud fallbacks for reliability
+5. **Update Regularly**: Keep models and servers updated for security and performance
+6. **Document Configuration**: Maintain clear documentation of your local setup
+
+## Support
+
+For issues with the local-model plugin:
+1. Check the troubleshooting section above
+2. Review Wooster logs for error messages
+3. Test local servers independently before integration
+4. Consult the Wooster documentation for configuration help
+
+For model-specific issues:
+- **MLX**: [MLX Community](https://github.com/ml-explore/mlx)
+- **Ollama**: [Ollama Documentation](https://ollama.ai/docs)
+- **Sentence Transformers**: [Sentence Transformers Documentation](https://www.sbert.net/) 

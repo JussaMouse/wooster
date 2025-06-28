@@ -79,11 +79,11 @@ export class EmbeddingService {
       }, appConfig);
     }
 
-    // Fallback to current behavior (local L12 model)
+    // Fallback to current behavior (local MPNet model)
     return this.getInstance('userProfile-default', {
       provider: 'local',
-      model: 'sentence-transformers/all-MiniLM-L12-v2',
-      dimensions: 384
+      model: 'sentence-transformers/all-mpnet-base-v2',
+      dimensions: 768
     }, appConfig);
   }
 

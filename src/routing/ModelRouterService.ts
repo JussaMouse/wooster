@@ -10,6 +10,7 @@ import {
   ModelMetrics
 } from './types';
 import { getProfileForTask, ModelProfiles } from './profiles';
+import { LocalModelClient } from './LocalModelClient';
 
 /**
  * ModelRouterService - Core routing logic for Wooster's multi-model system
@@ -28,6 +29,11 @@ export class ModelRouterService {
   private routingDecisions: RoutingDecision[] = [];
   private modelMetrics = new Map<string, ModelMetrics>();
 
+  // Local model client (Phase 2)
+  private localModelClient: LocalModelClient | null = null;
+  private localModelHealthy: boolean = false;
+  private lastHealthCheck: number = 0;
+
   constructor(config: AppConfig) {
     this.config = config;
     this.routingConfig = config.routing || this.getDefaultRoutingConfig();
@@ -38,6 +44,16 @@ export class ModelRouterService {
       temperature: config.openai.temperature,
       openAIApiKey: config.openai.apiKey,
     });
+
+    // Phase 2: Initialize local model client if enabled
+    if (this.routingConfig.providers.local?.enabled) {
+      const localModelName = this.routingConfig.providers.local.models?.fast || 'mlx-community/Mistral-7B-Instruct-v0.3-4bit';
+      this.localModelClient = new LocalModelClient({
+        serverUrl: this.routingConfig.providers.local.serverUrl,
+        model: localModelName,
+        timeout: 10000
+      });
+    }
 
     log(LogLevel.INFO, `ModelRouter: Initialized with routing ${this.routingConfig.enabled ? 'enabled' : 'disabled'}`);
   }
@@ -71,21 +87,34 @@ export class ModelRouterService {
   }
 
   /**
-   * Future intelligent routing logic (Phase 2/3)
-   * Currently returns primary model but structured for future enhancement
+   * Phase 2/3: Intelligent routing logic
    */
   private async selectModelIntelligent(request: ModelRequest): Promise<BaseLanguageModel> {
-    // Phase 1: Direct passthrough
+    // Phase 2: Try local model first if enabled and healthy
+    if (this.localModelClient && this.routingConfig.providers.local.enabled) {
+      await this.checkLocalModelHealth();
+      if (this.localModelHealthy) {
+        // Return a wrapper for the local model client (to be implemented in Phase 2b)
+        // For now, just log and fallback to OpenAI
+        log(LogLevel.INFO, 'ModelRouter: Local model healthy, would route to local model (Phase 2b)');
+        // TODO: Return a LangChain-compatible wrapper for local model
+      } else {
+        log(LogLevel.WARN, 'ModelRouter: Local model unavailable, falling back to OpenAI');
+      }
+    }
+    // Fallback: OpenAI
     return this.primaryModel;
+  }
 
-    // Phase 2 will add:
-    // - Local model availability check
-    // - Simple fallback logic
-    
-    // Phase 3 will add:
-    // - Task-specific model selection
-    // - Performance-based routing
-    // - Cost optimization
+  /**
+   * Health check for local model (every 30s)
+   */
+  private async checkLocalModelHealth() {
+    const now = Date.now();
+    if (!this.localModelClient) return;
+    if (now - this.lastHealthCheck < 30000) return;
+    this.localModelHealthy = await this.localModelClient.isHealthy();
+    this.lastHealthCheck = now;
   }
 
   /**
