@@ -100,3 +100,8 @@ export class SchedulerService {
     return repo.getScheduleItemByKey(task_key);
   }
 }
+
+export function _resetForTesting(): void {
+  repository = null;
+  activeJobs.clear();
+}
