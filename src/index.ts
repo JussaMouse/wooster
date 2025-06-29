@@ -2,7 +2,11 @@ import 'dotenv/config'; // Load .env file into process.env
 import readline from 'readline';
 import { bootstrapLogger, applyLoggerConfig, log, LogLevel } from './logger';
 import { loadConfig, getConfig, AppConfig } from './configLoader';
-import { initScheduler, processCatchUpTasks, setAgentExecutionCallback } from './scheduler/schedulerService';
+import {
+  SchedulerService,
+  setCoreServices,
+  registerDirectScheduledFunction,
+} from './scheduler/schedulerService';
 import { initializeAgentExecutorService } from './agentExecutorService';
 import { setAgentConfig, agentRespond } from './agent';
 import { loadPlugins } from './pluginManager';
@@ -12,6 +16,7 @@ import { OpenAIEmbeddings } from "@langchain/openai";
 import path from 'path';
 import fs from 'fs';
 import { initializeProjectVectorStore } from './projectStoreManager';
+import { sendDailyReview } from './plugins/dailyReview';
 
 // Ensure project and user profile directories exist
 const projectBasePath = path.join(process.cwd(), 'projects');
@@ -114,24 +119,9 @@ export const mainReplManager = {
 
 async function schedulerAgentCallback(taskPayload: string): Promise<void> {
   log(LogLevel.INFO, `Scheduler invoking agent with payload:`, { payload: taskPayload });
-  
-  const defaultProjectForScheduledTasks = 'home'; 
-  // Pass an empty history or a system message indicating it's a scheduled task.
-  const historyForScheduledTask: Array<{ role: string; content: string }> = [
-    { role: 'system', content: `This is an automated task.` }
-  ];
-  
-  try {
-    // Assuming agentRespond can work without a specific taskKey if it's a scheduled task,
-    // or that the taskPayload contains all necessary info.
-    const response = await agentRespond(taskPayload, historyForScheduledTask, defaultProjectForScheduledTasks, true);
-    log(LogLevel.INFO, `Agent response to scheduled task (payload: ${taskPayload.substring(0,50)}...):`, { response });
-  } catch (error: any) {
-    log(LogLevel.ERROR, `Error executing scheduled agent task (payload: ${taskPayload.substring(0,50)}...):`, {
-      message: error.message,
-      stack: error.stack,
-    });
-    // Decide on retry/failure handling for the task based on the error
+  const core = getCoreServices(); // Assuming a way to get core services
+  if (core.agent) {
+    await core.agent.call({ input: taskPayload });
   }
 }
 
@@ -158,21 +148,32 @@ async function main() {
   }
   const projectVectorStore = await initializeProjectVectorStore(defaultProjectName, projectDir, embeddings, appConfig);
   
-  await initializeAgentExecutorService(
-    defaultProjectName,      // initialProjectName
-    projectDir,              // initialProjectPath
-    projectVectorStore,      // initialProjectStore
-    embeddings,              // initialEmbeddings
-    appConfig                // configForProjectStore
-  );
+  const agent = await initializeAgentExecutorService(embeddings, appConfig);
   log(LogLevel.INFO, "AgentExecutorService initialized.");
-  setAgentExecutionCallback(schedulerAgentCallback);
-  await initScheduler();
-  log(LogLevel.INFO, "SchedulerService initialized.");
+  
+  setCoreServices({ agent });
+
+  // Register direct functions for scheduling
+  registerDirectScheduledFunction('system.dailyReview.sendEmail', sendDailyReview);
+
+  // Seed the daily review task if it doesn't exist
+  const dailyReviewJob = await SchedulerService.getByKey('system.dailyReview.sendEmail');
+  if (!dailyReviewJob) {
+    await SchedulerService.create({
+      description: 'Sends the Daily Review email each morning.',
+      schedule_expression: '0 7 * * *', // 7:00 AM daily
+      payload: JSON.stringify({}), // Payload can be empty or have config
+      task_key: 'system.dailyReview.sendEmail',
+      task_handler_type: 'DIRECT_FUNCTION',
+    });
+    log(LogLevel.INFO, 'Seeded Daily Review schedule.');
+  }
+
+  await SchedulerService.start();
+  log(LogLevel.INFO, "SchedulerService started.");
+
   await loadPlugins();
   log(LogLevel.INFO, "Plugins loaded.");
-  await processCatchUpTasks();
-  log(LogLevel.INFO, "Catch-up tasks processed.");
 
   // Initial creation of mainRl
   mainRl = createAndConfigureMainRl();

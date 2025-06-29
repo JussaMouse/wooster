@@ -5,6 +5,7 @@ import { LogLevel } from '../logger';
 import { FaissStore } from '@langchain/community/vectorstores/faiss';
 import type { GmailPluginEmailArgs, GmailPluginSendEmailResult } from '../plugins/gmail/types';
 import type { NextActionsService as NextActionsServiceType } from '../plugins/nextActions/types';
+import { AgentExecutor } from "langchain/agents";
 
 export { LogLevel };
 
@@ -22,6 +23,7 @@ export interface EmailService {
  * A collection of core services that can be passed to plugins during initialization.
  */
 export interface CoreServices {
+  agent?: AgentExecutor;
   /** Provides access to the global application configuration. */
   getConfig(): AppConfig;
   /** Provides a logging function. */

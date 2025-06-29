@@ -240,18 +240,18 @@ export async function initializeAgentExecutorService(
   initialProjectStore: FaissStore,
   initialEmbeddings: OpenAIEmbeddings,
   configForProjectStore: AppConfig
-): Promise<void> { // This function's primary purpose is to set module-level state.
+): Promise<AgentExecutor> {
   agentExecutorInstance = null; // Reset agent executor to rebuild on re-initialization
   currentActiveProjectName = initialProjectName.trim();
-  currentActiveProjectPath = initialProjectPath.trim(); // Also good practice to trim paths
+  currentActiveProjectPath = initialProjectPath.trim();
   projectVectorStoreInstance = initialProjectStore;
-  embeddingsInstance = initialEmbeddings; 
-  projectStoreAppConfig = configForProjectStore; 
+  embeddingsInstance = initialEmbeddings;
+  projectStoreAppConfig = configForProjectStore;
 
-  log(LogLevel.INFO, `AgentExecutorService: Initialized with project "${currentActiveProjectName}". Vector Store ready.`);
-  // This service exposes its functions (like executeAgent, setActiveProject, getActiveProjectPath)
-  // as direct module exports, which pluginManager.ts then collects into the CoreServices object.
-  // So, no explicit return of these functions is needed here.
+  // Since we've reset the agent, we need to get the new one.
+  const executor = await getAgentExecutor();
+  log(LogLevel.INFO, `AgentExecutorService initialized for project: ${currentActiveProjectName}`);
+  return executor;
 }
 
 export async function setActiveProject(newProjectName: string): Promise<void> {
