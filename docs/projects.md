@@ -39,7 +39,8 @@ Example `projects.json`:
       *   `currentProjectName` is set to the base name of the project path.
       *   `createProjectStore(currentProjectName)` from `src/projectIngestor.ts` is called. This function:
           *   Finds all files within the newly created project directory.
-          *   Loads their content, splits it, generates embeddings, and builds a new, in-memory `FaissStore` specifically for this project.
+          *   Loads their content, splits it, generates embeddings, and builds a new, in-memory `MemoryVectorStore` specifically for this project.
+          *   It saves these processed chunks to a `vector_store.json` file inside the `vector_data/{project_name}/` directory. This allows for very fast startups on subsequent loads.
       *   The RAG chain is re-initialized (`initializeRagChain()`) to use this new project-specific vector store.
   3.  **Effect**: Wooster is now focused on the content (if any) of this newly created and activated project.
 
@@ -48,8 +49,8 @@ Example `projects.json`:
   2.  `createProjectStore(name)` is called. This function:
       *   If `<name>` is defined in `projects.json`, it uses those file paths/glob patterns.
       *   Otherwise, it assumes `<name>` corresponds to a directory at `projects/<name>/`.
-      *   It reads all relevant files, processes them (loads, splits, embeds), and constructs a new, in-memory `FaissStore` for this project.
-      *   **Note**: Project-specific vector stores are built in-memory on each load and are *not* saved to or loaded from `vector_data/` for individual projects (unlike the User Profile store).
+      *   It reads all relevant files, processes them (loads, splits, embeds), and constructs a new, in-memory `MemoryVectorStore` for this project.
+      *   It then saves the processed documents to `vector_store.json` so the next startup will be fast.
   3.  The RAG chain is re-initialized (`initializeRagChain()`) to use the new project-specific `vectorStore`.
   4.  **Effect**: Wooster's knowledge is now focused on the documents within the loaded project.
 
@@ -64,7 +65,7 @@ Example `projects.json`:
 
 When you ask Wooster a question or give it a task that requires information from its knowledge base:
 
-1.  The RAG chain uses a retriever associated with the **currently active project's** in-memory `FaissStore`.
+1.  The RAG chain uses a retriever associated with the **currently active project's** in-memory `MemoryVectorStore`.
 2.  Similarity searches for relevant information are performed *only* against the documents and text chunks that were part of that active project when it was loaded or created.
 3.  This ensures that answers and actions are grounded in the specific context you've set by choosing the active project.
 
@@ -103,10 +104,10 @@ Assistant: (Responds based on content in `projects/meeting_notes/`)
 ```
 
 ## 7. Implementation Details
-- **Core Logic**: `createProjectStore(projectName)` in `src/projectIngestor.ts` is responsible for finding files (using `projects.json` or `projects/<name>/` convention) and building the in-memory `FaissStore`.
+- **Core Logic**: `createProjectStore(projectName)` in `src/projectIngestor.ts` is responsible for finding files (using `projects.json` or `projects/<name>/` convention) and building the in-memory `MemoryVectorStore`.
 - **File Discovery**: Uses `fast-glob` for finding files based on patterns or directory listings.
 - **Embeddings**: `HuggingFaceTransformersEmbeddings` (`Xenova/all-MiniLM-L6-v2`).
-- **Vector Store**: `FaissStore` (in-memory for active project).
+- **Vector Store**: `MemoryVectorStore` (in-memory for active project).
 - **REPL Commands**: Handled in `src/index.ts`.
 
 This project system allows Wooster to maintain a focused context, improving relevance and performance, while providing flexibility in how you organize and access your information. 
@@ -176,3 +177,45 @@ Currently, content is appended directly to these sections. There is no automated
 Users can directly view and edit the `[projectName].md` file in their project directory using any text editor. The information logged by Wooster provides a history that can be manually reviewed or augmented.
 
 (When reviewing `04 TOOLS.MD`, we will check for any tools related to `manageProjectNotes` and update this section if necessary.) 
+
+## 9. Project-Specific Notes
+
+### RAG Chain Integration
+
+1.  The RAG chain uses a retriever associated with the **currently active project's** in-memory `MemoryVectorStore`.
+2.  When a query is made (e.g., "summarize my meeting notes"), the retriever finds the most relevant document chunks from the active project's store.
+3.  These chunks are passed as context to the LLM, which then generates a final answer based on the user's question and the provided information.
+
+### Key Characteristics
+
+- **Stateful but In-Memory**: The *active* vector store lives in RAM. The state is persisted to disk as a `vector_store.json` file for fast reloads.
+- **Dynamic**: The store can be rebuilt or switched on the fly without restarting the application.
+- **Project-Scoped**: Each project has its own isolated vector store, preventing data leakage between contexts.
+- **Dependency-Free**: Uses `MemoryVectorStore`, avoiding native dependencies like `faiss-node` and ensuring easy installation.
+- **Vector Store**: `MemoryVectorStore` (in-memory for active project).
+- **Persistence**: A `vector_store.json` file in `vector_data/{projectName}/`.
+- **Primary Files**: `src/projectIngestor.ts`, `src/agentExecutorService.ts`
+
+## 10. `projects.json` Catalog
+
+```json
+{
+    "wooster_codebase": ["src/**/*.ts", "README.md", "*.MD"],
+    "external_docs": "/Users/yourname/Documents/important_pdfs"
+  }
+  ```
+
+The `setActiveProject` function in `agentExecutorService.ts` handles the logic for switching the active project, which includes loading or creating the corresponding `MemoryVectorStore`.
+
+When a project is activated, Wooster checks for a `vector_data/{project_name}/vector_store.json` file.
+
+**If it exists**, it's loaded directly into an in-memory `MemoryVectorStore`, which is very fast.
+
+**If it doesn't exist**, it performs a one-time ingestion of all source files in the project directory.
+
+*   It reads all relevant files, processes them (loads, splits, embeds), and constructs a new, in-memory `MemoryVectorStore` for this project.
+*   It then saves the processed documents to `vector_store.json` so the next startup will be fast.
+
+This in-memory store is then set as the **active project store**.
+
+This project system allows Wooster to maintain a focused context, improving relevance and performance, while providing flexibility in how you organize and access your information. 

@@ -13,21 +13,27 @@ Wooster currently uses **3 different embedding models** across different compone
 - **Usage**: Project document embeddings for RAG/knowledge base queries  
 - **Location**: `projects/*/vectorStore/`
 - **Files**: `src/projectStoreManager.ts`, `src/agentExecutorService.ts`
-- **Vector Store**: FaissStore with OpenAI embeddings
+- **Vector Store**: MemoryVectorStore with OpenAI embeddings
+- **Functionality**: `queryKnowledgeBase` searches the in-memory store for the active project.
+- **Limitation**: Tied to OpenAI's ecosystem.
 
 #### **User Profile & Memory Embeddings**
 - **Model**: `HuggingFace Xenova/all-MiniLM-L6-v2` (384 dimensions)
 - **Usage**: User profile vector store, persistent memory operations
 - **Location**: `./vector_data/user_profile_store`
 - **Files**: `src/memoryVector.ts`, `src/plugins/userProfile/userProfileVectorStore.ts`
-- **Vector Store**: FaissStore with HuggingFace embeddings
+- **Vector Store**: MemoryVectorStore with HuggingFace embeddings
+- **Functionality**: Same RAG chain, but embeddings are generated locally.
+- **Advantage**: No external API calls for embeddings, increased privacy, potentially lower cost.
 
 #### **Legacy Project Ingestion**
 - **Model**: `HuggingFace Xenova/all-MiniLM-L6-v2` (384 dimensions)
 - **Usage**: Document processing during project creation/ingestion
 - **Location**: In-memory during project creation
 - **Files**: `src/projectIngestor.ts`
-- **Vector Store**: FaissStore with HuggingFace embeddings
+- **Vector Store**: MemoryVectorStore with HuggingFace embeddings
+- **Functionality**: Same as above, just with a different model.
+- **Advantage**: Higher quality embeddings than MiniLM.
 
 ### 1.2. Configuration Architecture
 
@@ -393,3 +399,14 @@ The **plugin-based approach** for local embeddings respects Wooster's core princ
 4. **Fallback**: Always support cloud embeddings as backup
 
 This approach minimizes risk, maximizes user choice, and maintains system stability while providing a clear path for users who want complete local model deployment. 
+
+This is a summary of the directory structure under the old FaissStore implementation.
+It is preserved here for historical reference.
+
+```
+.
+├── faiss.index
+└── docstore.json
+```
+
+The new system uses a single `vector_store.json` file per project, located in `vector_data/{projectName}/`. 

@@ -26,8 +26,6 @@
     "diff": "^5.2.0",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
-    "faiss": "link:@langchain/community/vectorstores/faiss",
-    "faiss-node": "^0.5.1",
     "fast-glob": "^3.3.2",
     "googleapis": "^149.0.0",
     "hf_transformers": "link:@langchain/community/embeddings/hf_transformers",

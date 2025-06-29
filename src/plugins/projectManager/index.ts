@@ -249,7 +249,7 @@ export class ProjectManagerPlugin implements WoosterPlugin {
           await fs.promises.stat(activeProjectPath);
 
           const files = await fs.promises.readdir(activeProjectPath);
-          const ignoredItems = ['.DS_Store', 'vectorStore', 'faiss.index', 'docstore.json'];
+          const ignoredItems = ['.DS_Store'];
           const filteredFiles = files.filter(file => !ignoredItems.includes(file));
 
           if (filteredFiles.length === 0) {

@@ -206,3 +206,15 @@ The plugin relies on the `projects` base directory (typically `projects/` relati
 *   Archiving projects to zip or other archival formats.
 *   Import/export project templates and settings.
 *   Integration with remote or git-backed project repositories.
+
+This tool is essential for managing the files within the currently active project. It allows the agent to list, read, create, and delete files, but it operates with important safety guards.
+
+### Core Functionality
+
+- **`list_files_in_project()`**:
+    -   Retrieves the path of the **currently active project** from the `agentExecutorService`.
+    -   Reads the contents of that directory.
+    -   Filters out predefined ignored items (e.g., `.DS_Store`).
+    -   Returns the list of file and directory names to the agent.
+
+- **`read_file_content(file_name)`**:

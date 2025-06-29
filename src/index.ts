@@ -119,7 +119,7 @@ async function main() {
   if (!fs.existsSync(projectDir)) {
     fs.mkdirSync(projectDir, { recursive: true });
   }
-  const projectVectorStore = await initializeProjectVectorStore(defaultProjectName, projectDir, embeddings, appConfig);
+  const projectVectorStore = await initializeProjectVectorStore(defaultProjectName, embeddings, appConfig);
   
   await initializeAgentExecutorService(defaultProjectName, projectDir, projectVectorStore, embeddings, appConfig);
   log(LogLevel.INFO, "AgentExecutorService initialized.");

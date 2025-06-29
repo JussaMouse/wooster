@@ -4,25 +4,27 @@
 
 ## Overview
 
-The User Profile plugin enables Wooster to store and recall specific facts, preferences, and pieces of information about the user. This allows for a more personalized and context-aware interaction over time.
+The User Profile plugin is a core component of Wooster, designed to give the agent a persistent, long-term memory about the user's preferences, facts, and specific instructions.
 
-The plugin utilizes a dedicated vector store (FaissStore) to save user-specific data, separate from project-specific knowledge. It provides tools for the agent to explicitly save new information to this profile or recall existing information based on a topic.
+## How It Works
 
-Internally, a `UserProfileService` manages all interactions with the vector store, ensuring that data is handled consistently.
+The plugin utilizes a dedicated `MemoryVectorStore` to save user-specific data, separate from project-specific knowledge. It provides tools for the agent to explicitly save new information to this profile or recall existing information based on conversational context.
 
-## Core Functionality
+### The Storage Mechanism: `user_profile_vector_store.json`
 
-### Data Storage
+To ensure data is safe, simple to manage, and not dependent on complex compiled libraries, the User Profile is stored in a single JSON file.
 
--   **Method:** User-specific facts and preferences are converted into text embeddings and stored in a [FaissStore](https://github.com/facebookresearch/faiss) vector database.
--   **Location:** The directory for this vector store is configurable (see [Configuration](#configuration) below).
-    -   Default Path: `<workspace_root>/vector_data/user_profile_store/`
--   **Files:** Within the configured `storePath`, the plugin creates and manages files such as `faiss.index` (the vector index) and `docstore.json` (the raw text of stored facts).
--   **Format:** When information is saved (e.g., using the `save_user_profile` tool), it's typically stored as a combined string, like "Category: Value" (e.g., "email address: user@example.com").
+- **Method:** User-specific facts and preferences are stored as text. On startup, this text is loaded and converted into vector embeddings using the configured model, then held in an in-memory `MemoryVectorStore` for fast searching.
+- **Persistence:** When new facts are added, the entire profile is written back to disk to a file named `user_profile_vector_store.json`.
+- **Location:** This file is located in the directory specified by the `userProfile.storePath` setting in your configuration (e.g., `.user_profile/`).
 
-### Service Layer
+### Robust Backup System
 
--   All operations related to the user profile vector store (initialization, adding facts, retrieving context) are managed by the `UserProfileService`. This service is used internally by the plugin's tools.
+To prevent data loss from application crashes or bugs, a multi-layered backup system is in place for the `user_profile_vector_store.json` file:
+
+1.  **Sanity Check:** Before saving, the system checks if the new data to be saved is smaller than the existing file. If it is, the save is aborted to prevent accidental data erasure.
+2.  **Atomic Writes:** A temporary file is used during the save process, ensuring that the main `.json` file is never corrupted if the application crashes mid-write. A `.bak` file of the last known-good version is always kept.
+3.  **Dated Generational Backups:** The system automatically keeps up to 3 weekly backups (e.g., `user_profile_vector_store.2025-07-04.bak`). A new weekly backup is only created if the last one is more than 7 days old, protecting your long-term history.
 
 ## Provided Agent Tools
 
@@ -91,8 +93,9 @@ The following options are available within the `userProfile` block of your `AppC
     -   **Environment Variable:** `USER_PROFILE_ENABLED` (e.g., `USER_PROFILE_ENABLED=true`)
 
 -   `storePath?: string` (Optional)
-    -   **Description:** Specifies the directory path where the FaissStore vector database files (e.g., `faiss.index`, `docstore.json`) for the user profile will be stored.
-    -   **Default:** If not specified, defaults to `<workspace_root>/vector_data/user_profile_store/`.
+    -   **Description:** Specifies the directory path where the vector database files for the user profile will be stored.
+    -   **Default:** `./vector_data/user_profile_store`
+    -   **Importance:** This path is critical for data persistence. Ensure the application has read/write permissions to this directory.
     -   **Environment Variable:** `USER_PROFILE_STORE_PATH` (e.g., `USER_PROFILE_STORE_PATH="./my_data/user_profile_db"`)
 
 ## Dependencies

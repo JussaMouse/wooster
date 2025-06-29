@@ -3,7 +3,7 @@ import { DynamicTool } from "@langchain/core/tools";
 import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents";
 import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
 import { BaseMessage } from "@langchain/core/messages";
-import { FaissStore } from "@langchain/community/vectorstores/faiss";
+import { MemoryVectorStore } from "langchain/vectorstores/memory";
 import { createHistoryAwareRetriever } from "langchain/chains/history_aware_retriever";
 import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
 import { createRetrievalChain } from "langchain/chains/retrieval";
@@ -19,7 +19,7 @@ import { scheduleAgentTaskTool } from "./schedulerTool";
 import { createFileTool, readFileTool } from './fileSystemTool';
 import { initializeProjectVectorStore } from './projectStoreManager';
 
-let projectVectorStoreInstance: FaissStore | null = null;
+let projectVectorStoreInstance: MemoryVectorStore | null = null;
 let tools: any[] = [];
 let agentExecutorInstance: AgentExecutor | null = null;
 let appConfig: AppConfig;
@@ -129,8 +129,8 @@ async function initializeTools() {
   log(LogLevel.INFO, "AgentExecutorService: Total tools initialized: %d. Tool names: %s", tools.length, tools.map(t => `${t.name} (desc: ${t.description.substring(0, 70)}...)`).join('\n'));
 }
 
-async function getAgentExecutor(): Promise<AgentExecutor> {
-  if (agentExecutorInstance) {
+async function getAgentExecutor(forceRecreate = false): Promise<AgentExecutor> {
+  if (agentExecutorInstance && !forceRecreate) {
     return agentExecutorInstance;
   }
 
@@ -237,7 +237,7 @@ Current date and time: {current_date_time}`;
 export async function initializeAgentExecutorService(
   initialProjectName: string,
   initialProjectPath: string,
-  initialProjectStore: FaissStore,
+  initialProjectStore: MemoryVectorStore,
   initialEmbeddings: OpenAIEmbeddings,
   configForProjectStore: AppConfig
 ): Promise<AgentExecutor> {
@@ -256,48 +256,35 @@ export async function initializeAgentExecutorService(
 
 export async function setActiveProject(newProjectName: string): Promise<void> {
   if (currentActiveProjectName === newProjectName) {
-    log(LogLevel.INFO, `Project "${newProjectName}" is already active.`);
+    log(LogLevel.INFO, `Project \"${newProjectName}\" is already active.`);
     return;
   }
 
-  log(LogLevel.INFO, `Attempting to set active project to: "${newProjectName}"`);
-  // Determine projects base path from config or default GTD_PROJECTS_DIR
-  const projectsDirRelative = projectStoreAppConfig?.gtd?.projectsDir ?? 'projects';
-  const projectsBasePath = path.resolve(process.cwd(), projectsDirRelative);
-  const projectDir = path.join(projectsBasePath, newProjectName);
-  if (!fs.existsSync(projectDir) || !fs.statSync(projectDir).isDirectory()) {
-    log(LogLevel.ERROR, `Project directory ${projectDir} not found for project "${newProjectName}".`);
-    // Decide if we should throw an error or just log and not switch
-    // For now, just log and don't switch, keep the current active project.
-    // Or, should we switch to a "no project" state or a default "home" state?
-    // For now, we prevent switching to a non-existent project.
-    throw new Error(`Project '${newProjectName}' not found. Cannot set as active.`);
+  log(LogLevel.INFO, `Switching active project to: \"${newProjectName}\"`);
+  
+  // Guard against re-entrancy or null config
+  if (!projectStoreAppConfig || !embeddingsInstance) {
+    log(LogLevel.ERROR, 'Cannot switch project: project store dependencies not initialized.');
+    throw new Error('Project store dependencies not available for project switch.');
   }
 
-  try {
-    // Ensure projectStoreAppConfig and embeddingsInstance are available (should be from initializeAgentExecutorService)
-    if (!projectStoreAppConfig || !embeddingsInstance) {
-        log(LogLevel.ERROR, "Project store config or embeddings not available for setActiveProject.");
-        throw new Error("Cannot switch project: Core components for vector store not initialized.");
-    }
-    const vectorStore = await initializeProjectVectorStore(newProjectName.trim(), projectDir, embeddingsInstance, projectStoreAppConfig);
-    projectVectorStoreInstance = vectorStore;
-    currentActiveProjectName = newProjectName.trim();
-    currentActiveProjectPath = projectDir; // Update the path
-    log(LogLevel.INFO, `Successfully set active project to "${currentActiveProjectName}". Vector store loaded.`);
-
-    // Re-initialize or update agent/tools if necessary, especially if project context affects tool behavior
-    // For now, let's assume the agent's system prompt (which includes active project name) will be updated on next getAgentExecutor call.
-    // And tools that depend on active project will use the getters.
-    agentExecutorInstance = null; // Force re-creation of agent executor with new project context in prompt.
-    await getAgentExecutor(); // Re-initialize agent executor
-    log(LogLevel.INFO, `Agent executor re-initialized for project "${currentActiveProjectName}".`);
-
-  } catch (error: any) {
-    log(LogLevel.ERROR, `Failed to set active project to "${newProjectName}". Error: ${error.message}`, { stack: error.stack });
-    // Optionally, re-throw the error if the switch is critical or handle gracefully
-    throw error; // Re-throw to make the caller aware of the failure
+  const newProjectDir = path.join(process.cwd(), 'projects', newProjectName);
+  if (!fs.existsSync(newProjectDir)) {
+    fs.mkdirSync(newProjectDir, { recursive: true });
+    log(LogLevel.INFO, `Created new project directory at: ${newProjectDir}`);
   }
+
+  // Re-initialize the vector store for the new project.
+  const newProjectStore = await initializeProjectVectorStore(newProjectName, embeddingsInstance, projectStoreAppConfig);
+
+  // Update the global state
+  currentActiveProjectName = newProjectName;
+  currentActiveProjectPath = newProjectDir;
+  projectVectorStoreInstance = newProjectStore;
+  
+  // Re-initialize the agent executor to get the new project context in the prompt
+  await getAgentExecutor(true); // Force re-creation of the agent executor
+  log(LogLevel.INFO, `Successfully switched to project \"${newProjectName}\".`);
 }
 
 export async function executeAgent(

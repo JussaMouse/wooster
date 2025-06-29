@@ -149,22 +149,23 @@ When using LangChain libraries (e.g., `@langchain/community`, `@langchain/core`)
 -   Always refer to the latest official LangChain JS/TS documentation for correct import paths and class/member names for the specific version you are using.
 -   Incorrect imports are a common source of errors. A properly configured linter (as set up above) should help catch these.
 
-### Managing Peer Dependencies
+### A Note on Native Dependencies
 
-Some LangChain modules, especially those interacting with external libraries or native bindings, may have peer dependencies.
--   For example, `@langchain/community/vectorstores/faiss` requires `faiss-node` to be installed.
--   Ensure these peer dependencies are listed in your `package.json` and correctly installed.
--   If you encounter issues related to peer dependencies with `pnpm`, running `pnpm install` usually resolves them. In more complex workspace setups or if linking issues are suspected, `pnpm install --shamefully-hoist` might be considered, but use it judiciously as it alters the standard `node_modules` structure.
+Some LangChain modules depend on packages with native bindings (e.g., those that require C++ compilers). Wooster's core aims to avoid these to ensure easy installation. Previously, `FaissStore` was used, which required `faiss-node`. This has been **removed** in favor of `MemoryVectorStore` to eliminate this problem.
 
-### Recommended Workflow for Errors
+If you add a plugin that brings in a new native dependency, be aware that it may complicate the setup for users on different operating systems. Always prefer pure JavaScript or TypeScript libraries where possible.
 
-If you encounter import errors, build failures, or unexpected runtime behavior with your plugin:
-1.  **Check Dependencies:** Ensure all project and plugin-specific dependencies (including peer dependencies) are correctly installed (`pnpm install`).
-2.  **Lint Your Code:** Run the linter (e.g., `pnpm eslint .`) to identify syntax errors, incorrect imports, or type issues.
-3.  **Clean and Rebuild:**
-    *   Delete the `dist/` directory.
-    *   Execute a clean build (`pnpm build`).
-4.  **Review Wooster Logs:** Check the application logs for detailed error messages from the `PluginManager` or the plugin itself.
+### Common Troubleshooting
+
+*   **Plugin Not Loading:**
+    *   Check the Wooster startup logs for any errors related to your plugin.
+    *   Did you add a `default` export for your plugin class?
+*   **Tool Not Appearing:**
+    *   Ensure your `getAgentTools()` method correctly returns an array of `DynamicTool` instances.
+    *   Check for conflicting tool names. Wooster will log a warning if your tool name conflicts with a core tool or another plugin's tool.
+*   **Type Errors during Build (`tsc`):**
+    *   Are all necessary npm packages, including LangChain modules, installed correctly?
+    *   Have you added any new dependencies to `package.json`? Run `pnpm install`.
 
 ## Troubleshooting Plugin Loading
 

@@ -2,7 +2,7 @@ import { DynamicTool } from "@langchain/core/tools";
 import { AppConfig as Configuration } from "../configLoader";
 import { ScheduledTaskSetupOptions as SchedulerOptions } from './scheduler';
 import { LogLevel } from '../logger';
-import { FaissStore } from '@langchain/community/vectorstores/faiss';
+import { MemoryVectorStore } from "langchain/vectorstores/memory";
 import type { GmailPluginEmailArgs, GmailPluginSendEmailResult } from '../plugins/gmail/types';
 import type { NextActionsService as NextActionsServiceType } from '../plugins/nextActions/types';
 import { AgentExecutor } from "langchain/agents";
@@ -36,7 +36,7 @@ export interface CoreServices {
   setActiveProject: (projectName: string) => Promise<void>;
   getActiveProjectPath: () => string | null;
   getActiveProjectName: () => string | null;
-  getProjectVectorStore?: () => FaissStore | null;
+  getProjectVectorStore?: () => MemoryVectorStore | null;
 
   // Specific, commonly used services can be explicitly typed for convenience
   emailService?: EmailService;

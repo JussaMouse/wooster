@@ -32,7 +32,8 @@ Searches and answers questions based exclusively on the documents and knowledge 
 ## 6. Dependencies & Configuration
 
 - **Underlying System**: Retrieval Augmented Generation (RAG) chain, History-Aware Retriever, StuffDocumentsChain.
-- **Vector Store**: Project-specific FaissStore (e.g., `vector_data/projects/[projectName]/`). Managed by `src/memoryVector.ts` and passed to `agentExecutorService.ts`.
+- **Vector Store**: Project-specific MemoryVectorStore. The store is persisted to disk in a `vector_store.json` file for fast reloads and is managed by `src/projectIngestor.ts`.
+- **Embeddings**: Uses the globally configured embeddings model (e.g., from OpenAI).
 - **LLMs**: Uses `agentLlm` (defined in `agentExecutorService.ts`) for both rephrasing queries (history-aware retriever) and synthesizing answers (stuff documents chain).
 - **Function**: Inline RAG logic within the `func` definition of the `queryKnowledgeBase` tool in `src/agentExecutorService.ts`.
 - **Configuration** (from `.env` - see `06 CONFIG.MD`):

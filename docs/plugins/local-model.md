@@ -594,7 +594,7 @@ export async function initializeProjectVectorStore(
   projectPath: string, 
   embeddings: OpenAIEmbeddings, // Keep for backward compatibility
   appConfig: AppConfig
-): Promise<FaissStore> {
+): Promise<MemoryVectorStore> {
   // Use router service if available, otherwise use provided embeddings
   const routerService = ModelRouterService.getInstance();
   const embeddingService = routerService ? 

@@ -1,66 +1,64 @@
-import { FaissStore } from '@langchain/community/vectorstores/faiss';
-import { Document } from 'langchain/document';
-import {
-  initUserProfileStore,
-  addUserFactToProfileStore,
-  retrieveUserProfileContext as retrieveContextFromStore,
-} from './userProfileVectorStore';
-import { LogLevel, log as logger } from '../../logger';
-import { CoreServices } from '../../types/plugin';
-
+import { MemoryVectorStore } from 'langchain/vectorstores/memory';
+import { AppConfig } from '../../configLoader';
+import { log, LogLevel } from '../../logger';
+import { initUserProfileStore, addTextToUserProfile, searchUserProfile } from './userProfileVectorStore';
 
 export interface IUserProfileService {
-  initialize(): Promise<void>;
-  addUserFact(fact: string): Promise<void>;
-  retrieveContext(query: string, k?: number): Promise<Document[]>;
-  getStoreInstance(): FaissStore | null;
+  add(text: string, metadata?: object): Promise<void>;
+  query(query: string, k?: number): Promise<Array<{ pageContent: string; metadata: object }>>;
+  getStoreInstance(): MemoryVectorStore | null;
 }
 
 export class UserProfileService implements IUserProfileService {
-  private userProfileStoreInstance: FaissStore | null = null;
+  private static instance: UserProfileService;
+  private isInitialized = false;
+  private userProfileStoreInstance: MemoryVectorStore | null = null;
   private storePath: string;
-  private log: (level: LogLevel, message: string, ...args: any[]) => void;
 
-  constructor(storePath: string, coreServices: CoreServices) {
-    this.storePath = storePath;
-    this.log = coreServices.log;
-    this.log(LogLevel.DEBUG, `[UserProfileService] Initialized with storePath: ${storePath}`);
+  private constructor(config: AppConfig) {
+    if (!config.userProfile.storePath) {
+      throw new Error("User profile store path is not configured.");
+    }
+    this.storePath = config.userProfile.storePath;
   }
 
-  async initialize(): Promise<void> {
-    this.log(LogLevel.INFO, `[UserProfileService] Initializing user profile store at: ${this.storePath}`);
+  public static getInstance(config: AppConfig): UserProfileService {
+    if (!UserProfileService.instance) {
+      UserProfileService.instance = new UserProfileService(config);
+    }
+    return UserProfileService.instance;
+  }
+
+  public async initialize(): Promise<void> {
+    if (this.isInitialized) {
+      log(LogLevel.INFO, 'User profile service already initialized.');
+      return;
+    }
     try {
       this.userProfileStoreInstance = await initUserProfileStore(this.storePath);
-      this.log(LogLevel.INFO, `[UserProfileService] User profile store loaded/created successfully from: ${this.storePath}`);
-    } catch (error: any) {
-      this.log(LogLevel.ERROR, `[UserProfileService] Failed to initialize user profile store at ${this.storePath}:`, { error: error.message });
-      this.userProfileStoreInstance = null;
+      this.isInitialized = true;
+      log(LogLevel.INFO, 'User profile service initialized successfully.');
+    } catch (error) {
+      log(LogLevel.ERROR, 'Failed to initialize user profile service', { error });
+      throw error;
     }
   }
 
-  async addUserFact(fact: string): Promise<void> {
-    if (!this.userProfileStoreInstance) {
-      this.log(LogLevel.ERROR, '[UserProfileService] User Profile store not available for addUserFact.');
-      throw new Error('User Profile store is not initialized. Cannot add fact.');
-    }
-    if (!this.storePath) {
-        this.log(LogLevel.ERROR, '[UserProfileService] Store path is not defined. Cannot save fact.');
-        throw new Error('User Profile store path is not defined. Cannot save fact.');
-    }
-    this.log(LogLevel.DEBUG, `[UserProfileService] Adding fact: \"${fact}\"`);
-    await addUserFactToProfileStore(fact, this.userProfileStoreInstance, this.storePath);
-  }
-
-  async retrieveContext(query: string, k = 2): Promise<Document[]> {
-    if (!this.userProfileStoreInstance) {
-      this.log(LogLevel.ERROR, '[UserProfileService] User Profile store not available for retrieveContext.');
-      return [];
-    }
-    this.log(LogLevel.DEBUG, `[UserProfileService] Retrieving context for query: \"${query}\", k: ${k}`);
-    return retrieveContextFromStore(this.userProfileStoreInstance, query, k);
-  }
-
-  getStoreInstance(): FaissStore | null {
+  getStoreInstance(): MemoryVectorStore | null {
     return this.userProfileStoreInstance;
+  }
+
+  async add(text: string, metadata: object = {}): Promise<void> {
+    if (!this.isInitialized || !this.userProfileStoreInstance) {
+      throw new Error("User profile service is not initialized.");
+    }
+    await addTextToUserProfile(this.userProfileStoreInstance, text, metadata, this.storePath);
+  }
+
+  async query(query: string, k: number = 3): Promise<Array<{ pageContent: string; metadata: object }>> {
+    if (!this.isInitialized || !this.userProfileStoreInstance) {
+      throw new Error("User profile service is not initialized.");
+    }
+    return searchUserProfile(this.userProfileStoreInstance, query, k);
   }
 } 
