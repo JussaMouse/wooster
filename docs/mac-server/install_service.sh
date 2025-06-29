@@ -39,9 +39,10 @@ echo "   Node: $NODE_PATH"
 echo "   pnpm: $PNPM_PATH"
 echo "   Project Directory: $PROJECT_DIR"
 
-# 2. Create the logs directory if it doesn't exist.
+# 2. Create necessary directories if they don't exist.
 mkdir -p "$LOG_DIR"
-echo "✅ Ensured log directory exists at $LOG_DIR"
+mkdir -p "$PLIST_DIR"
+echo "✅ Ensured log and LaunchAgent directories exist."
 
 # 3. Define the .plist content using a HEREDOC.
 # This dynamically inserts the correct paths into the template.
