@@ -1,7 +1,7 @@
 import { DynamicTool } from "@langchain/core/tools";
 import { v4 as uuidv4 } from 'uuid';
 import { log, LogLevel } from './logger'; // Adjusted path
-import { createSchedule } from "./scheduler/schedulerService"; // Adjusted path
+import { SchedulerService } from "./scheduler/schedulerService"; // Adjusted path
 import { parseDateString } from "./scheduler/scheduleParser";   // Adjusted path
 
 interface ScheduleAgentTaskArgs {
@@ -67,9 +67,9 @@ export const scheduleAgentTaskTool = new DynamicTool({
 
     try {
       const taskKey = `agent.toolScheduled.${uuidv4()}`;
-      log(LogLevel.DEBUG, '[Tool:scheduleAgentTask] Calling createSchedule', { description: humanReadableDescription, scheduleDate, taskPayload, taskKey });
+      log(LogLevel.DEBUG, '[Tool:scheduleAgentTask] Calling SchedulerService.create', { description: humanReadableDescription, scheduleDate, taskPayload, taskKey });
       
-      const newSchedule = await createSchedule({
+      const newSchedule = await SchedulerService.create({
         description: humanReadableDescription,
         schedule_expression: scheduleDate.toISOString(),
         payload: taskPayload,
@@ -83,8 +83,8 @@ export const scheduleAgentTaskTool = new DynamicTool({
         log(LogLevel.INFO, '[Tool:scheduleAgentTask] Task scheduled successfully.', { scheduleId: newSchedule.id, confirmationMessage });
         return confirmationMessage;
       } else {
-        log(LogLevel.ERROR, '[Tool:scheduleAgentTask] createSchedule returned null or schedule without ID.', { args, newSchedule });
-        throw new Error("Scheduler failed to create the task. createSchedule returned an unexpected value.");
+        log(LogLevel.ERROR, '[Tool:scheduleAgentTask] SchedulerService.create returned null or schedule without ID.', { args, newSchedule });
+        throw new Error("Scheduler failed to create the task. SchedulerService.create returned an unexpected value.");
       }
     } catch (error: any) {
       log(LogLevel.ERROR, '[Tool:scheduleAgentTask] Error during execution:', { errorMessage: error.message, errorStack: error.stack, args });

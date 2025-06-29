@@ -7,6 +7,8 @@ import {
   NewScheduleItemPayload,
 } from '../types/schedulerCore';
 import { CoreServices } from '../types/plugin';
+import { ScheduledTaskSetupOptions } from '../types/scheduler';
+import { AppConfig } from '../configLoader';
 
 const activeJobs = new Map<string, Cron>();
 let repository: SchedulerRepository | null = null;
@@ -98,6 +100,32 @@ export class SchedulerService {
   public static async getByKey(task_key: string): Promise<ScheduleItem | undefined> {
     const repo = await getRepo();
     return repo.getScheduleItemByKey(task_key);
+  }
+}
+
+export async function ensureScheduleIsManaged(setup: ScheduledTaskSetupOptions, config: AppConfig, pluginName: string): Promise<void> {
+  const existing = await SchedulerService.getByKey(setup.taskKey);
+  if (!existing) {
+    log(LogLevel.INFO, `Scheduler: No schedule found for task key "${setup.taskKey}". Seeding new schedule.`);
+    
+    // Allow plugin-specific config to override the default cron expression
+    const scheduleExpression = 
+      (config.plugins?.[pluginName] as any)?.scheduleCronExpression || 
+      setup.defaultScheduleExpression;
+
+    await SchedulerService.create({
+      description: setup.description,
+      schedule_expression: scheduleExpression,
+      task_key: setup.taskKey,
+      task_handler_type: 'DIRECT_FUNCTION',
+      execution_policy: setup.executionPolicy,
+      payload: setup.initialPayload ? JSON.stringify(setup.initialPayload) : undefined,
+    });
+    
+    registerDirectScheduledFunction(setup.taskKey, setup.functionToExecute);
+
+  } else {
+    log(LogLevel.INFO, `Scheduler: Found existing schedule for task key "${setup.taskKey}". No action needed.`);
   }
 }
 

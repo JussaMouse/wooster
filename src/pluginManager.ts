@@ -95,7 +95,7 @@ async function processPlugin(plugin: WoosterPlugin, config: AppConfig, actualEnt
               typeof setup.executionPolicy === 'string' && setup.executionPolicy
              ) {
             log(LogLevel.INFO, `PluginManager: Plugin "${pName}" provides valid scheduled task setup for: "${setup.taskKey}". Preparing to manage with scheduler.`);
-            await ensureScheduleIsManaged(setup, config);
+            await ensureScheduleIsManaged(setup, config, pName);
           } else {
             log(LogLevel.WARN, `PluginManager: Plugin "${pName}" provided an invalid or incomplete ScheduledTaskSetupOptions object. Skipping this setup.`, { setup });
           }
@@ -205,7 +205,7 @@ export async function loadPlugins() {
                 typeof setup.executionPolicy === 'string' && setup.executionPolicy
                ) {
               log(LogLevel.INFO, `PluginManager: Plugin instance "${pName}" provides valid scheduled task setup for: "${setup.taskKey}". Preparing to manage with scheduler.`);
-              await ensureScheduleIsManaged(setup, appConfig);
+              await ensureScheduleIsManaged(setup, appConfig, pName);
             } else {
               log(LogLevel.WARN, `PluginManager: Plugin instance "${pName}" provided an invalid or incomplete ScheduledTaskSetupOptions object. Skipping this setup.`, { setup });
             }
