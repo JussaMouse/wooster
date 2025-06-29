@@ -2,11 +2,10 @@ import 'dotenv/config'; // Load .env file into process.env
 import readline from 'readline';
 import { bootstrapLogger, applyLoggerConfig, log, LogLevel } from './logger';
 import { loadConfig, getConfig, AppConfig } from './configLoader';
-import { initSchedulerService, processCatchUpTasks } from './scheduler/schedulerService';
+import { initScheduler, processCatchUpTasks, setAgentExecutionCallback } from './scheduler/schedulerService';
 import { initializeAgentExecutorService } from './agentExecutorService';
 import { setAgentConfig, agentRespond } from './agent';
 import { loadPlugins } from './pluginManager';
-import { initDatabase as initSchedulerDB } from './scheduler/reminderRepository';
 import { OpenAIEmbeddings } from "@langchain/openai";
 // import { Document } from "@langchain/core/documents";
 // import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
@@ -149,8 +148,6 @@ async function main() {
     log(LogLevel.WARN, 'OpenAI API key is not set. AI-related features will be disabled.');
   }
 
-  initSchedulerDB();
-  log(LogLevel.INFO, "Scheduler database initialized.");
   setAgentConfig(appConfig);
   const embeddings = new OpenAIEmbeddings({ openAIApiKey: appConfig.openai.apiKey });
   
@@ -169,7 +166,8 @@ async function main() {
     appConfig                // configForProjectStore
   );
   log(LogLevel.INFO, "AgentExecutorService initialized.");
-  await initSchedulerService(schedulerAgentCallback);
+  setAgentExecutionCallback(schedulerAgentCallback);
+  await initScheduler();
   log(LogLevel.INFO, "SchedulerService initialized.");
   await loadPlugins();
   log(LogLevel.INFO, "Plugins loaded.");
