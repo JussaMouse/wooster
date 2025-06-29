@@ -81,5 +81,6 @@ config/*
 config/local.json
 config/local-*.json
 
-# Environment variables
-# ... existing code ...
+# Local backup directories
+personal-backup/
+/personal-backup/
