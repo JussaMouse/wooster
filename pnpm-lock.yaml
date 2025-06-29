@@ -13,7 +13,7 @@ importers:
     dependencies:
       '@langchain/community':
         specifier: ^0.3.43
-        version: 0.3.43(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/credential-provider-node@3.799.0)(@browserbasehq/sdk@2.6.0(encoding@0.1.13))(@browserbasehq/stagehand@1.14.0(@playwright/test@1.52.0)(deepmerge@4.3.1)(dotenv@16.5.0)(encoding@0.1.13)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(zod@3.25.28))(@ibm-cloud/watsonx-ai@1.6.5)(@langchain/core@0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28)))(@smithy/util-utf8@2.3.0)(axios@1.9.0)(better-sqlite3@11.9.1)(chromadb@2.3.0(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(cohere-ai@7.17.1(encoding@0.1.13))(encoding@0.1.13)(fast-xml-parser@4.4.1)(google-auth-library@9.15.1(encoding@0.1.13))(googleapis@149.0.0(encoding@0.1.13))(ibm-cloud-sdk-core@5.3.2)(ignore@5.3.2)(jsonwebtoken@9.0.2)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(playwright@1.52.0)(ws@8.18.2)
+        version: 0.3.43(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/credential-provider-node@3.799.0)(@browserbasehq/sdk@2.6.0(encoding@0.1.13))(@browserbasehq/stagehand@1.14.0(@playwright/test@1.52.0)(deepmerge@4.3.1)(dotenv@16.5.0)(encoding@0.1.13)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(zod@3.25.28))(@ibm-cloud/watsonx-ai@1.6.5)(@langchain/core@0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28)))(@smithy/util-utf8@2.3.0)(axios@1.10.0)(better-sqlite3@11.9.1)(chromadb@2.3.0(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(cohere-ai@7.17.1(encoding@0.1.13))(encoding@0.1.13)(fast-xml-parser@4.4.1)(google-auth-library@9.15.1(encoding@0.1.13))(googleapis@149.0.0(encoding@0.1.13))(ibm-cloud-sdk-core@5.3.2)(ignore@5.3.2)(jsonwebtoken@9.0.2)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(playwright@1.52.0)(ws@8.18.2)
       '@langchain/core':
         specifier: ^0.3.57
         version: 0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))
@@ -26,6 +26,9 @@ importers:
       '@types/sql.js':
         specifier: ^1.4.9
         version: 1.4.9
+      axios:
+        specifier: ^1.10.0
+        version: 1.10.0
       chalk:
         specifier: ^5.3.0
         version: 5.4.1
@@ -64,7 +67,7 @@ importers:
         version: link:@langchain/community/embeddings/hf_transformers
       langchain:
         specifier: ^0.3.27
-        version: 0.3.27(@langchain/core@0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28)))(axios@1.9.0)(encoding@0.1.13)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(ws@8.18.2)
+        version: 0.3.27(@langchain/core@0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28)))(axios@1.10.0)(encoding@0.1.13)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(ws@8.18.2)
       node-fetch:
         specifier: ^2.7.0
         version: 2.7.0(encoding@0.1.13)
@@ -1840,6 +1843,9 @@ packages:
 
   asynckit@0.4.0:
     resolution: {integrity: sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==}
+
+  axios@1.10.0:
+    resolution: {integrity: sha512-/1xYAC4MP/HEG+3duIhFr4ZQXR4sQXOIe+o6sdqzeykGLx6Upp/1p8MHqhINOvGeP7xyNHe7tsiJByc4SSVUxw==}
 
   axios@1.9.0:
     resolution: {integrity: sha512-re4CqKTJaURpzbLHtIi6XpDv20/CnpXOtjRY5/CU32L8gU8ek9UIivcfvSWvmKEngmVbrUtPpdDwWDWL7DNHvg==}
@@ -5234,7 +5240,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.0
 
-  '@langchain/community@0.3.43(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/credential-provider-node@3.799.0)(@browserbasehq/sdk@2.6.0(encoding@0.1.13))(@browserbasehq/stagehand@1.14.0(@playwright/test@1.52.0)(deepmerge@4.3.1)(dotenv@16.5.0)(encoding@0.1.13)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(zod@3.25.28))(@ibm-cloud/watsonx-ai@1.6.5)(@langchain/core@0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28)))(@smithy/util-utf8@2.3.0)(axios@1.9.0)(better-sqlite3@11.9.1)(chromadb@2.3.0(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(cohere-ai@7.17.1(encoding@0.1.13))(encoding@0.1.13)(fast-xml-parser@4.4.1)(google-auth-library@9.15.1(encoding@0.1.13))(googleapis@149.0.0(encoding@0.1.13))(ibm-cloud-sdk-core@5.3.2)(ignore@5.3.2)(jsonwebtoken@9.0.2)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(playwright@1.52.0)(ws@8.18.2)':
+  '@langchain/community@0.3.43(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/credential-provider-node@3.799.0)(@browserbasehq/sdk@2.6.0(encoding@0.1.13))(@browserbasehq/stagehand@1.14.0(@playwright/test@1.52.0)(deepmerge@4.3.1)(dotenv@16.5.0)(encoding@0.1.13)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(zod@3.25.28))(@ibm-cloud/watsonx-ai@1.6.5)(@langchain/core@0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28)))(@smithy/util-utf8@2.3.0)(axios@1.10.0)(better-sqlite3@11.9.1)(chromadb@2.3.0(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(cohere-ai@7.17.1(encoding@0.1.13))(encoding@0.1.13)(fast-xml-parser@4.4.1)(google-auth-library@9.15.1(encoding@0.1.13))(googleapis@149.0.0(encoding@0.1.13))(ibm-cloud-sdk-core@5.3.2)(ignore@5.3.2)(jsonwebtoken@9.0.2)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(playwright@1.52.0)(ws@8.18.2)':
     dependencies:
       '@browserbasehq/stagehand': 1.14.0(@playwright/test@1.52.0)(deepmerge@4.3.1)(dotenv@16.5.0)(encoding@0.1.13)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(zod@3.25.28)
       '@ibm-cloud/watsonx-ai': 1.6.5
@@ -5245,7 +5251,7 @@ snapshots:
       flat: 5.0.2
       ibm-cloud-sdk-core: 5.3.2
       js-yaml: 4.1.0
-      langchain: 0.3.27(@langchain/core@0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28)))(axios@1.9.0)(encoding@0.1.13)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(ws@8.18.2)
+      langchain: 0.3.27(@langchain/core@0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28)))(axios@1.10.0)(encoding@0.1.13)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(ws@8.18.2)
       langsmith: 0.3.29(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))
       openai: 4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28)
       uuid: 10.0.0
@@ -6183,6 +6189,14 @@ snapshots:
   async@3.2.6: {}
 
   asynckit@0.4.0: {}
+
+  axios@1.10.0:
+    dependencies:
+      follow-redirects: 1.15.9(debug@4.4.0)
+      form-data: 4.0.2
+      proxy-from-env: 1.1.0
+    transitivePeerDependencies:
+      - debug
 
   axios@1.9.0(debug@4.4.0):
     dependencies:
@@ -7190,7 +7204,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.2
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.9.0)
+      retry-axios: 2.6.0(axios@1.9.0(debug@4.4.0))
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -7711,7 +7725,7 @@ snapshots:
 
   kleur@3.0.3: {}
 
-  langchain@0.3.27(@langchain/core@0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28)))(axios@1.9.0)(encoding@0.1.13)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(ws@8.18.2):
+  langchain@0.3.27(@langchain/core@0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28)))(axios@1.10.0)(encoding@0.1.13)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(ws@8.18.2):
     dependencies:
       '@langchain/core': 0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))
       '@langchain/openai': 0.5.11(@langchain/core@0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28)))(encoding@0.1.13)(ws@8.18.2)
@@ -7727,7 +7741,7 @@ snapshots:
       zod: 3.25.28
       zod-to-json-schema: 3.24.5(zod@3.25.28)
     optionalDependencies:
-      axios: 1.9.0(debug@4.4.0)
+      axios: 1.10.0
     transitivePeerDependencies:
       - encoding
       - openai
@@ -8269,7 +8283,7 @@ snapshots:
       onetime: 7.0.0
       signal-exit: 4.1.0
 
-  retry-axios@2.6.0(axios@1.9.0):
+  retry-axios@2.6.0(axios@1.9.0(debug@4.4.0)):
     dependencies:
       axios: 1.9.0(debug@4.4.0)
 
