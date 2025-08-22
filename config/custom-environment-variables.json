@@ -44,6 +44,15 @@
     "openWeatherMapApiKey": "WEATHER_OPENWEATHERMAP_API_KEY",
     "units": "WEATHER_UNITS"
   },
+  "routing": {
+    "enabled": "ROUTING_ENABLED",
+    "providers": {
+      "local": {
+        "enabled": "ROUTING_LOCAL_ENABLED",
+        "serverUrl": "ROUTING_LOCAL_SERVER_URL"
+      }
+    }
+  },
   "plugins": {
     "projectManager": {
       "enabled": "PLUGIN_PROJECTMANAGER_ENABLED"

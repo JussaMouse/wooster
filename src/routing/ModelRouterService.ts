@@ -94,10 +94,19 @@ export class ModelRouterService {
     if (this.localModelClient && this.routingConfig.providers.local.enabled) {
       await this.checkLocalModelHealth();
       if (this.localModelHealthy) {
-        // Return a wrapper for the local model client (to be implemented in Phase 2b)
-        // For now, just log and fallback to OpenAI
-        log(LogLevel.INFO, 'ModelRouter: Local model healthy, would route to local model (Phase 2b)');
-        // TODO: Return a LangChain-compatible wrapper for local model
+        // Prefer local MLX server via OpenAI-compatible baseURL
+        const serverUrl = this.routingConfig.providers.local.serverUrl || 'http://127.0.0.1:8080';
+        const baseURL = serverUrl.endsWith('/v1') ? serverUrl : `${serverUrl.replace(/\/$/, '')}/v1`;
+        const localModelName = this.routingConfig.providers.local.models?.fast || this.config.openai.modelName;
+        log(LogLevel.INFO, `ModelRouter: Routing to local MLX chat at ${baseURL} (model=${localModelName})`);
+        const localChat = new ChatOpenAI({
+          modelName: localModelName,
+          temperature: this.config.openai.temperature,
+          // API key not required for local, but some clients expect a string
+          openAIApiKey: this.config.openai.apiKey || 'local-mlx',
+          configuration: { baseURL },
+        } as any);
+        return localChat;
       } else {
         log(LogLevel.WARN, 'ModelRouter: Local model unavailable, falling back to OpenAI');
       }

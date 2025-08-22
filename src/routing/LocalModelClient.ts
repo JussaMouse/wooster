@@ -22,8 +22,9 @@ export class LocalModelClient {
    */
   async isHealthy(): Promise<boolean> {
     try {
-      const res = await axios.get(`${this.serverUrl}/health`, { timeout: this.timeout });
-      return res.status === 200 && res.data?.status === 'ok';
+      // MLX OpenAI-compatible servers reliably expose /v1/models
+      const res = await axios.get(`${this.serverUrl}/v1/models`, { timeout: this.timeout });
+      return res.status === 200 && Array.isArray(res.data?.data);
     } catch (err) {
       return false;
     }
