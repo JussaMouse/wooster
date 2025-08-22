@@ -68,6 +68,12 @@
   "pnpm": {
     "overrides": {
       "@langchain/core": "^0.3.57"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild",
+      "protobufjs",
+      "sharp"
+    ]
   }
 }
