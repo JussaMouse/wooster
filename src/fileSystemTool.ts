@@ -39,6 +39,12 @@ class CreateFileToolClass extends StructuredTool {
   protected async _call(args: CreateFileArgs): Promise<string> {
     log(LogLevel.DEBUG, '[Tool:create_file] Parsed args received by _call:', { args });
     const { relativeFilePath, content, currentProjectName } = args;
+
+    const normalizedPath = path.basename(relativeFilePath).toLowerCase();
+    if (normalizedPath === 'user_profile.json') {
+      return "Error: The filename 'user_profile.json' is reserved. To save user information, you MUST use the 'save_user_profile' tool instead.";
+    }
+    
     // Adjust if tool is asked to write to 'journal.md' directly: redirect to the project's main journal file
     let effectiveRelativeFilePath = relativeFilePath;
     const parsedPath = path.parse(relativeFilePath);

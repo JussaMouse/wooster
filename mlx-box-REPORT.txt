@@ -1,0 +1,327 @@
+==== mlx-box System Report :: 20250822-182716 ====
+
+== OS / Kernel ==
+ProductName:            macOS
+ProductVersion:         15.6
+BuildVersion:           24G84
+Darwin vice 24.6.0 Darwin Kernel Version 24.6.0: Mon Jul 14 11:30:40 PDT 2025; root:xnu-11417.140.69~1/RELEASE_ARM64_T6041 arm64
+
+== Hardware ==
+RAM (bytes): 137438953472
+CPU: Apple M4 Max
+
+== Disk Usage ==
+Filesystem        Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk3s1s1   926Gi    10Gi   810Gi     2%    426k  4.3G    0%   /
+HuggingFace cache size:
+ 46G    /Users/env/.cache/huggingface/hub
+
+== Network (WAN) ==
+ifconfig.me: 61.71.137.121
+
+== Services (launchctl) ==
+13806   -15     com.local.embed-server
+14054   0       com.mlx-box.frontend-server
+13837   -15     com.local.mlx-chat-server
+14140   -15     homebrew.mxcl.nginx
+-       0       com.local.firewall
+
+== Chat / Embed quick checks ==
+Chat models:
+{"object": "list", "data": [{"id": "mlx-community/Qwen2.5-72B-Instruct-4bit", "object": "model", "created": 1755858440}, {"id": "Qwen/Qwen3-Embedding-4B", "object": "model", "created": 1755858440}]}
+Embed models:
+{"object":"list","data":[{"id":"Qwen/Qwen3-Embedding-4B","object":"model","created":1677610602,"owned_by":"qwen","dimensions":2560}]}
+
+== Frontend ==
+HTTP/1.1 200 OK
+Accept-Ranges: bytes
+Content-Type: text/html
+etag: W/"2-704-2025-07-19T05:13:32.000Z"
+last-modified: Sat, 19 Jul 2025 05:13:32 GMT
+cache-control: max-age=3600
+Date: Fri, 22 Aug 2025 10:27:20 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+== Nginx ==
+Config test:
+nginx: the configuration file /opt/homebrew/etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /opt/homebrew/etc/nginx/nginx.conf test is successful
+Active 80/443 servers:
+nginx: the configuration file /opt/homebrew/etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /opt/homebrew/etc/nginx/nginx.conf test is successful
+17:        server_name vice.higfamily.net;
+29:        listen 443 ssl;
+30:        server_name vice.higfamily.net;
+41:        allow 39.10.32.18;
+42:allow 61.71.137.121;
+43:        deny all;
+
+== TLS certs (Let's Encrypt) ==
+total 8
+lrwxr-xr-x  1 root  wheel   42 21 Aug 19:48 cert.pem -> ../../archive/vice.higfamily.net/cert1.pem
+lrwxr-xr-x  1 root  wheel   43 21 Aug 19:48 chain.pem -> ../../archive/vice.higfamily.net/chain1.pem
+lrwxr-xr-x  1 root  wheel   47 21 Aug 19:48 fullchain.pem -> ../../archive/vice.higfamily.net/fullchain1.pem
+lrwxr-xr-x  1 root  wheel   45 21 Aug 19:48 privkey.pem -> ../../archive/vice.higfamily.net/privkey1.pem
+-rw-r--r--  1 root  wheel  692 21 Aug 19:48 README
+
+== Firewall (pf) ==
+No ALTQ support in kernel
+ALTQ related functions disabled
+Status: Enabled for 0 days 02:50:24           Debug: Urgent
+
+State Table                          Total             Rate
+  current entries                       18
+  searches                           62998            6.2/s
+  inserts                              332            0.0/s
+  removals                             314            0.0/s
+Counters
+  match                               5300            0.5/s
+  bad-offset                             0            0.0/s
+  fragment                               0            0.0/s
+  short                                  0            0.0/s
+  normalize                              0            0.0/s
+  memory                                 0            0.0/s
+  bad-timestamp                          0            0.0/s
+  congestion                             0            0.0/s
+  ip-option                              0            0.0/s
+  proto-cksum                            0            0.0/s
+  state-mismatch                         0            0.0/s
+  state-insert                           0            0.0/s
+    state-limit                            0            0.0/s
+  src-limit                              0            0.0/s
+  synproxy                               0            0.0/s
+  dummynet                               0            0.0/s
+  invalid-port                           0            0.0/s
+No ALTQ support in kernel
+ALTQ related functions disabled
+block drop in all
+pass out all flags S/SA keep state
+pass in quick on lo0 all flags S/SA keep state
+pass in proto tcp from any to any port = 333 flags S/SA keep state
+pass in proto tcp from any to any port = 80 flags S/SA keep state
+pass in proto tcp from any to any port = 443 flags S/SA keep state
+States (top 10):
+No ALTQ support in kernel
+ALTQ related functions disabled
+ALL tcp 192.168.68.111:51995 -> 17.57.145.132:5223       ESTABLISHED:ESTABLISHED
+ALL tcp 192.168.68.111:443 <- 64.62.197.92:48936       FIN_WAIT_2:FIN_WAIT_2
+ALL tcp 192.168.68.111:333 <- 192.168.68.107:55104       ESTABLISHED:ESTABLISHED
+ALL tcp 192.168.68.111:80 <- 185.169.4.184:34000       TIME_WAIT:TIME_WAIT
+ALL tcp 192.168.68.111:443 <- 64.62.197.92:52884       FIN_WAIT_2:FIN_WAIT_2
+ALL tcp 192.168.68.111:52041 -> 20.27.177.113:443       TIME_WAIT:TIME_WAIT
+ALL udp 192.168.68.111:64228 -> 192.168.0.1:53       MULTIPLE:SINGLE
+ALL udp 192.168.68.111:49964 -> 192.168.0.1:53       MULTIPLE:SINGLE
+ALL udp 192.168.68.111:52476 -> 192.168.0.1:53       MULTIPLE:SINGLE
+ALL tcp 192.168.68.111:52042 -> 17.248.223.66:443       ESTABLISHED:ESTABLISHED
+
+== Logs (tails) ==
+Chat stderr (last 50):
+  warnings.warn('resource_tracker: There appear to be %d '
+^MFetching 16 files:   0%|          | 0/16 [00:00<?, ?it/s]^MFetching 16 files: 100%|██████████| 16/16 [00:00<00:00, 124275.67it/s]
+/Users/env/Library/Caches/pypoetry/virtualenvs/models-qHyjAnJ_-py3.11/lib/python3.11/site-packages/mlx_lm/server.py:880: UserWarning: mlx_lm.server is not recommended for production as it only implements basic security checks.
+  warnings.warn(
+2025-08-22 14:28:37,390 - INFO - Starting httpd at 127.0.0.1 on port 8080...
+127.0.0.1 - - [22/Aug/2025 14:28:38] "GET /v1/models HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2025 14:28:39] "POST /v1/chat/completions HTTP/1.1" 404 -
+127.0.0.1 - - [22/Aug/2025 14:42:03] "GET /v1/models HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2025 14:42:14] "GET /v1/models HTTP/1.1" 200 -
+/Users/env/.pyenv/versions/3.11.10/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+^MFetching 16 files:   0%|          | 0/16 [00:00<?, ?it/s]^MFetching 16 files: 100%|██████████| 16/16 [00:00<00:00, 152520.15it/s]
+/Users/env/Library/Caches/pypoetry/virtualenvs/models-qHyjAnJ_-py3.11/lib/python3.11/site-packages/mlx_lm/server.py:880: UserWarning: mlx_lm.server is not recommended for production as it only implements basic security checks.
+  warnings.warn(
+2025-08-22 15:12:51,539 - INFO - Starting httpd at 127.0.0.1 on port 8080...
+127.0.0.1 - - [22/Aug/2025 15:12:53] "GET /v1/models HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2025 15:12:53] "POST /v1/chat/completions HTTP/1.1" 404 -
+/Users/env/.pyenv/versions/3.11.10/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+^MFetching 16 files:   0%|          | 0/16 [00:00<?, ?it/s]^MFetching 16 files: 100%|██████████| 16/16 [00:00<00:00, 150468.30it/s]
+/Users/env/Library/Caches/pypoetry/virtualenvs/models-qHyjAnJ_-py3.11/lib/python3.11/site-packages/mlx_lm/server.py:880: UserWarning: mlx_lm.server is not recommended for production as it only implements basic security checks.
+  warnings.warn(
+2025-08-22 15:20:11,769 - INFO - Starting httpd at 127.0.0.1 on port 8080...
+127.0.0.1 - - [22/Aug/2025 15:20:13] "GET /v1/models HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2025 15:20:13] "POST /v1/chat/completions HTTP/1.1" 404 -
+/Users/env/.pyenv/versions/3.11.10/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+^MFetching 16 files:   0%|          | 0/16 [00:00<?, ?it/s]^MFetching 16 files: 100%|██████████| 16/16 [00:00<00:00, 146846.53it/s]
+/Users/env/Library/Caches/pypoetry/virtualenvs/models-qHyjAnJ_-py3.11/lib/python3.11/site-packages/mlx_lm/server.py:880: UserWarning: mlx_lm.server is not recommended for production as it only implements basic security checks.
+  warnings.warn(
+2025-08-22 15:33:48,691 - INFO - Starting httpd at 127.0.0.1 on port 8080...
+127.0.0.1 - - [22/Aug/2025 15:33:50] "GET /v1/models HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2025 15:33:50] "POST /v1/chat/completions HTTP/1.1" 404 -
+/Users/env/.pyenv/versions/3.11.10/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+^MFetching 16 files:   0%|          | 0/16 [00:00<?, ?it/s]^MFetching 16 files: 100%|██████████| 16/16 [00:00<00:00, 112034.83it/s]
+/Users/env/Library/Caches/pypoetry/virtualenvs/models-qHyjAnJ_-py3.11/lib/python3.11/site-packages/mlx_lm/server.py:880: UserWarning: mlx_lm.server is not recommended for production as it only implements basic security checks.
+  warnings.warn(
+2025-08-22 15:36:58,596 - INFO - Starting httpd at 127.0.0.1 on port 8080...
+127.0.0.1 - - [22/Aug/2025 15:37:00] "GET /v1/models HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2025 15:37:00] "POST /v1/chat/completions HTTP/1.1" 404 -
+/Users/env/.pyenv/versions/3.11.10/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+^MFetching 16 files:   0%|          | 0/16 [00:00<?, ?it/s]^MFetching 16 files: 100%|██████████| 16/16 [00:00<00:00, 49092.07it/s]
+/Users/env/Library/Caches/pypoetry/virtualenvs/models-qHyjAnJ_-py3.11/lib/python3.11/site-packages/mlx_lm/server.py:880: UserWarning: mlx_lm.server is not recommended for production as it only implements basic security checks.
+  warnings.warn(
+2025-08-22 16:12:39,489 - INFO - Starting httpd at 127.0.0.1 on port 8080...
+127.0.0.1 - - [22/Aug/2025 16:12:41] "GET /v1/models HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2025 16:12:41] "POST /v1/chat/completions HTTP/1.1" 404 -
+127.0.0.1 - - [22/Aug/2025 18:27:20] "GET /v1/models HTTP/1.1" 200 -
+
+Embed stderr (last 50):
+INFO:     Waiting for application shutdown.
+INFO:__main__:Shutting down embedding server
+INFO:     Application shutdown complete.
+INFO:     Finished server process [10762]
+/Users/env/.pyenv/versions/3.11.10/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+INFO:     Started server process [11625]
+INFO:     Waiting for application startup.
+INFO:__main__:Loading embedding model: Qwen/Qwen3-Embedding-4B
+INFO:__main__:Using device: mps
+INFO:sentence_transformers.SentenceTransformer:Load pretrained SentenceTransformer: Qwen/Qwen3-Embedding-4B
+^MLoading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]^MLoading checkpoint shards:  50%|█████     | 1/2 [00:00<00:00,  1.18it/s]^MLoading checkpoint shards: 100%|██████████| 2/2 [00:01<00:00,  1.46it/s]^MLoading checkpoint shards: 100%|██████████| 2/2 [00:01<00:00,  1.41it/s]
+INFO:sentence_transformers.SentenceTransformer:2 prompts are loaded, with the keys: ['query', 'document']
+INFO:__main__:✅ Qwen3 model loaded successfully
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8081 (Press CTRL+C to quit)
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:__main__:Shutting down embedding server
+INFO:     Application shutdown complete.
+INFO:     Finished server process [11625]
+/Users/env/.pyenv/versions/3.11.10/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+INFO:     Started server process [12080]
+INFO:     Waiting for application startup.
+INFO:__main__:Loading embedding model: Qwen/Qwen3-Embedding-4B
+INFO:__main__:Using device: mps
+INFO:sentence_transformers.SentenceTransformer:Load pretrained SentenceTransformer: Qwen/Qwen3-Embedding-4B
+^MLoading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]^MLoading checkpoint shards:  50%|█████     | 1/2 [00:00<00:00,  1.18it/s]^MLoading checkpoint shards: 100%|██████████| 2/2 [00:01<00:00,  1.46it/s]^MLoading checkpoint shards: 100%|██████████| 2/2 [00:01<00:00,  1.41it/s]
+INFO:sentence_transformers.SentenceTransformer:2 prompts are loaded, with the keys: ['query', 'document']
+INFO:__main__:✅ Qwen3 model loaded successfully
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8081 (Press CTRL+C to quit)
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:__main__:Shutting down embedding server
+INFO:     Application shutdown complete.
+INFO:     Finished server process [12080]
+/Users/env/.pyenv/versions/3.11.10/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+INFO:     Started server process [13806]
+INFO:     Waiting for application startup.
+INFO:__main__:Loading embedding model: Qwen/Qwen3-Embedding-4B
+INFO:__main__:Using device: mps
+INFO:sentence_transformers.SentenceTransformer:Load pretrained SentenceTransformer: Qwen/Qwen3-Embedding-4B
+^MLoading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]^MLoading checkpoint shards:  50%|█████     | 1/2 [00:00<00:00,  1.18it/s]^MLoading checkpoint shards: 100%|██████████| 2/2 [00:01<00:00,  1.46it/s]^MLoading checkpoint shards: 100%|██████████| 2/2 [00:01<00:00,  1.41it/s]
+INFO:sentence_transformers.SentenceTransformer:2 prompts are loaded, with the keys: ['query', 'document']
+INFO:__main__:✅ Qwen3 model loaded successfully
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8081 (Press CTRL+C to quit)
+
+Frontend stderr (last 50):
+    at listen (/Users/env/.npm/_npx/e5196fa6dc3cecbc/node_modules/http-server/bin/http-server:199:10)
+    at Object.<anonymous> (/Users/env/.npm/_npx/e5196fa6dc3cecbc/node_modules/http-server/bin/http-server:136:3)
+    at Module._compile (node:internal/modules/cjs/loader:1734:14)
+    at Object..js (node:internal/modules/cjs/loader:1899:10)
+    at Module.load (node:internal/modules/cjs/loader:1469:32)
+    at Module._load (node:internal/modules/cjs/loader:1286:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24) {
+  code: 'ERR_INVALID_ARG_VALUE'
+}
+
+Node.js v24.2.0
+node:net:2159
+  throw new ERR_INVALID_ARG_VALUE('options', options);
+  ^
+
+TypeError [ERR_INVALID_ARG_VALUE]: The argument 'options' is invalid. Received { port: true, host: '127.0.0.1' }
+    at Server.listen (node:net:2159:9)
+    at HttpServer.listen (/Users/env/.npm/_npx/e5196fa6dc3cecbc/node_modules/http-server/lib/http-server.js:187:22)
+    at listen (/Users/env/.npm/_npx/e5196fa6dc3cecbc/node_modules/http-server/bin/http-server:199:10)
+    at Object.<anonymous> (/Users/env/.npm/_npx/e5196fa6dc3cecbc/node_modules/http-server/bin/http-server:136:3)
+    at Module._compile (node:internal/modules/cjs/loader:1734:14)
+    at Object..js (node:internal/modules/cjs/loader:1899:10)
+    at Module.load (node:internal/modules/cjs/loader:1469:32)
+    at Module._load (node:internal/modules/cjs/loader:1286:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24) {
+  code: 'ERR_INVALID_ARG_VALUE'
+}
+
+Node.js v24.2.0
+node:net:2159
+  throw new ERR_INVALID_ARG_VALUE('options', options);
+  ^
+TypeError [ERR_INVALID_ARG_VALUE]: The argument 'options' is invalid. Received { port: true, host: '127.0.0.1' }
+    at Server.listen (node:net:2159:9)
+    at HttpServer.listen (/Users/env/.npm/_npx/e5196fa6dc3cecbc/node_modules/http-server/lib/http-server.js:187:22)
+    at listen (/Users/env/.npm/_npx/e5196fa6dc3cecbc/node_modules/http-server/bin/http-server:199:10)
+    at Object.<anonymous> (/Users/env/.npm/_npx/e5196fa6dc3cecbc/node_modules/http-server/bin/http-server:136:3)
+    at Module._compile (node:internal/modules/cjs/loader:1734:14)
+    at Object..js (node:internal/modules/cjs/loader:1899:10)
+    at Module.load (node:internal/modules/cjs/loader:1469:32)
+    at Module._load (node:internal/modules/cjs/loader:1286:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24) {
+  code: 'ERR_INVALID_ARG_VALUE'
+}
+
+Node.js v24.2.0
+
+nginx error (last 50):
+2025/08/22 16:36:04 [error] 14141#0: *25 access forbidden by rule, client: 34.140.71.81, server: vice.higfamily.net, request: "GET / HTTP/1.1", host: "61.71.137.121"
+2025/08/22 17:07:25 [error] 14141#0: *35 access forbidden by rule, client: 45.156.128.43, server: vice.higfamily.net, request: "GET / HTTP/1.1", host: "61.71.137.121", referrer: "http://61.71.137.121/"
+2025/08/22 17:18:56 [error] 14141#0: *53 access forbidden by rule, client: 35.247.122.119, server: vice.higfamily.net, request: "GET / HTTP/1.1", host: "vice.higfamily.net", referrer: "http://vice.higfamily.net"
+2025/08/22 17:25:52 [error] 14141#0: *64 access forbidden by rule, client: 194.187.178.245, server: vice.higfamily.net, request: "GET /connector.sds HTTP/1.1", host: "61.71.137.121"
+2025/08/22 17:31:48 [error] 14141#0: *69 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /dump.sql HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:48 [error] 14141#0: *70 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /.aws/credentials HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:48 [error] 14141#0: *68 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET / HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:48 [error] 14141#0: *72 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /backup.sql HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:48 [error] 14141#0: *73 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /database.sql HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:48 [error] 14141#0: *75 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /feed HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:48 [error] 14141#0: *71 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /db/schema.rb HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:48 [error] 14141#0: *76 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /secrets.json HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:48 [error] 14141#0: *74 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /api/.env HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:48 [error] 14141#0: *79 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /web.config HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:48 [error] 14141#0: *78 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /server-status HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:48 [error] 14141#0: *77 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /config.json HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:48 [error] 14141#0: *80 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /.vscode/sftp.json HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:48 [error] 14141#0: *82 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /database_backup.sql HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:48 [error] 14141#0: *81 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /phpinfo.php HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:48 [error] 14141#0: *83 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /cloud-config.yml HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:48 [error] 14141#0: *84 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /backup.tar.gz HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:48 [error] 14141#0: *85 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /.env HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:49 [error] 14141#0: *91 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /wp-admin/setup-config.php HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:49 [error] 14141#0: *92 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /etc/ssl/private/server.key HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:49 [error] 14141#0: *100 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /config.xml HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:49 [error] 14141#0: *90 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /user_secrets.yml HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:49 [error] 14141#0: *89 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /.ssh/id_rsa HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:49 [error] 14141#0: *88 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /_vti_pvt/service.pwd HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:49 [error] 14141#0: *86 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /config.yml HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:49 [error] 14141#0: *87 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /config.yaml HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:49 [error] 14141#0: *93 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /config.php HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:49 [error] 14141#0: *94 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /.git/HEAD HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:49 [error] 14141#0: *98 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /.ssh/id_ed25519 HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:49 [error] 14141#0: *95 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /settings.py HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:49 [error] 14141#0: *96 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /config/production.json HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:49 [error] 14141#0: *97 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /docker-compose.yml HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:49 [error] 14141#0: *99 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /server.key HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:51 [error] 14141#0: *101 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /.env.production HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:51 [error] 14141#0: *102 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /.svn/wc.db HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:51 [error] 14141#0: *103 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /wp-config.php HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:51 [error] 14141#0: *104 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /backup.zip HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:51 [error] 14141#0: *105 access forbidden by rule, client: 213.232.87.234, server: vice.higfamily.net, request: "GET /.ssh/id_ecdsa HTTP/1.1", host: "vice.higfamily.net"
+2025/08/22 17:31:52 [error] 14141#0: *106 access forbidden by rule, client: 3.130.96.91, server: vice.higfamily.net, request: "GET / HTTP/1.1", host: "61.71.137.121"
+2025/08/22 17:49:11 [error] 14141#0: *110 access forbidden by rule, client: 79.124.8.120, server: vice.higfamily.net, request: "GET / HTTP/1.1", host: "61.71.137.121:443"
+2025/08/22 18:02:23 [error] 14141#0: *114 access forbidden by rule, client: 87.120.191.6, server: vice.higfamily.net, request: "GET /login.asp HTTP/1.1", host: "61.71.137.121:443"
+2025/08/22 18:11:29 [error] 14141#0: *117 access forbidden by rule, client: 193.46.255.83, server: vice.higfamily.net, request: "GET / HTTP/1.1", host: "61.71.137.121:443"
+2025/08/22 18:11:29 [error] 14141#0: *118 access forbidden by rule, client: 193.46.255.83, server: vice.higfamily.net, request: "GET / HTTP/1.1", host: "61.71.137.121"
+2025/08/22 18:20:16 [error] 14141#0: *120 access forbidden by rule, client: 64.62.197.92, server: vice.higfamily.net, request: "GET / HTTP/1.1", host: "61.71.137.121"
+2025/08/22 18:21:07 [error] 14141#0: *122 access forbidden by rule, client: 34.86.249.249, server: vice.higfamily.net, request: "GET / HTTP/1.1", host: "vice.higfamily.net", referrer: "http://vice.higfamily.net"
+2025/08/22 18:26:23 [error] 14141#0: *125 access forbidden by rule, client: 64.62.197.92, server: vice.higfamily.net, request: "GET /webui/ HTTP/1.1", host: "61.71.137.121"
+
+==== End Report (/Users/env/server/mlx-box/reports/system-report-20250822-182716.txt) ====
+Saved report to: /Users/env/server/mlx-box/reports/system-report-20250822-182716.txt
