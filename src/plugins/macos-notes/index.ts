@@ -2,6 +2,9 @@ import { DynamicTool } from '@langchain/core/tools';
 import { WoosterPlugin, AppConfig, CoreServices, LogLevel } from '../../types/plugin';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import * as fs from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
 
 const execFileAsync = promisify(execFile);
 
@@ -21,14 +24,34 @@ async function getConsoleUserAndUid(): Promise<{ username: string; uid: string }
   return { username, uid };
 }
 
-async function runShortcutAsConsoleUser(shortcutName: string, input: string, services: CoreServices, timeoutMs = 20000): Promise<string> {
+async function runShortcutAsConsoleUser(
+  shortcutName: string,
+  options: { inputContent?: string; captureTextOutput?: boolean },
+  services: CoreServices,
+  timeoutMs = 20000
+): Promise<string> {
   const { uid } = await getConsoleUserAndUid();
+  const args: string[] = ['asuser', uid, '/usr/bin/shortcuts', 'run', shortcutName];
+  let tempPath: string | undefined;
   try {
-    const { stdout } = await execFileAsync('/bin/launchctl', ['asuser', uid, '/usr/bin/shortcuts', 'run', shortcutName, '--input', input], { timeout: timeoutMs, maxBuffer: 1024 * 1024 });
+    if (options.inputContent !== undefined) {
+      const filename = `wooster-shortcuts-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`;
+      tempPath = path.join(os.tmpdir(), filename);
+      await fs.writeFile(tempPath, options.inputContent, { encoding: 'utf8' });
+      args.push('--input-path', tempPath);
+    }
+    if (options.captureTextOutput) {
+      args.push('--output-path', '/dev/stdout', '--output-type', 'text');
+    }
+    const { stdout } = await execFileAsync('/bin/launchctl', args, { timeout: timeoutMs, maxBuffer: 1024 * 1024 });
     return stdout?.toString() ?? '';
   } catch (err: any) {
-    services.log(LogLevel.ERROR, 'macOS Notes: shortcuts run failed', { error: err?.message || String(err) });
+    services.log(LogLevel.ERROR, 'macOS Notes: shortcuts run failed', { error: err?.message || String(err), args });
     throw new Error(`Shortcuts run failed for "${shortcutName}": ${err?.message || String(err)}`);
+  } finally {
+    if (tempPath) {
+      try { await fs.unlink(tempPath); } catch {}
+    }
   }
 }
 
@@ -81,7 +104,7 @@ export class MacNotesPlugin implements WoosterPlugin {
         } catch {
           payload = JSON.stringify({ title: 'From Wooster', body: String(input), folder: 'Notes' });
         }
-        const out = await runShortcutAsConsoleUser(this.shortcuts.create, payload, this.services);
+        const out = await runShortcutAsConsoleUser(this.shortcuts.create, { inputContent: payload }, this.services);
         return out?.trim() || 'Note created.';
       },
     });
@@ -93,7 +116,7 @@ export class MacNotesPlugin implements WoosterPlugin {
         if (process.platform !== 'darwin') return 'Notes not supported on this platform.';
         const title = String(input || '').trim();
         if (!title) return 'Please provide a note title.';
-        const out = await runShortcutAsConsoleUser(this.shortcuts.get, title, this.services);
+        const out = await runShortcutAsConsoleUser(this.shortcuts.get, { inputContent: title, captureTextOutput: true }, this.services);
         return out?.trim() || '';
       },
     });
@@ -110,7 +133,7 @@ export class MacNotesPlugin implements WoosterPlugin {
           return 'Input must be JSON: {"title":"...","append":"..."}';
         }
         if (!payload?.title || !payload?.append) return 'Both "title" and "append" are required.';
-        const out = await runShortcutAsConsoleUser(this.shortcuts.append, JSON.stringify(payload), this.services);
+        const out = await runShortcutAsConsoleUser(this.shortcuts.append, { inputContent: JSON.stringify(payload) }, this.services);
         return out?.trim() || 'Appended to note.';
       },
     });

@@ -40,7 +40,9 @@ Create these three Shortcuts in the GUI user’s session.
 Run as the console (GUI) user to access Shortcuts and Notes:
 ```bash
 CONSOLE_USER=$(stat -f%Su /dev/console)
-launchctl asuser $(id -u "$CONSOLE_USER") shortcuts run "Wooster Create Note" --input '{"title":"From Wooster","body":"Created via SSH","folder":"Notes"}'
+printf '%s' '{"title":"From Wooster","body":"Created via SSH","folder":"Notes"}' > /tmp/wooster-note.json
+sudo launchctl asuser $(id -u "$CONSOLE_USER") shortcuts run "Wooster Create Note" --input-path /tmp/wooster-note.json
+rm -f /tmp/wooster-note.json
 ```
 
 ### Wooster Tools
