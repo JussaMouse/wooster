@@ -14,8 +14,8 @@ Key modes you can bias Wooster toward
   - Use the project knowledge base first; only answer from general model knowledge if RAG finds nothing.
 - Web-first (current/public info)
   - Prefer `web_search` for questions about public facts, recency, or popularity; summarize and cite sources.
-- Privacy-first (local-only)
-  - Do not call external services. Use local LLM and local files only. Clearly state when info is unavailable offline.
+- Local-only routing (privacy via model choice)
+  - Enforce local LLMs and avoid external services at the routing/plugin level (e.g., local-model plugin, disable cloud/web plugins). This is a configuration decision, not a prompt mode.
 - Tool-forced (procedural)
   - Always use available tools for file ops, scheduling, email, etc., even if the model could formulate the answer without them (for reproducibility and logs).
 
@@ -44,12 +44,19 @@ Policy: Web-first for public facts.
 - If web_search seems unnecessary (timeless info), answer directly.
 ```
 
-4) Privacy-first (local-only)
+4) Local-only routing (configure, not prompt)
+Use routing and plugin config to keep all processing local. Example:
 ```
-Policy: Local-only.
-- Do not send data to external services.
-- Use local LLM and local files only. If a question needs online info, say so and propose alternatives.
+# .env or config
+ROUTING_ENABLED=true
+ROUTING_LOCAL_ENABLED=true
+# Point to your MLX base URL
+ROUTING_LOCAL_SERVER_URL=http://127.0.0.1:8080
+
+# Do not set OPENAI_API_KEY (or set ROUTING.providers.openai.enabled=false in config)
+# Disable web search by omitting TAVILY_API_KEY
 ```
+You can add a tiny prompt note like “You are running in local-only mode.”, but enforcement should live in routing/plugins.
 
 5) Tool-forced (procedural/logged)
 ```
@@ -69,9 +76,9 @@ Optional self-check snippet
 Before finalizing, quickly self-assess: if confidence < high and the question is public/current, prefer web_search; if the question is project-specific, prefer RAG.
 ```
 
-Configuration knobs that affect behavior
-- Routing (local vs cloud): `routing.enabled`, `routing.providers.local.enabled`
-  - Local MLX often lacks OpenAI function-calling; prefer Answer-first or ReAct/text tools if staying local.
+- Configuration knobs that affect behavior
+- Routing (local vs cloud, privacy by model): `routing.enabled`, `routing.providers.local.enabled`
+  - Privacy is achieved by selecting local models and disabling cloud/web plugins. Local MLX often lacks OpenAI function-calling; prefer Answer-first or ReAct/text tools if staying local.
 - Web search availability: set `TAVILY_API_KEY` to enable `web_search`.
 - Plugin enablement: disable plugins you don’t want surfaced as tools.
 - Logging: set `logging.consoleLogLevel`/`fileLogLevel` to DEBUG to observe tool choices.
@@ -92,10 +99,11 @@ Search the active project before answering; cite matched files.
 Use web_search only for public/current gaps.
 ```
 
-Offline preset (privacy/local)
+Local-only routing preset (privacy via model)
 ```
-Policy: Local-only.
-Avoid external APIs. Be explicit when information requires the internet.
+Routing: enable local provider; disable cloud provider(s).
+Web: leave TAVILY_API_KEY unset to disable web_search.
+Prompt: (optional) note “local-only” for transparency; do not rely on prompt to enforce privacy.
 ```
 
 Implementation notes
