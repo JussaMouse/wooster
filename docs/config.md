@@ -35,4 +35,20 @@ This hierarchy ensures that any setting you specify in your `.env` file will alw
 -   **Refer to `.env.example`:** This file is the "source of truth" for all available user-configurable settings. When you want to know what you can customize, look here.
 -   **(For Developers) Keep `default.json` Complete:** When adding a new feature, ensure its configuration is fully represented in `default.json` with sensible defaults. Then, expose it to users via `custom-environment-variables.json` and `.env.example`.
 
+## 5. Routing envs (local vs cloud)
+
+To route chat to a local OpenAI-compatible server (e.g., MLX):
+
+```bash
+# .env
+ROUTING_ENABLED=true
+ROUTING_LOCAL_ENABLED=true
+ROUTING_LOCAL_SERVER_URL=http://127.0.0.1:8080
+```
+
+Notes:
+- Health: Wooster probes `GET /v1/models` on the local server.
+- Completions: Wooster uses `POST /v1/completions`.
+- Tools/function-calling: stock MLX doesn’t implement OpenAI “tools”; prefer answer-first prompting and explicit `web_search` usage.
+
 By following this structure, we ensure the configuration is secure, flexible, and easy to manage across different deployment scenarios. 

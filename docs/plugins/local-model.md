@@ -4,10 +4,36 @@ This document outlines the approaches for integrating local MLX (Apple Silicon) 
 
 ## 1. Overview
 
-- **Plugin Name**: `LocalMLX` (future implementation)
-- **Version**: TBD
-- **Provider**: `src/plugins/localMLX/index.ts` (planned)
-- **Purpose**: This plugin enables Wooster to leverage local MLX-optimized language models running on Apple Silicon (M1/M2/M3/M4) Macs. It provides AI capabilities for chat, text generation, code assistance, and task processing while maintaining privacy and reducing external API costs.
+- **Plugin Name**: `local-model`
+- **Version**: current
+- **Provider**: `src/plugins/local-model/index.ts`
+- **Purpose**: Enable Wooster to leverage local MLX-optimized models on Apple Silicon. Provides chat via an OpenAI-compatible HTTP server and optional local embeddings.
+
+### Quick Start (MLX on mlx-box)
+- Start MLX chat server on the server:
+  ```bash
+  poetry run python -m mlx_lm server \
+    --model mlx-community/Qwen2.5-72B-Instruct-4bit \
+    --port 8080 \
+    --host 127.0.0.1
+  ```
+- Test:
+  ```bash
+  curl -sS http://127.0.0.1:8080/v1/models | jq .
+  curl -sS -X POST http://127.0.0.1:8080/v1/completions \
+    -H 'Content-Type: application/json' \
+    -d '{"model":"mlx-community/Qwen2.5-72B-Instruct-4bit","prompt":"Say hello from MLX.","max_tokens":64}' | jq -r '.choices[0].text'
+  ```
+- Configure Wooster to route to local by default (`.env`):
+  ```bash
+  ROUTING_ENABLED=true
+  ROUTING_LOCAL_ENABLED=true
+  ROUTING_LOCAL_SERVER_URL=http://127.0.0.1:8080
+  ```
+- Notes:
+  - Health probe: `GET /v1/models`
+  - Completions: `POST /v1/completions` (MLX may not implement `/v1/chat/completions`).
+  - OpenAI “tools/function-calling” is not supported by stock MLX; prefer an answer-first prompt and explicit web_search usage when needed.
 
 ## 2. MLX Model Ecosystem Overview
 
@@ -53,13 +79,22 @@ Based on the MLX community ecosystem, Wooster can integrate with:
 **Implementation**:
 ```bash
 # Start MLX server (OpenAI API compatible)
-mlx_lm.server --model mlx-community/Mistral-7B-Instruct-v0.3-4bit --port 8000
+mlx_lm.server \
+  --model mlx-community/Qwen2.5-72B-Instruct-4bit \
+  --port 8080 \
+  --host 127.0.0.1
 ```
 
 **Wooster Integration**:
-- Modify `src/configLoader.ts` to support local endpoint
-- Update OpenAI client configuration to point to `http://localhost:8000`
-- Add fallback logic (local → OpenAI API if local unavailable)
+- Set routing envs to enable local:
+  ```bash
+  ROUTING_ENABLED=true
+  ROUTING_LOCAL_ENABLED=true
+  ROUTING_LOCAL_SERVER_URL=http://127.0.0.1:8080
+  ```
+- Health probe: `GET /v1/models`
+- Completions: `POST /v1/completions`
+- Note: MLX typically does not implement OpenAI “tools”; prefer answer-first prompting and explicit web_search when needed.
 
 ### 3.2. Approach B: Python Bridge Service
 
