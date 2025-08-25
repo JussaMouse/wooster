@@ -34,6 +34,12 @@ export class ModelRouterService {
   private localModelHealthy: boolean = false;
   private lastHealthCheck: number = 0;
 
+  // Tracks what the router selected most recently
+  private currentModelInfo: { provider: 'openai' | 'local'; model: string; baseURL?: string } = {
+    provider: 'openai',
+    model: ''
+  };
+
   constructor(config: AppConfig) {
     this.config = config;
     this.routingConfig = config.routing || this.getDefaultRoutingConfig();
@@ -44,6 +50,7 @@ export class ModelRouterService {
       temperature: config.openai.temperature,
       openAIApiKey: config.openai.apiKey,
     });
+    this.currentModelInfo = { provider: 'openai', model: config.openai.modelName };
 
     // Phase 2: Initialize local model client if enabled
     if (this.routingConfig.providers.local?.enabled) {
@@ -68,6 +75,7 @@ export class ModelRouterService {
     try {
       // Phase 1: Always return primary model (zero-latency)
       if (!this.routingConfig.enabled) {
+        this.currentModelInfo = { provider: 'openai', model: this.config.openai.modelName };
         return this.primaryModel;
       }
 
@@ -82,6 +90,7 @@ export class ModelRouterService {
     } catch (error) {
       log(LogLevel.ERROR, 'ModelRouter: Error in selectModel', { error, request });
       // Fallback to primary model on any error
+      this.currentModelInfo = { provider: 'openai', model: this.config.openai.modelName };
       return this.primaryModel;
     }
   }
@@ -106,12 +115,14 @@ export class ModelRouterService {
           openAIApiKey: this.config.openai.apiKey || 'local-mlx',
           configuration: { baseURL },
         } as any);
+        this.currentModelInfo = { provider: 'local', model: localModelName, baseURL };
         return localChat;
       } else {
         log(LogLevel.WARN, 'ModelRouter: Local model unavailable, falling back to OpenAI');
       }
     }
     // Fallback: OpenAI
+    this.currentModelInfo = { provider: 'openai', model: this.config.openai.modelName };
     return this.primaryModel;
   }
 
@@ -250,6 +261,13 @@ export class ModelRouterService {
         errors: true
       }
     };
+  }
+
+  /**
+   * Returns information about the most recently selected model/provider
+   */
+  getCurrentModelInfo(): { provider: 'openai' | 'local'; model: string; baseURL?: string } {
+    return this.currentModelInfo;
   }
 }
 

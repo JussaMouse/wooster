@@ -62,6 +62,16 @@ async function initializeTools() {
     context: modelRouter.createContext('COMPLEX_REASONING')
   }) as ChatOpenAI;
 
+  // Log which model/provider is active
+  try {
+    const info = (modelRouter as any).getCurrentModelInfo?.();
+    if (info) {
+      const provider = info.provider === 'local' ? 'LOCAL' : 'OPENAI';
+      const at = info.baseURL ? ` @ ${info.baseURL}` : '';
+      log(LogLevel.INFO, `ModelRouter: Active model => [${provider}] ${info.model}${at}`);
+    }
+  } catch {}
+
   const coreTools: any[] = [];
 
   const queryKnowledgeBase = new DynamicTool({
