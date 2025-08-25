@@ -233,4 +233,45 @@ These mirror Comput3's public API examples; the plugin tools abstract these call
 - Example scripts: [`https://github.com/comput3ai/c3-examples`](https://github.com/comput3ai/c3-examples)
 - Launch portal: [`https://launch.comput3.ai/`](https://launch.comput3.ai/)
 
+## 10. Known API Endpoints
+
+### 10.1 Workload API (v0)
+
+- **Base URL**: `https://api.comput3.ai/api/v0`
+- **Auth**: header `X-C3-API-KEY: <your_api_key>`
+- **Endpoints**:
+  - `GET /` — API status
+  - `GET /types` — Get available workload types
+  - `POST /launch` — Launch a new workload
+  - `POST /workloads` — List your workloads (optional body `{ "running": true }`)
+  - `POST /stop` — Stop a running workload (body `{ "workload": "<id>" }`)
+  - `GET /balance` — Check account balance
+  - `GET /profile` — Get user profile
+  - `POST /verify_tag` — Verify token/tag ownership (body `{ "tag": "token:ai16z" }`)
+- **Docs**: `https://api.comput3.ai/api/v0/apidocs/#/`
+
+### 10.2 Node App Endpoints (per workload)
+
+- **Base URL**: `https://app.comput3.ai/{index}/api` (replace `{index}` with the node index, e.g., `0`)
+- **Endpoints**:
+  - `GET /tags` — List available models on the node
+  - `POST /generate` — Generate text or analyze images on the node
+
+### 10.3 Inference API (v1)
+
+- **Base URL**: `https://api.comput3.ai/v1`
+- **Auth**: header `Authorization: Bearer <your_api_key>`
+- **Endpoints**:
+  - `POST /completions` — Free/premium text completions (e.g., `llama3:70b`, `hermes3:70b`)
+
+### 10.4 Chat and Agent Orchestration (v1)
+
+- **Base URL**: `https://api.comput3.ai/v1`
+- **Auth**: header `Authorization: Bearer <your_api_key>`
+- **Endpoints**:
+  - `POST /chat/completions` — OpenAI-compatible chat completions (with ElizaOS agent support)
+  - `POST /chat/stream` — Streaming chat via Server-Sent Events (SSE)
+  - `POST /agents/deploy` — Deploy ElizaOS agents to the distributed network
+  - `GET /context/{agent_id}` — Retrieve/sync agent context across nodes
+
 
