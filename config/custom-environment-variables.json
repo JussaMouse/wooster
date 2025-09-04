@@ -1,12 +1,18 @@
 {
   "appName": "APP_NAME",
   "version": "APP_VERSION",
+  "chatMode": "CHAT_MODE",
   "logging": {
     "consoleLogLevel": "LOGGING_CONSOLE_LOG_LEVEL",
     "fileLogLevel": "LOGGING_FILE_LOG_LEVEL",
     "logFile": "LOGGING_LOG_FILE",
     "logAgentLLMInteractions": "LOGGING_LOG_AGENT_LLM_INTERACTIONS",
     "consoleQuietMode": "LOGGING_CONSOLE_QUIET_MODE"
+  },
+  "codeAgent": {
+    "maxAttempts": "CODE_AGENT_MAX_ATTEMPTS",
+    "stepTimeoutMs": "CODE_AGENT_STEP_TIMEOUT_MS",
+    "totalTimeoutMs": "CODE_AGENT_TOTAL_TIMEOUT_MS"
   },
   "openai": {
     "apiKey": "OPENAI_API_KEY",
@@ -60,6 +66,9 @@
     "frontend": {
       "enabled": "PLUGIN_FRONTEND_ENABLED",
       "port": "PLUGIN_FRONTEND_PORT"
+    },
+    "signal": {
+      "enabled": "PLUGIN_SIGNAL_ENABLED"
     }
   }
 } 

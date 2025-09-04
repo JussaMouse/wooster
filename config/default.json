@@ -2,6 +2,7 @@
   "env": "development",
   "appName": "Wooster",
   "version": "1.0.0",
+  "chatMode": "classic_tools",
   "logLevel": "info",
   "logging": {
     "consoleLogLevel": "info",
@@ -9,6 +10,15 @@
     "logFile": "logs/wooster_session.log",
     "logAgentLLMInteractions": false,
     "consoleQuietMode": true
+  },
+  "codeAgent": {
+    "maxAttempts": 2,
+    "stepTimeoutMs": 20000,
+    "totalTimeoutMs": 60000,
+    "logging": {
+      "enabled": true,
+      "redactions": true
+    }
   },
   "openai": {
     "apiKey": "YOUR_OPENAI_API_KEY_HERE",
@@ -116,6 +126,9 @@
     "frontend": {
       "enabled": true,
       "port": 3000
+    },
+    "signal": {
+      "enabled": false
     }
   }
 } 
