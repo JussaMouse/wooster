@@ -3,6 +3,7 @@ import { queryKnowledgeBase } from '../agentExecutorService';
 import { scheduleAgentTask } from '../schedulerTool';
 import { TavilySearch } from '@langchain/tavily';
 import { AppConfig, getConfig } from '../configLoader';
+import { sendSignalMessage } from '../plugins/signal';
 
 function truncate(str: string, maxLength: number): string {
   if (str.length <= maxLength) {
@@ -91,7 +92,21 @@ export function createToolApi() {
     },
     signalNotify: async (msg: string) => {
       log(LogLevel.INFO, `[CodeAgent] signalNotify called with: ${msg}`);
-      // Placeholder implementation
+      try {
+        // This is a simplified bridge. A real implementation would need to
+        // manage the SignalEnv more robustly.
+        const signalEnv = {
+          cliPath: process.env.SIGNAL_CLI_PATH || '/opt/homebrew/bin/signal-cli',
+          number: process.env.SIGNAL_CLI_NUMBER,
+          to: process.env.SIGNAL_TO,
+          groupId: process.env.SIGNAL_GROUP_ID,
+          timeoutMs: Number(process.env.SIGNAL_CLI_TIMEOUT_MS || '20000'),
+        };
+        return await sendSignalMessage(signalEnv, msg);
+      } catch (error: any) {
+        log(LogLevel.ERROR, '[CodeAgent] Error sending Signal message', { error });
+        return `Error sending Signal message: ${error.message}`;
+      }
     },
   };
 }
