@@ -17,6 +17,7 @@ let configuredFileLogLevel: LogLevel = LogLevel.INFO;    // Default file log lev
 let currentLogFile: string | null = null;
 let logAgentLLMInteractionsEnabled = false;
 let configuredConsoleQuietMode = false; // Default console quiet mode
+let codeAgentLoggingEnabled = true; // Default to true, can be configured
 
 /**
  * Initial, minimal logger setup from environment variables.
@@ -46,6 +47,10 @@ export function applyLoggerConfig(config: LoggingConfig): void {
     : config.fileLogLevel || LogLevel.INFO;
   logAgentLLMInteractionsEnabled = config.logAgentLLMInteractions || false;
   configuredConsoleQuietMode = config.consoleQuietMode || false;
+  // This will need to be wired up to the new config settings in a real implementation
+  // For now, we'll just leave it as its default.
+  // codeAgentLoggingEnabled = config.codeAgent?.logging?.enabled ?? true;
+
 
   if (config.logFile) {
     // Always resolve the log file path relative to the current working directory.
@@ -140,6 +145,20 @@ export function logLLMInteraction(message: string, ...args: any[]) {
   const formattedMessage = util.format(message, ...args);
   log(LogLevel.DEBUG, `[LLM_INTERACTION] ${formattedMessage}`);
 }
+
+export interface CodeAgentLog {
+  event: 'start' | 'llm_request' | 'llm_response' | 'code_extracted' | 'sandbox_run' | 'tool_call' | 'final_answer' | 'error' | 'finish';
+  details: Record<string, any>;
+}
+
+export function logCodeAgentInteraction(logDetails: CodeAgentLog) {
+  if (!codeAgentLoggingEnabled) {
+    return;
+  }
+  const formattedMessage = util.format(`[CODE_AGENT] [${logDetails.event}]`, logDetails.details);
+  log(LogLevel.DEBUG, formattedMessage);
+}
+
 
 // Remove old initLogger as its functionality is split between bootstrapLogger and applyLoggerConfig
 // export function initLogger() { ... } 

@@ -1,5 +1,5 @@
 import { BaseMessage } from '@langchain/core/messages';
-import { log, LogLevel } from './logger';
+import { log, LogLevel, logCodeAgentInteraction } from './logger';
 import { getConfig } from './configLoader';
 import { getModelRouter } from './routing/ModelRouterService';
 import { CodeSandbox } from './codeAgent/CodeSandbox';
@@ -52,7 +52,7 @@ export async function executeCodeAgent(
   userInput: string,
   chatHistory: BaseMessage[],
 ): Promise<string> {
-  log(LogLevel.INFO, 'Executing Code Agent...');
+  logCodeAgentInteraction({ event: 'start', details: { userInput } });
   const config = getConfig();
   const { maxAttempts, stepTimeoutMs, totalTimeoutMs } = config.codeAgent;
 
@@ -64,30 +64,42 @@ export async function executeCodeAgent(
     });
 
     const prompt = await buildCodeAgentPrompt(userInput, chatHistory);
+    logCodeAgentInteraction({ event: 'llm_request', details: { prompt } });
     const response = await model.invoke(prompt);
-    const code = extractJsCodeBlock(response.content as string);
+    const responseContent = response.content as string;
+    logCodeAgentInteraction({ event: 'llm_response', details: { response: responseContent } });
+    const code = extractJsCodeBlock(responseContent);
 
     if (!code) {
+      logCodeAgentInteraction({ event: 'error', details: { message: 'No code block found in LLM response.', attempt } });
       log(LogLevel.WARN, `Attempt ${attempt}: No code block found in LLM response.`);
       if (attempt === maxAttempts) {
-        return "I couldn't generate the right code to answer your request. Please try rephrasing.";
+        const errorMessage = "I couldn't generate the right code to answer your request. Please try rephrasing.";
+        logCodeAgentInteraction({ event: 'finish', details: { finalAnswer: errorMessage, status: 'failure' } });
+        return errorMessage;
       }
       continue;
     }
+    logCodeAgentInteraction({ event: 'code_extracted', details: { code } });
 
     const sandbox = new CodeSandbox(stepTimeoutMs, totalTimeoutMs);
     const toolApi = createToolApi();
+    logCodeAgentInteraction({ event: 'sandbox_run', details: { code } });
     const result = await sandbox.run(code, toolApi);
 
     if (result.finalAnswer) {
+      logCodeAgentInteraction({ event: 'final_answer', details: { finalAnswer: result.finalAnswer } });
+      logCodeAgentInteraction({ event: 'finish', details: { finalAnswer: result.finalAnswer, status: 'success' } });
       return result.finalAnswer;
     }
 
     if (result.error) {
+      logCodeAgentInteraction({ event: 'error', details: { message: 'Sandbox execution failed.', error: result.error, attempt } });
       log(LogLevel.WARN, `Attempt ${attempt}: Sandbox execution failed.`, { error: result.error });
       // Here you could add the error to the prompt for the next attempt.
     }
   }
-
-  return "I tried my best but couldn't get a final answer. Please check the logs for more details.";
+  const finalMessage = "I tried my best but couldn't get a final answer. Please check the logs for more details.";
+  logCodeAgentInteraction({ event: 'finish', details: { finalAnswer: finalMessage, status: 'failure' } });
+  return finalMessage;
 }
