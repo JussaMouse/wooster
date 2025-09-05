@@ -49,6 +49,46 @@ interface ScheduleAgentTaskArgs {
   humanReadableDescription: string;
 }
 
+export async function queryKnowledgeBase(input: string, runManager?: any): Promise<string> {
+  if (!projectVectorStoreInstance) {
+    log(LogLevel.ERROR, "Project vector store not initialized for queryKnowledgeBase tool.");
+    return "Error: Knowledge base not initialized.";
+  }
+  if (!agentLlm) {
+    log(LogLevel.ERROR, "Agent LLM not initialized for queryKnowledgeBase tool.");
+    return "Error: Agent LLM not initialized.";
+  }
+
+  log(LogLevel.DEBUG, "queryKnowledgeBaseTool: Invoked", { input });
+  try {
+    const retriever = projectVectorStoreInstance.asRetriever();
+    const currentChatHistory: BaseMessage[] = runManager?.config?.configurable?.chat_history || [];
+    const ragChatHistory = currentChatHistory.filter(m => m._getType() === 'human' || m._getType() === 'ai');
+    const historyAwareRetrieverChain = await createHistoryAwareRetriever({
+        llm: agentLlm, 
+        retriever,
+        rephrasePrompt: historyAwarePrompt,
+    });
+    const documentChain = await createStuffDocumentsChain({
+        llm: agentLlm,
+        prompt: answerPrompt,
+    });
+    const retrievalChain = await createRetrievalChain({
+        retriever: historyAwareRetrieverChain,
+        combineDocsChain: documentChain,
+    });
+    const result = await retrievalChain.invoke({ 
+        input: input, 
+        chat_history: ragChatHistory,
+    });
+    log(LogLevel.DEBUG, "queryKnowledgeBaseTool: RAG chain result", { result });
+    return result.answer || "No relevant information found in the project knowledge base.";
+  } catch (error) {
+    log(LogLevel.ERROR, "queryKnowledgeBaseTool: Error during RAG chain execution", { error });
+    return "Error occurred while querying the project knowledge base.";
+  }
+}
+
 async function initializeTools() {
   appConfig = await getConfig();
   
@@ -74,49 +114,13 @@ async function initializeTools() {
 
   const coreTools: any[] = [];
 
-  const queryKnowledgeBase = new DynamicTool({
+  const queryKnowledgeBaseTool = new DynamicTool({
     name: "queryKnowledgeBase",
-    description: "Searches and answers questions based exclusively on the documents and knowledge within the currently active project. Use for information specific to this project's context. Input should be a concise query string detailing what information is sought.",
-    func: async (input: string, runManager?: any) => {
-      if (!projectVectorStoreInstance) {
-        log(LogLevel.ERROR, "Project vector store not initialized for queryKnowledgeBase tool.");
-        return "Project knowledge base is not currently available.";
-      }
-      if (!agentLlm) {
-        log(LogLevel.ERROR, "Agent LLM not initialized for queryKnowledgeBase tool.");
-        return "LLM for knowledge base is not available.";
-      }
-      log(LogLevel.DEBUG, "queryKnowledgeBaseTool: Invoked", { input });
-      try {
-        const retriever = projectVectorStoreInstance.asRetriever();
-        const currentChatHistory: BaseMessage[] = runManager?.config?.configurable?.chat_history || [];
-        const ragChatHistory = currentChatHistory.filter(m => m._getType() === 'human' || m._getType() === 'ai');
-        const historyAwareRetrieverChain = await createHistoryAwareRetriever({
-            llm: agentLlm, 
-            retriever,
-            rephrasePrompt: historyAwarePrompt,
-        });
-        const documentChain = await createStuffDocumentsChain({
-            llm: agentLlm,
-            prompt: answerPrompt,
-        });
-        const retrievalChain = await createRetrievalChain({
-            retriever: historyAwareRetrieverChain,
-            combineDocsChain: documentChain,
-        });
-        const result = await retrievalChain.invoke({ 
-            input: input, 
-            chat_history: ragChatHistory,
-        });
-        log(LogLevel.DEBUG, "queryKnowledgeBaseTool: RAG chain result", { result });
-        return result.answer || "No relevant information found in the project knowledge base.";
-      } catch (error) {
-        log(LogLevel.ERROR, "queryKnowledgeBaseTool: Error during RAG chain execution", { error });
-        return "Error occurred while querying the project knowledge base.";
-      }
-    },
+    description:
+      "Queries the project-specific knowledge base to answer questions. Use this for questions about the project's content, files, or context.",
+    func: queryKnowledgeBase,
   });
-  coreTools.push(queryKnowledgeBase);
+  coreTools.push(queryKnowledgeBaseTool);
 
   coreTools.push(scheduleAgentTaskTool);
   coreTools.push(createFileTool);

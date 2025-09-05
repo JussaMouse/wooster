@@ -1,13 +1,65 @@
 import { DynamicTool } from "@langchain/core/tools";
 import { v4 as uuidv4 } from 'uuid';
-import { log, LogLevel } from './logger'; // Adjusted path
-import { SchedulerService } from "./scheduler/schedulerService"; // Adjusted path
-import { parseDateString } from "./scheduler/scheduleParser";   // Adjusted path
+import { log, LogLevel } from "../logger";
+import { SchedulerService } from "./scheduler/schedulerService";
+import { parseDateString } from "./scheduler/scheduleParser";
 
 interface ScheduleAgentTaskArgs {
   taskPayload: string;
   timeExpression: string;
   humanReadableDescription: string;
+}
+
+export async function scheduleAgentTask(args: ScheduleAgentTaskArgs): Promise<string> {
+  const { taskPayload, timeExpression, humanReadableDescription } = args;
+  log(LogLevel.INFO, '[Tool:scheduleAgentTask] Called with parsed/validated args:', { taskPayload, timeExpression, humanReadableDescription });
+
+  if (!taskPayload || typeof taskPayload !== 'string' || 
+      !timeExpression || typeof timeExpression !== 'string' || 
+      !humanReadableDescription || typeof humanReadableDescription !== 'string') {
+    log(LogLevel.WARN, '[Tool:scheduleAgentTask] Missing or invalid type for required arguments.', args);
+    return "Error: Missing or invalid arguments. 'taskPayload', 'timeExpression', and 'humanReadableDescription' are required strings.";
+  }
+
+  const scheduleDate = parseDateString(timeExpression);
+
+  if (!scheduleDate) {
+    log(LogLevel.WARN, '[Tool:scheduleAgentTask] Could not parse timeExpression.', { timeExpression });
+    return `Error: Could not parse the time expression "${timeExpression}". Please use a clearer format (e.g., 'tomorrow at 5pm', 'in 2 hours').`;
+  }
+  
+  if (scheduleDate.getTime() < Date.now()) {
+    log(LogLevel.WARN, '[Tool:scheduleAgentTask] Attempted to schedule in the past.', { scheduleDate: scheduleDate.toLocaleString(), timeExpression });
+    return `Error: The specified time "${timeExpression}" is in the past. Please provide a future time.`;
+  }
+
+  const taskKey = 'agent.respond';
+  
+  log(LogLevel.DEBUG, '[Tool:scheduleAgentTask] Calling SchedulerService.create', { description: humanReadableDescription, scheduleDate, taskPayload, taskKey });
+  
+  try {
+    const newSchedule = await SchedulerService.create({
+      description: humanReadableDescription,
+      schedule_date: scheduleDate.toISOString(),
+      task_handler_type: 'AGENT_PROMPT',
+      task_key: taskKey, 
+      payload: JSON.stringify(taskPayload), 
+      is_active: true,
+      project_name: 'default' 
+    });
+
+    if (newSchedule && newSchedule.id) {
+      const confirmationMessage = `Task "${humanReadableDescription}" has been scheduled successfully for ${scheduleDate.toLocaleString()}.`;
+      log(LogLevel.INFO, '[Tool:scheduleAgentTask] Task scheduled successfully.', { scheduleId: newSchedule.id, confirmationMessage });
+      return confirmationMessage;
+    } else {
+      log(LogLevel.ERROR, '[Tool:scheduleAgentTask] SchedulerService.create returned null or schedule without ID.', { args, newSchedule });
+      return "Error: Failed to schedule task. The scheduler service did not confirm the task creation.";
+    }
+  } catch (error: any) {
+    log(LogLevel.ERROR, '[Tool:scheduleAgentTask] Error during execution:', { errorMessage: error.message, errorStack: error.stack, args });
+    return "An unexpected error occurred while scheduling the task.";
+  }
 }
 
 export const scheduleAgentTaskTool = new DynamicTool({
@@ -20,7 +72,6 @@ export const scheduleAgentTaskTool = new DynamicTool({
                "'humanReadableDescription' is a brief summary of the task (e.g., 'Check London weather').",
   func: async (toolInput: string | Record<string, any>): Promise<string> => {
     let args: ScheduleAgentTaskArgs;
-    let parseError = false;
 
     if (typeof toolInput === 'string') {
       try {
@@ -39,56 +90,6 @@ export const scheduleAgentTaskTool = new DynamicTool({
       return "Error: Invalid input type for scheduleAgentTask. Expected a JSON string or a JSON object.";
     }
 
-    const { taskPayload, timeExpression, humanReadableDescription } = args;
-    log(LogLevel.INFO, '[Tool:scheduleAgentTask] Called with parsed/validated args:', { taskPayload, timeExpression, humanReadableDescription });
-
-    if (!taskPayload || typeof taskPayload !== 'string' || 
-        !timeExpression || typeof timeExpression !== 'string' || 
-        !humanReadableDescription || typeof humanReadableDescription !== 'string') {
-      log(LogLevel.WARN, '[Tool:scheduleAgentTask] Missing or invalid type for required arguments.', args);
-      let missing = [];
-      if (!taskPayload || typeof taskPayload !== 'string') missing.push('taskPayload (string)');
-      if (!timeExpression || typeof timeExpression !== 'string') missing.push('timeExpression (string)');
-      if (!humanReadableDescription || typeof humanReadableDescription !== 'string') missing.push('humanReadableDescription (string)');
-      return `Error: Missing or invalid arguments. I need all of the following as strings: ${missing.join(', ')}. Please provide a complete JSON object.`;
-    }
-
-    const scheduleDate = parseDateString(timeExpression);
-
-    if (!scheduleDate) {
-      log(LogLevel.WARN, '[Tool:scheduleAgentTask] Could not parse timeExpression.', { timeExpression });
-      return `Could not understand the time expression: \"${timeExpression}\". Please try a different phrasing.`;
-    }
-
-    if (scheduleDate.getTime() <= Date.now()) {
-      log(LogLevel.WARN, '[Tool:scheduleAgentTask] Attempted to schedule in the past.', { scheduleDate: scheduleDate.toLocaleString(), timeExpression });
-      return `The specified time (${scheduleDate.toLocaleString()}) is in the past. Please provide a future time.`;
-    }
-
-    try {
-      const taskKey = `agent.toolScheduled.${uuidv4()}`;
-      log(LogLevel.DEBUG, '[Tool:scheduleAgentTask] Calling SchedulerService.create', { description: humanReadableDescription, scheduleDate, taskPayload, taskKey });
-      
-      const newSchedule = await SchedulerService.create({
-        description: humanReadableDescription,
-        schedule_expression: scheduleDate.toISOString(),
-        payload: taskPayload,
-        task_key: taskKey, 
-        task_handler_type: 'AGENT_PROMPT',
-        execution_policy: 'DEFAULT_SKIP_MISSED'
-      });
-
-      if (newSchedule && newSchedule.id) {
-        const confirmationMessage = `Okay, I've scheduled \"${humanReadableDescription}\" for ${scheduleDate.toLocaleString()}. (ID: ${newSchedule.id})`;
-        log(LogLevel.INFO, '[Tool:scheduleAgentTask] Task scheduled successfully.', { scheduleId: newSchedule.id, confirmationMessage });
-        return confirmationMessage;
-      } else {
-        log(LogLevel.ERROR, '[Tool:scheduleAgentTask] SchedulerService.create returned null or schedule without ID.', { args, newSchedule });
-        throw new Error("Scheduler failed to create the task. SchedulerService.create returned an unexpected value.");
-      }
-    } catch (error: any) {
-      log(LogLevel.ERROR, '[Tool:scheduleAgentTask] Error during execution:', { errorMessage: error.message, errorStack: error.stack, args });
-      throw new Error(`Failed to schedule task: ${error.message}`);
-    }
-  }
+    return scheduleAgentTask(args);
+  },
 }); 
