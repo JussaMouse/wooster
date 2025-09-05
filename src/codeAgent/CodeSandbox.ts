@@ -31,18 +31,8 @@ export class CodeSandbox {
     const stdout: string[] = [];
     const stderr: string[] = [];
     
-    // Pass the entire tool API as a single reference
-    const toolApiRef = new ivm.Reference(toolApi);
-    await jail.set('_toolApi', toolApiRef);
+    const references: ivm.Reference<any>[] = [];
 
-    // Create shims
-    const bootstrapCode = Object.keys(toolApi).map(key => {
-      if (typeof toolApi[key] === 'function') {
-        return `globalThis.${key} = async (...args) => { return await _toolApi.get('${key}').apply(undefined, args, { result: { promise: true } }); };`;
-      }
-      return '';
-    }).join('\n');
-    
     const finalAnswerRef = new ivm.Reference((text: string) => {
         if (finalAnswer === undefined) {
           finalAnswer = text;
@@ -50,22 +40,30 @@ export class CodeSandbox {
           log(LogLevel.WARN, 'finalAnswer called more than once. Subsequent calls are ignored.');
         }
     });
+    references.push(finalAnswerRef);
     await jail.set('finalAnswer', finalAnswerRef);
     
     const consoleLogRef = new ivm.Reference((...args: any[]) => stdout.push(args.map(arg => String(arg)).join(' ')));
+    references.push(consoleLogRef);
     const consoleErrorRef = new ivm.Reference((...args: any[]) => stderr.push(args.map(arg => String(arg)).join(' ')));
+    references.push(consoleErrorRef);
     const consoleRef = new ivm.Reference({
         log: consoleLogRef,
         error: consoleErrorRef
     });
+    references.push(consoleRef);
     await jail.set('console', consoleRef);
+    
+    // Create and set a reference for each tool
+    for (const [key, value] of Object.entries(toolApi)) {
+      if (typeof value === 'function') {
+        const ref = new ivm.Reference(value);
+        references.push(ref);
+        await jail.set(key, ref.copyInto({ promise: true }));
+      }
+    }
 
     try {
-      // Run the bootstrap script to define the tool shims
-      const bootstrapScript = await isolate.compileScript(bootstrapCode);
-      await bootstrapScript.run(context, { timeout });
-      
-      // Now run the user code
       const wrappedCode = `(async () => { ${code} })();`;
       const script = await isolate.compileScript(wrappedCode);
       await script.run(context, { timeout, promise: true });
@@ -84,11 +82,9 @@ export class CodeSandbox {
       };
     } finally {
       // Clean up all references
-      toolApiRef.release();
-      finalAnswerRef.release();
-      consoleLogRef.release();
-      consoleErrorRef.release();
-      consoleRef.release();
+      references.forEach(ref => {
+        try { ref.release(); } catch (e) {}
+      });
 
       if (!isolate.isDisposed) {
         isolate.dispose();
