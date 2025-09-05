@@ -53,7 +53,7 @@ export class CodeSandbox {
         }
     });
     references.push(finalAnswerRef);
-    await jail.set('finalAnswer', finalAnswerRef);
+    await jail.set('__tool_ref_finalAnswer', finalAnswerRef);
     
     const consoleLogRef = new ivm.Reference((...args: any[]) => stdout.push(args.map(arg => String(arg)).join(' ')));
     references.push(consoleLogRef);
@@ -71,6 +71,10 @@ export class CodeSandbox {
          log: (...args) => globalThis['__tool_ref_console_log'].apply(undefined, args, { arguments: { copy: true }, result: { copy: true } }),
          error: (...args) => globalThis['__tool_ref_console_error'].apply(undefined, args, { arguments: { copy: true }, result: { copy: true } })
        };`
+    );
+    // finalAnswer shim
+    bootstrapLines.push(
+      `globalThis.finalAnswer = (text) => globalThis['__tool_ref_finalAnswer'].apply(undefined, [text], { arguments: { copy: true }, result: { copy: true } });`
     );
     
     for (const [key, value] of Object.entries(toolApi)) {
