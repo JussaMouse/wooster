@@ -29,7 +29,7 @@ export function createToolApi() {
   if (config.tavily?.apiKey) {
     tavilySearch = new TavilySearch({
       maxResults: 3,
-      apiKey: config.tavily.apiKey,
+      tavilyApiKey: config.tavily.apiKey,
     });
   } else {
     log(LogLevel.WARN, '[CodeAgent] Tavily API key not configured. webSearch will be a no-op.');
@@ -42,7 +42,7 @@ export function createToolApi() {
         return 'Web search is not configured.';
       }
       try {
-        const results = await tavilySearch.invoke(query);
+        const results = await tavilySearch.invoke({ query });
         return truncate(JSON.stringify(results), maxOutputLength);
       } catch (error: any) {
         log(LogLevel.ERROR, '[CodeAgent] Error during web search', { error });

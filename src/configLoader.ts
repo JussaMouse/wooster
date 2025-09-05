@@ -158,6 +158,17 @@ export interface AppConfig {
   apiPlugin?: ApiPluginConfig;
   personalHealth?: PersonalHealthConfig;
   routing?: ModelRoutingConfig;
+  codeAgent: {
+    maxAttempts: number;
+    stepTimeoutMs: number;
+    totalTimeoutMs: number;
+    memoryLimitMb: number;
+    maxOutputLength: number;
+    logging: {
+      enabled: boolean;
+      redactions: boolean;
+    };
+  };
   plugins: {
     [key: string]: any;
   };

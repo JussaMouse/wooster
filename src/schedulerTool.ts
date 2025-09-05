@@ -1,6 +1,6 @@
 import { DynamicTool } from "@langchain/core/tools";
 import { v4 as uuidv4 } from 'uuid';
-import { log, LogLevel } from "../logger";
+import { log, LogLevel } from "./logger";
 import { SchedulerService } from "./scheduler/schedulerService";
 import { parseDateString } from "./scheduler/scheduleParser";
 
@@ -40,12 +40,11 @@ export async function scheduleAgentTask(args: ScheduleAgentTaskArgs): Promise<st
   try {
     const newSchedule = await SchedulerService.create({
       description: humanReadableDescription,
-      schedule_date: scheduleDate.toISOString(),
+      schedule_expression: scheduleDate.toISOString(),
       task_handler_type: 'AGENT_PROMPT',
       task_key: taskKey, 
       payload: JSON.stringify(taskPayload), 
-      is_active: true,
-      project_name: 'default' 
+      execution_policy: 'DEFAULT_SKIP_MISSED'
     });
 
     if (newSchedule && newSchedule.id) {
