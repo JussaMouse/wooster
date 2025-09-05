@@ -59,7 +59,8 @@ export class CodeSandbox {
     `;
 
     try {
-      const script = await isolate.compileScript(bootstrap + code);
+      const wrappedCode = `(async () => { ${code} })();`;
+      const script = await isolate.compileScript(bootstrap + wrappedCode);
       await script.run(context, { timeout });
       
       return {
