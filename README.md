@@ -40,7 +40,36 @@ Wooster is an AI assistant designed to be extended and customized. He uses LLMs 
     ```bash
     pnpm start
     ```
-    This will primarily show the LLM's responses and Tool calls. See [Logging](#logging) for more.
+    This will open the REPL (`>` prompt).
+
+### Modes: Classic Tools vs Code-Agent
+
+Wooster now supports two agent execution modes:
+- `classic_tools` (default): LangChain Tools Agent with function-calling.
+- `code_agent`: The model emits a single JavaScript code block which runs in a secure sandbox with a minimal Tool API.
+
+Configure the default in `config/default.json` or via environment:
+```bash
+CHAT_MODE=code_agent # or classic_tools
+CODE_AGENT_MAX_ATTEMPTS=2
+CODE_AGENT_STEP_TIMEOUT_MS=20000
+CODE_AGENT_TOTAL_TIMEOUT_MS=60000
+CODE_AGENT_MEMORY_LIMIT_MB=128
+CODE_AGENT_MAX_OUTPUT_LENGTH=10000
+```
+
+You can also toggle at runtime in the REPL:
+```text
+> mode code   # switch to code-agent
+> mode tools  # switch back to classic tools
+```
+
+For debugging code-agent runs:
+```bash
+CODE_AGENT_DEBUG=1 pnpm start
+```
+
+See the new [Agent Guide](docs/agent-guide.md) for a practical, end-to-end walkthrough.
 
 
 ## Core Design
@@ -105,6 +134,15 @@ Wooster offers a range of functionalities through its plugin system:
 *   **Email Sending**: Send emails on your behalf via Gmail.
 *   **Google Calendar Integration**: Create, list, and organize calendar events.
 
+Note: In `code_agent` mode, the Tool API is exposed to the sandbox. Current surface:
+- `webSearch(query) -> { results: [{ title, url, snippet }] }`
+- `fetchText(url) -> string`
+- `queryRAG(query) -> string`
+- `writeNote(text)`
+- `schedule(isoTime, text)`
+- `discordNotify(msg)` / `signalNotify(msg)`
+- `finalAnswer(text)` (must be called once by the emitted code)
+
 ### Config:
 
 *   **Use `.env`**: API keys, Tool settings, logging, and other options all live in `.env`. 
@@ -118,3 +156,6 @@ Wooster offers a range of functionalities through its plugin system:
     *   Console logging.
     *   Log to `logs/wooster_session.log`.
     *   Log conversation to `chat.history` in the active Project Directory.
+- Console and file logging under `logs/wooster_session.log`.
+- Enable detailed LLM traces with `LOGGING_LOG_AGENT_LLM_INTERACTIONS=true`.
+- For code-agent traces, start with `CODE_AGENT_DEBUG=1`.

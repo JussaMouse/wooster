@@ -1,6 +1,12 @@
 # 03 Agent Architecture
 
+> Note: Wooster supports two agent modes: `classic_tools` (function-calling agent) and `code_agent` (model emits a single JS block executed in a sandbox). See `docs/agent-guide.md` for a practical guide and `README.md` for enabling/toggling modes.
+
 This document describes Wooster's intelligent agent system, which orchestrates conversational AI, tool execution, and multi-model routing to provide a sophisticated productivity assistant.
+
+## Dual-Mode Overview
+- **Classic Tools**: LangChain OpenAI Tools Agent. Tool selection and iterative function-calling; ideal for cloud models.
+- **Code-Agent**: Model writes one JS block; Wooster runs it in a sandbox with a minimal Tool API. Best for local, text-only models; strong for web+summarize, RAG+citation, scheduling, notes.
 
 ## 1. Overview: Multi-Model Agent System
 

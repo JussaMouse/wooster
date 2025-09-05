@@ -42,33 +42,30 @@ Wooster is a modular, extensible CLI assistant. This document explains its boot 
 - On each input line:
   1. User input is captured and added to `conversationHistory`.
   2. Built-in REPL commands are checked first (see section 5).
-  3. If not a REPL command, the input and `conversationHistory` are passed to `agentRespond(...)` in `src/agent.ts`.
-     - `agentRespond` now acts as a wrapper, passing the input and history to `executeAgent` in `src/agentExecutorService.ts`.
-     - This service uses LangChain's `AgentExecutor` with an OpenAI Tools Agent. The `AgentExecutor` manages a sophisticated interaction loop:
-        - It uses a specific prompt template. The system message provides Wooster with its core instructions and persona. This prompt is constructed by first loading `prompts/base_system_prompt.txt`, then appending the content of any other `.txt` files found in the `prompts/` directory (in alphabetical order). See `06 CONFIG.MD` for details on this customization.
-        - The LLM (within the agent) decides whether to use one of its configured tools or generate a direct answer.
-        - If a tool is chosen, the agent prepares the input for that tool, invokes it, and receives the observation (tool's output).
-        - This observation is added to the `agent_scratchpad`, and the loop continues until the LLM generates a final answer for the user.
-        - Tool descriptions are critical for the agent's decision-making.
-     - See `03 AGENT.MD` for more details on the agent's internal workings.
-  4. Project-specific knowledge is primarily accessed by the agent via its `queryKnowledgeBase` tool, which internally uses a RAG chain. An independent `ragChain` might still exist in `src/index.ts` for other specific RAG functionalities not directly invoked by the agent.
-  5. The agent's final response is printed and added to `conversationHistory`.
+  3. If not a REPL command, the input and `conversationHistory` are routed by `src/agent.ts`:
+     - If `chatMode === 'code_agent'`, the input is processed by the Code Agent executor which asks the model to emit one JS block then executes it in a sandbox with a minimal Tool API.
+     - Otherwise, the classic Tools Agent (LangChain) runs and may invoke tools iteratively.
+  4. Project-specific knowledge is accessed via `queryKnowledgeBase` (RAG) tool.
+  5. The final response is printed and added to history.
   6. Significant interactions may be logged to `projects/[projectName]/[projectName].md`.
 - On `exit`, `quit`, or Ctrl+C, the application shuts down gracefully.
 
 ## 5. Built-in REPL Commands
 (These commands are for direct system control. Most interactions are via natural language.)
 
-- `create project <name_or_path>`
-- `load project <name>`
-- `quit project` (alias: `exit project`)
-- `list projects` (Note: This command was not explicitly listed before but is a common expectation)
-- `list files`
+- `mode code` → Switch to Code Agent mode
+- `mode tools` → Switch to Classic Tools mode
+- `list models` / `routing status` (if routing logs enabled)
 - `list plugins`
 - `list tools`:
     - Lists tools configured for the `AgentExecutor`. See `04 TOOLS.MD` and individual tool documentation for details.
 - `list reminders` / `cancel <id>` / `status`: Standard scheduler commands.
 - `exit` or `quit`: Exits Wooster.
+
+### Code-Agent Debugging
+- Set `CODE_AGENT_DEBUG=1` to emit detailed logs:
+  - Tool API keys/types, bootstrap shim snippet, emitted code prefix
+  - In-sandbox probes and full error stacks
 
 ## 6. Scheduler Subsystem
 (This section largely remains the same, but emphasizes that the `scheduleAgentTask` tool is now used by the `AgentExecutor`)
