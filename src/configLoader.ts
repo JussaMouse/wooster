@@ -144,6 +144,7 @@ export interface AppConfig {
   env: string;
   appName: string;
   version: string;
+  chatMode: 'classic_tools' | 'code_agent';
   logging: LoggingConfig;
   openai: OpenAIConfig;
   tavily: TavilyConfig;
@@ -196,4 +197,12 @@ export function getConfig(): AppConfig {
     return loadConfig();
   }
   return currentConfig;
+}
+
+/**
+ * Sets the application configuration in memory.
+ * @param newConfig The new configuration object to set.
+ */
+export function setConfig(newConfig: AppConfig): void {
+  currentConfig = newConfig;
 }
