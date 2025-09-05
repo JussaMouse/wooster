@@ -59,15 +59,20 @@ export class CodeSandbox {
     references.push(consoleLogRef);
     const consoleErrorRef = new ivm.Reference((...args: any[]) => stderr.push(args.map(arg => String(arg)).join(' ')));
     references.push(consoleErrorRef);
-    const consoleRef = new ivm.Reference({
-        log: consoleLogRef,
-        error: consoleErrorRef
-    });
-    references.push(consoleRef);
-    await jail.set('console', consoleRef);
+    // Expose console refs under hidden names; shims will call them
+    await jail.set('__tool_ref_console_log', consoleLogRef, { reference: true } as any);
+    await jail.set('__tool_ref_console_error', consoleErrorRef, { reference: true } as any);
     
     // Register each tool as a hidden reference and create a callable async shim
     const bootstrapLines: string[] = [];
+    // Console shims first
+    bootstrapLines.push(
+      `globalThis.console = {
+         log: (...args) => globalThis['__tool_ref_console_log'].apply(undefined, args, { arguments: { copy: true }, result: { copy: true } }),
+         error: (...args) => globalThis['__tool_ref_console_error'].apply(undefined, args, { arguments: { copy: true }, result: { copy: true } })
+       };`
+    );
+    
     for (const [key, value] of Object.entries(toolApi)) {
       if (typeof value === 'function') {
         const refName = `__tool_ref_${key}`;
