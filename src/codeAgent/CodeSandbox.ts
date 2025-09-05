@@ -73,11 +73,6 @@ export class CodeSandbox {
         stderr,
       };
     } finally {
-      refs.forEach(ref => {
-        try {
-          ref.dispose();
-        } catch (e) {}
-      });
       if (!isolate.isDisposed) {
         isolate.dispose();
       }
