@@ -86,7 +86,7 @@ export class CodeSandbox {
         bootstrapLines.push(
           `globalThis.${key} = async (...args) => {
              try {
-               return await globalThis['${refName}'].apply(undefined, args, { arguments: { copy: true }, result: { promise: true } });
+               return await globalThis['${refName}'].apply(undefined, args, { arguments: { copy: true }, result: { copy: true, promise: true } });
              } catch (err) {
                console.error('[TOOL_ERROR:${key}]', String(err));
                throw err;
