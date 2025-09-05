@@ -3,7 +3,6 @@ import { queryKnowledgeBase } from '../agentExecutorService';
 import { scheduleAgentTask } from '../schedulerTool';
 import { TavilySearch } from '@langchain/tavily';
 import { AppConfig, getConfig } from '../configLoader';
-import { sendSignalMessage } from '../plugins/signal';
 
 function truncate(str: string, maxLength: number): string {
   if (str.length <= maxLength) {
@@ -13,14 +12,48 @@ function truncate(str: string, maxLength: number): string {
 }
 
 const allowedUrlPatterns: RegExp[] = [
-  /^https?:\/\/.*$/, // Basic http(s) pattern, can be made more restrictive
+  /^https?:\/\/.*$/,
 ];
 
 function isUrlAllowed(url: string, patterns: RegExp[]): boolean {
   return patterns.some(pattern => pattern.test(url));
 }
 
-// This will be expanded to bridge to actual tools.
+function normalizeWebResults(raw: any, maxLen: number): { results: Array<{ title: string; url: string; snippet: string }> } {
+  const pick = (v: any, keys: string[]): string => {
+    for (const k of keys) {
+      if (v && typeof v[k] === 'string' && v[k]) return v[k] as string;
+    }
+    return '';
+  };
+
+  let items: Array<{ title: string; url: string; snippet: string }> = [];
+  try {
+    let data = raw;
+    if (typeof raw === 'string') {
+      try { data = JSON.parse(raw); } catch { data = { results: [{ title: 'Result', url: '', snippet: truncate(raw, maxLen) }] }; }
+    }
+    if (Array.isArray(data)) {
+      items = data.map((v: any) => ({
+        title: truncate(pick(v, ['title']), 200) || 'Untitled',
+        url: pick(v, ['url', 'link']) || '',
+        snippet: truncate(pick(v, ['snippet', 'content', 'text']), maxLen)
+      }));
+    } else if (data && Array.isArray(data.results)) {
+      items = data.results.map((v: any) => ({
+        title: truncate(pick(v, ['title']), 200) || 'Untitled',
+        url: pick(v, ['url', 'link']) || '',
+        snippet: truncate(pick(v, ['snippet', 'content', 'text']), maxLen)
+      }));
+    } else if (data && typeof data === 'object') {
+      items = [{ title: 'Result', url: pick(data, ['url', 'link']) || '', snippet: truncate(JSON.stringify(data), maxLen) }];
+    }
+  } catch {
+    items = [{ title: 'Result', url: '', snippet: truncate(String(raw), maxLen) }];
+  }
+  return { results: items };
+}
+
 export function createToolApi() {
   const config = getConfig();
   const maxOutputLength = config.codeAgent.maxOutputLength || 10000;
@@ -39,14 +72,14 @@ export function createToolApi() {
     webSearch: async (query: string) => {
       log(LogLevel.INFO, `[CodeAgent] webSearch called with: ${query}`);
       if (!tavilySearch) {
-        return 'Web search is not configured.';
+        return { results: [] };
       }
       try {
         const results = await tavilySearch.invoke({ query });
-        return truncate(JSON.stringify(results), maxOutputLength);
+        return normalizeWebResults(results, maxOutputLength);
       } catch (error: any) {
         log(LogLevel.ERROR, '[CodeAgent] Error during web search', { error });
-        return `Error during web search: ${error.message}`;
+        return { results: [] };
       }
     },
     fetchText: async (url: string) => {
@@ -57,7 +90,6 @@ export function createToolApi() {
         return `Error: Access to URL "${url}" is not allowed.`;
       }
 
-      // Placeholder implementation
       try {
         const response = await fetch(url);
         if (!response.ok) {
@@ -93,16 +125,15 @@ export function createToolApi() {
     signalNotify: async (msg: string) => {
       log(LogLevel.INFO, `[CodeAgent] signalNotify called with: ${msg}`);
       try {
-        // This is a simplified bridge. A real implementation would need to
-        // manage the SignalEnv more robustly.
         const signalEnv = {
           cliPath: process.env.SIGNAL_CLI_PATH || '/opt/homebrew/bin/signal-cli',
           number: process.env.SIGNAL_CLI_NUMBER,
           to: process.env.SIGNAL_TO,
           groupId: process.env.SIGNAL_GROUP_ID,
           timeoutMs: Number(process.env.SIGNAL_CLI_TIMEOUT_MS || '20000'),
-        };
-        return await sendSignalMessage(signalEnv, msg);
+        } as any;
+        const { sendSignalMessage } = await import('../plugins/signal');
+        return await (sendSignalMessage as any)(signalEnv, msg);
       } catch (error: any) {
         log(LogLevel.ERROR, '[CodeAgent] Error sending Signal message', { error });
         return `Error sending Signal message: ${error.message}`;
