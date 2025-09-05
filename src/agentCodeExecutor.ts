@@ -1,6 +1,6 @@
 import { BaseMessage } from '@langchain/core/messages';
 import { log, LogLevel, logCodeAgentInteraction } from './logger';
-import { getConfig } from './configLoader';
+import { AppConfig, getConfig } from './configLoader';
 import { getModelRouter } from './routing/ModelRouterService';
 import { CodeSandbox } from './codeAgent/CodeSandbox';
 import { createToolApi } from './codeAgent/tools';
@@ -55,8 +55,15 @@ export async function executeCodeAgent(
   logCodeAgentInteraction({ event: 'start', details: { userInput } });
   const config = getConfig();
   const { maxAttempts, stepTimeoutMs, totalTimeoutMs } = config.codeAgent;
+  const startTime = Date.now();
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const remainingTime = totalTimeoutMs - (Date.now() - startTime);
+    if (remainingTime <= 0) {
+      log(LogLevel.WARN, 'Code Agent execution timed out.');
+      return "I took too long to think and could not complete the request.";
+    }
+
     const modelRouter = getModelRouter();
     const model = await modelRouter.selectModel({
       task: 'CODE_ASSISTANCE',
@@ -85,7 +92,7 @@ export async function executeCodeAgent(
     const sandbox = new CodeSandbox(stepTimeoutMs, totalTimeoutMs);
     const toolApi = createToolApi();
     logCodeAgentInteraction({ event: 'sandbox_run', details: { code } });
-    const result = await sandbox.run(code, toolApi);
+    const result = await sandbox.run(code, toolApi, Math.min(stepTimeoutMs, remainingTime));
 
     if (result.finalAnswer) {
       logCodeAgentInteraction({ event: 'final_answer', details: { finalAnswer: result.finalAnswer } });

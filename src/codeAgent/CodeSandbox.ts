@@ -1,5 +1,6 @@
 import ivm from 'isolated-vm';
 import { log, LogLevel } from '../logger';
+import { getConfig } from '../configLoader';
 
 export interface SandboxResult {
   finalAnswer?: string;
@@ -11,14 +12,16 @@ export interface SandboxResult {
 export class CodeSandbox {
   private readonly stepTimeoutMs: number;
   private readonly totalTimeoutMs: number;
+  private readonly memoryLimit: number;
 
   constructor(stepTimeoutMs: number, totalTimeoutMs: number) {
     this.stepTimeoutMs = stepTimeoutMs;
     this.totalTimeoutMs = totalTimeoutMs;
+    this.memoryLimit = getConfig().codeAgent.memoryLimitMb || 128;
   }
 
-  public async run(code: string, toolApi: Record<string, unknown>): Promise<SandboxResult> {
-    const isolate = new ivm.Isolate({ memoryLimit: 128 });
+  public async run(code: string, toolApi: Record<string, unknown>, timeout: number): Promise<SandboxResult> {
+    const isolate = new ivm.Isolate({ memoryLimit: this.memoryLimit });
     const context = await isolate.createContext();
     const jail = context.global;
 
@@ -57,7 +60,7 @@ export class CodeSandbox {
 
     try {
       const script = await isolate.compileScript(bootstrap + code);
-      await script.run(context, { timeout: this.stepTimeoutMs });
+      await script.run(context, { timeout });
       
       return {
         finalAnswer,

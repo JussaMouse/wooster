@@ -4,9 +4,25 @@ import { scheduleAgentTask } from '../schedulerTool';
 import { TavilySearch } from '@langchain/tavily';
 import { AppConfig, getConfig } from '../configLoader';
 
+function truncate(str: string, maxLength: number): string {
+  if (str.length <= maxLength) {
+    return str;
+  }
+  return str.slice(0, maxLength) + '... (truncated)';
+}
+
+const allowedUrlPatterns: RegExp[] = [
+  /^https?:\/\/.*$/, // Basic http(s) pattern, can be made more restrictive
+];
+
+function isUrlAllowed(url: string, patterns: RegExp[]): boolean {
+  return patterns.some(pattern => pattern.test(url));
+}
+
 // This will be expanded to bridge to actual tools.
 export function createToolApi() {
   const config = getConfig();
+  const maxOutputLength = config.codeAgent.maxOutputLength || 10000;
   let tavilySearch: TavilySearch | undefined;
 
   if (config.tavily?.apiKey) {
@@ -26,7 +42,7 @@ export function createToolApi() {
       }
       try {
         const results = await tavilySearch.invoke(query);
-        return results;
+        return truncate(JSON.stringify(results), maxOutputLength);
       } catch (error: any) {
         log(LogLevel.ERROR, '[CodeAgent] Error during web search', { error });
         return `Error during web search: ${error.message}`;
@@ -34,20 +50,28 @@ export function createToolApi() {
     },
     fetchText: async (url: string) => {
       log(LogLevel.INFO, `[CodeAgent] fetchText called with: ${url}`);
+      
+      if (!isUrlAllowed(url, allowedUrlPatterns)) {
+        log(LogLevel.WARN, `[CodeAgent] Denied access to disallowed URL: ${url}`);
+        return `Error: Access to URL "${url}" is not allowed.`;
+      }
+
       // Placeholder implementation
       try {
         const response = await fetch(url);
         if (!response.ok) {
           return `Error fetching URL: ${response.statusText}`;
         }
-        return await response.text();
+        const text = await response.text();
+        return truncate(text, maxOutputLength);
       } catch (error: any) {
         return `Error fetching URL: ${error.message}`;
       }
     },
     queryRAG: async (query: string) => {
       log(LogLevel.INFO, `[CodeAgent] queryRAG called with: ${query}`);
-      return queryKnowledgeBase(query);
+      const result = await queryKnowledgeBase(query);
+      return truncate(result, maxOutputLength);
     },
     writeNote: async (text: string) => {
       log(LogLevel.INFO, `[CodeAgent] writeNote called with: ${text}`);
