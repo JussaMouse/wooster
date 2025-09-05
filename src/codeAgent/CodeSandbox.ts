@@ -27,11 +27,23 @@ export class CodeSandbox {
 
     await jail.set('global', jail.derefInto());
 
+    const debug = process.env.CODE_AGENT_DEBUG === '1' || process.env.CODE_AGENT_DEBUG === 'true';
+
     let finalAnswer: string | undefined;
     const stdout: string[] = [];
     const stderr: string[] = [];
     
     const references: ivm.Reference<any>[] = [];
+
+    if (debug) {
+      try {
+        const toolKeys = Object.keys(toolApi);
+        log(LogLevel.DEBUG, '[CODE_AGENT][DEBUG] Tool API keys/types before inject', {
+          keys: toolKeys,
+          types: toolKeys.reduce((acc: any, k: string) => { acc[k] = typeof (toolApi as any)[k]; return acc; }, {})
+        });
+      } catch (e) {}
+    }
 
     const finalAnswerRef = new ivm.Reference((text: string) => {
         if (finalAnswer === undefined) {
@@ -64,7 +76,12 @@ export class CodeSandbox {
         await jail.set(refName, ref, { reference: true } as any);
         bootstrapLines.push(
           `globalThis.${key} = async (...args) => {
-             return await globalThis['${refName}'].apply(undefined, args, { arguments: { copy: true }, result: { promise: true } });
+             try {
+               return await globalThis['${refName}'].apply(undefined, args, { arguments: { copy: true }, result: { promise: true } });
+             } catch (err) {
+               console.error('[TOOL_ERROR:${key}]', String(err));
+               throw err;
+             }
            };`
         );
       }
@@ -72,10 +89,37 @@ export class CodeSandbox {
 
     try {
       // Install tool shims
-      const bootstrapScript = await isolate.compileScript(bootstrapLines.join('\n'));
-      await bootstrapScript.run(context, { timeout });
+      const bootstrapSrc = bootstrapLines.join('\n');
+      if (debug) {
+        log(LogLevel.DEBUG, '[CODE_AGENT][DEBUG] Bootstrap shim code (first 400 chars)', { code: bootstrapSrc.slice(0, 400) });
+      }
+      if (bootstrapSrc.length) {
+        const bootstrapScript = await isolate.compileScript(bootstrapSrc);
+        await bootstrapScript.run(context, { timeout });
+      }
+
+      if (debug) {
+        // Probe the sandbox to confirm tool availability
+        const probeSrc = `(() => {
+          try {
+            const info = {
+              typeof_webSearch: typeof webSearch,
+              typeof_fetchText: typeof fetchText,
+              typeof_queryRAG: typeof queryRAG,
+              typeof_schedule: typeof schedule,
+              globals: Object.keys(globalThis).filter(k => ['webSearch','fetchText','queryRAG','schedule'].includes(k))
+            };
+            console.log('[PROBE]', JSON.stringify(info));
+          } catch (e) { console.error('[PROBE_ERROR]', String(e)); }
+        })();`;
+        const probeScript = await isolate.compileScript(probeSrc);
+        await probeScript.run(context, { timeout });
+      }
 
       const wrappedCode = `(async () => { ${code} })();`;
+      if (debug) {
+        log(LogLevel.DEBUG, '[CODE_AGENT][DEBUG] Emitted code (first 400 chars)', { code: wrappedCode.slice(0, 400) });
+      }
       const script = await isolate.compileScript(wrappedCode);
       await script.run(context, { timeout, promise: true });
       
@@ -85,7 +129,7 @@ export class CodeSandbox {
         stderr,
       };
     } catch (error: any) {
-      log(LogLevel.ERROR, 'Error executing code in sandbox', { error: error.message });
+      log(LogLevel.ERROR, 'Error executing code in sandbox', { error: error.message, stack: error.stack });
       return {
         error: error.message,
         stdout,
