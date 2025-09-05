@@ -54,16 +54,27 @@ export class CodeSandbox {
     references.push(consoleRef);
     await jail.set('console', consoleRef);
     
-    // Create and set a reference for each tool
+    // Register each tool as a hidden reference and create a callable async shim
+    const bootstrapLines: string[] = [];
     for (const [key, value] of Object.entries(toolApi)) {
       if (typeof value === 'function') {
+        const refName = `__tool_ref_${key}`;
         const ref = new ivm.Reference(value);
         references.push(ref);
-        await jail.set(key, ref.copyInto({ promise: true }));
+        await jail.set(refName, ref, { reference: true } as any);
+        bootstrapLines.push(
+          `globalThis.${key} = async (...args) => {
+             return await globalThis['${refName}'].apply(undefined, args, { arguments: { copy: true }, result: { promise: true } });
+           };`
+        );
       }
     }
 
     try {
+      // Install tool shims
+      const bootstrapScript = await isolate.compileScript(bootstrapLines.join('\n'));
+      await bootstrapScript.run(context, { timeout });
+
       const wrappedCode = `(async () => { ${code} })();`;
       const script = await isolate.compileScript(wrappedCode);
       await script.run(context, { timeout, promise: true });
