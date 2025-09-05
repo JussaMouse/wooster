@@ -1,6 +1,7 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, AIMessage, SystemMessage, BaseMessage } from "@langchain/core/messages";
 import { executeAgent } from "./agentExecutorService";
+import { executeCodeAgent } from './agentCodeExecutor';
 
 
 import { log, LogLevel, logLLMInteraction } from './logger';
@@ -43,12 +44,15 @@ export async function agentRespond(
 
   let agentResponse: string;
   try {
-    // Delegate to AgentExecutorService for the core logic
-    agentResponse = await executeAgent(input, mappedChatHistory);
-    log(LogLevel.INFO, `Agent received response from AgentExecutorService successfully.`);
+    if (appConfigInstance.chatMode === 'code_agent') {
+      agentResponse = await executeCodeAgent(input, mappedChatHistory);
+    } else {
+      agentResponse = await executeAgent(input, mappedChatHistory);
+    }
+    log(LogLevel.INFO, `Agent received response from executor successfully.`);
   } catch (error) {
-    log(LogLevel.ERROR, "Agent: Error calling AgentExecutorService.executeAgent", { error });
-    agentResponse = "Sorry, I encountered an internal error while processing your request. The AgentExecutorService might be misconfigured or experienced an issue.";
+    log(LogLevel.ERROR, "Agent: Error calling executor", { error });
+    agentResponse = "Sorry, I encountered an internal error while processing your request. The executor service might be misconfigured or experienced an issue.";
   }
   
   // Detailed LLM interaction logging is handled by AgentExecutorService (via verbose or callbacks)
