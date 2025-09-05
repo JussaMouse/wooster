@@ -4,7 +4,9 @@ import { getConfig } from './configLoader';
 import { getModelRouter } from './routing/ModelRouterService';
 import { CodeSandbox } from './codeAgent/CodeSandbox';
 import { createToolApi } from './codeAgent/tools';
-import { HumanMessage } from '@langchain/core/messages';
+import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 function extractJsCodeBlock(response: string): string | null {
   const codeBlockRegex = /```(?:js|javascript)\n([\s\S]+?)\n```/;
@@ -13,15 +15,37 @@ function extractJsCodeBlock(response: string): string | null {
 }
 
 async function buildCodeAgentPrompt(userInput: string, chatHistory: BaseMessage[]): Promise<BaseMessage[]> {
-  // This will be expanded in Step 5.
-  const systemPrompt = `You can solve tasks by emitting a single JavaScript code block, and nothing else.
+  const baseSystemPrompt = await fs.readFile(path.join(process.cwd(), 'prompts', 'base_system_prompt.txt'), 'utf-8');
+  
+  const codeAgentHeader = `You can solve tasks by emitting a single JavaScript code block, and nothing else.
 Rules:
 - Output exactly one fenced code block: \`\`\`js ... \`\`\` and no prose outside it.
 - Use only the provided APIs: webSearch(query), fetchText(url), queryRAG(query), writeNote(text), schedule(time, text), discordNotify(msg), signalNotify(msg), finalAnswer(text).
-- Call finalAnswer once at the end.`;
+- Keep code concise (≤ ~60 lines). Use try/catch and small helpers. Call finalAnswer once at the end.
+- Summarize long tool outputs before re-feeding them into the model. Do not print secrets.`;
+
+  const fewShotExamples = `
+// Example 1: Web search and summarize
+const searchResults = await webSearch('latest news on AI');
+const firstResultUrl = searchResults.results[0].url;
+const content = await fetchText(firstResultUrl);
+const summary = content.slice(0, 500); // simplified summary
+finalAnswer(\`Here's a summary from the first result: \${summary}\`);
+
+// Example 2: RAG query and cite
+const ragResponse = await queryRAG('What is the project status?');
+finalAnswer(\`Project status: \${ragResponse}\`);
+`;
   
-  // A simple prompt for now
-  return [new HumanMessage(systemPrompt + "\n\n" + userInput)];
+  const finalSystemPrompt = `${baseSystemPrompt}\n\n${codeAgentHeader}\n\n${fewShotExamples}`;
+
+  const messages: BaseMessage[] = [
+    new SystemMessage(finalSystemPrompt),
+    ...chatHistory,
+    new HumanMessage(userInput),
+  ];
+  
+  return messages;
 }
 
 export async function executeCodeAgent(
