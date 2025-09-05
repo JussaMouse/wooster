@@ -31,8 +31,18 @@ export class CodeSandbox {
     const stdout: string[] = [];
     const stderr: string[] = [];
     
-    const refs: ivm.Reference<any>[] = [];
+    // Pass the entire tool API as a single reference
+    const toolApiRef = new ivm.Reference(toolApi);
+    await jail.set('_toolApi', toolApiRef);
 
+    // Create shims
+    const bootstrapCode = Object.keys(toolApi).map(key => {
+      if (typeof toolApi[key] === 'function') {
+        return `globalThis.${key} = async (...args) => { return await _toolApi.get('${key}').apply(undefined, args, { result: { promise: true } }); };`;
+      }
+      return '';
+    }).join('\n');
+    
     const finalAnswerRef = new ivm.Reference((text: string) => {
         if (finalAnswer === undefined) {
           finalAnswer = text;
@@ -40,29 +50,22 @@ export class CodeSandbox {
           log(LogLevel.WARN, 'finalAnswer called more than once. Subsequent calls are ignored.');
         }
     });
-    refs.push(finalAnswerRef);
     await jail.set('finalAnswer', finalAnswerRef);
     
     const consoleLogRef = new ivm.Reference((...args: any[]) => stdout.push(args.map(arg => String(arg)).join(' ')));
-    refs.push(consoleLogRef);
     const consoleErrorRef = new ivm.Reference((...args: any[]) => stderr.push(args.map(arg => String(arg)).join(' ')));
-    refs.push(consoleErrorRef);
     const consoleRef = new ivm.Reference({
         log: consoleLogRef,
         error: consoleErrorRef
     });
-    refs.push(consoleRef);
     await jail.set('console', consoleRef);
-    
-    for (const key in toolApi) {
-      if (typeof toolApi[key] === 'function') {
-        const ref = new ivm.Reference(toolApi[key]);
-        refs.push(ref);
-        await jail.set(key, ref);
-      }
-    }
 
     try {
+      // Run the bootstrap script to define the tool shims
+      const bootstrapScript = await isolate.compileScript(bootstrapCode);
+      await bootstrapScript.run(context, { timeout });
+      
+      // Now run the user code
       const wrappedCode = `(async () => { ${code} })();`;
       const script = await isolate.compileScript(wrappedCode);
       await script.run(context, { timeout, promise: true });
@@ -72,7 +75,21 @@ export class CodeSandbox {
         stdout,
         stderr,
       };
+    } catch (error: any) {
+      log(LogLevel.ERROR, 'Error executing code in sandbox', { error: error.message });
+      return {
+        error: error.message,
+        stdout,
+        stderr,
+      };
     } finally {
+      // Clean up all references
+      toolApiRef.release();
+      finalAnswerRef.release();
+      consoleLogRef.release();
+      consoleErrorRef.release();
+      consoleRef.release();
+
       if (!isolate.isDisposed) {
         isolate.dispose();
       }
