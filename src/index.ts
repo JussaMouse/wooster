@@ -10,6 +10,7 @@ import { initializeAgentExecutorService } from './agentExecutorService';
 import { setAgentConfig, agentRespond } from './agent';
 import { loadPlugins } from './pluginManager';
 import { OpenAIEmbeddings } from "@langchain/openai";
+import { EmbeddingService } from './embeddings/EmbeddingService';
 import { initializeProjectVectorStore } from './projectStoreManager';
 
 // --- Directory Setup ---
@@ -94,7 +95,27 @@ function createAndConfigureMainRl(): readline.Interface {
   if (!mainRlLineHandler) mainRlLineHandler = handleMainReplLineInternal;
   if (!mainRlCloseHandler) mainRlCloseHandler = handleMainRlCloseInternal;
 
-  rl.on('line', mainRlLineHandler);
+  rl.on('line', async (line: string) => {
+    const trimmed = line.trim().toLowerCase();
+    if (trimmed === 'rebuild embeddings') {
+      try {
+        const appConfig = getConfig();
+        const projectName = defaultProjectNameGlobal;
+        const projectEmb = EmbeddingService.getProjectEmbeddings(appConfig);
+        const embeddings = projectEmb.getEmbeddings() as OpenAIEmbeddings;
+        const projectDir = path.join(projectBasePath, projectName);
+        if (!fs.existsSync(projectDir)) { fs.mkdirSync(projectDir, { recursive: true }); }
+        const store = await initializeProjectVectorStore(projectName, embeddings, appConfig);
+        await initializeAgentExecutorService(projectName, projectDir, store, embeddings, appConfig);
+        console.log(`Rebuilt embeddings for project '${projectName}'.`);
+      } catch (e: any) {
+        console.error('Failed to rebuild embeddings:', e?.message || String(e));
+      }
+      if (!mainReplManager.isPaused()) rl.prompt();
+      return;
+    }
+    await (mainRlLineHandler as any)(line);
+  });
   rl.on('close', mainRlCloseHandler);
   return rl;
 }
@@ -135,7 +156,10 @@ async function main() {
   }
 
   setAgentConfig(appConfig);
-  const embeddings = new OpenAIEmbeddings({ openAIApiKey: appConfig.openai.apiKey });
+  const projectEmb = EmbeddingService.getProjectEmbeddings(appConfig);
+  const embeddings = projectEmb.getEmbeddings() as OpenAIEmbeddings;
+  const embConfig = projectEmb.getConfig();
+  log(LogLevel.INFO, `Embeddings: Initialized ${embConfig.provider} embeddings with model '${embConfig.model}'`);
   
   const defaultProjectName = 'home';
   const projectDir = path.join(projectBasePath, defaultProjectName);
@@ -143,6 +167,8 @@ async function main() {
     fs.mkdirSync(projectDir, { recursive: true });
   }
   const projectVectorStore = await initializeProjectVectorStore(defaultProjectName, embeddings, appConfig);
+  // If the initialize step recreated due to mismatch, a warning was logged. Offer guidance once at startup.
+  // (Interactive migration tooling can be added later.)
   
   await initializeAgentExecutorService(defaultProjectName, projectDir, projectVectorStore, embeddings, appConfig);
   log(LogLevel.INFO, "AgentExecutorService initialized.");
@@ -156,6 +182,7 @@ async function main() {
   mainRl = createAndConfigureMainRl();
 
   console.log("Wooster is ready. Type 'exit' to quit, or enter your command.");
+  console.log("Tip: If you changed EMBEDDINGS model, run 'rebuild embeddings' to re-index the current project.");
   mainRl.prompt();
 }
 

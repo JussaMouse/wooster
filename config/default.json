@@ -105,7 +105,21 @@
         "serverUrl": "http://127.0.0.1:8080",
         "autoStart": false,
         "models": {
-          "fast": "mlx-community/Qwen2.5-72B-Instruct-4bit"
+          "fast": "mlx-community/Qwen3-14B-4bit-AWQ"
+        },
+        "embeddings": {
+          "enabled": false,
+          "serverUrl": "http://127.0.0.1:8081/v1",
+          "projects": {
+            "enabled": false,
+            "model": "Qwen/Qwen3-Embedding-4B",
+            "dimensions": 2560
+          },
+          "userProfile": {
+            "enabled": false,
+            "model": "Qwen/Qwen3-Embedding-4B",
+            "dimensions": 2560
+          }
         }
       }
     },

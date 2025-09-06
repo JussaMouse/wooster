@@ -11,6 +11,16 @@ import { AppConfig } from './configLoader'
 
 const getVectorDataPath = (projectName: string) => path.join(process.cwd(), 'vector_data', projectName)
 const getVectorStoreJsonPath = (projectName: string) => path.join(getVectorDataPath(projectName), 'vector_store.json')
+const getVectorMetaPath = (projectName: string) => path.join(getVectorDataPath(projectName), 'meta.json')
+
+interface VectorStoreMeta {
+  provider: 'openai' | 'local' | 'server'
+  model: string
+  dimensions?: number
+  createdAt: string
+  chunks: number
+  fileVersion: number
+}
 
 /**
  * Create a fresh FAISS vector store for the given project.
@@ -70,6 +80,23 @@ export async function createProjectStore(
   
   const store = await MemoryVectorStore.fromDocuments(chunks, embeddings)
   log(LogLevel.INFO, 'MemoryVectorStore created successfully for project "%s" with %d chunks.', projectName, chunks.length)
+
+  // Write meta.json describing embedding model used
+  try {
+    const meta: VectorStoreMeta = {
+      provider: 'openai', // current default; future: read from EmbeddingService config
+      model: (embeddings as any)?.modelName || appConfig.openai.embeddingModelName,
+      dimensions: undefined,
+      createdAt: new Date().toISOString(),
+      chunks: chunks.length,
+      fileVersion: 1,
+    }
+    await fs.writeFile(getVectorMetaPath(projectName), JSON.stringify(meta, null, 2))
+    log(LogLevel.INFO, `Saved vector store metadata to ${getVectorMetaPath(projectName)}`)
+  } catch (e: any) {
+    log(LogLevel.WARN, `Failed to save vector store metadata for project "${projectName}": ${e.message}`)
+  }
+
   return store
 }
 
@@ -88,13 +115,35 @@ export async function initializeProjectVectorStore(
   appConfig: AppConfig
 ): Promise<MemoryVectorStore> {
   const vectorStoreJsonPath = getVectorStoreJsonPath(projectName)
+  const metaPath = getVectorMetaPath(projectName)
 
   try {
     await fs.access(vectorStoreJsonPath)
+    // If meta exists, compare against current embeddings
+    let mismatch = false
+    try {
+      const metaRaw = await fs.readFile(metaPath, 'utf-8')
+      const meta = JSON.parse(metaRaw) as VectorStoreMeta
+      const currentModel = (embeddings as any)?.modelName || appConfig.openai.embeddingModelName
+      if (meta?.model && meta.model !== currentModel) {
+        log(LogLevel.WARN, `Vector store for project "${projectName}" was built with model '${meta.model}', current is '${currentModel}'.`)
+        mismatch = true
+      }
+    } catch {
+      log(LogLevel.WARN, `Vector store metadata not found for project "${projectName}". Proceeding without compatibility check.`)
+    }
+    if (!mismatch) {
+      return await createVectorStoreFromJson(vectorStoreJsonPath, embeddings)
+    }
+    // Mismatch: keep existing store for now; user can rebuild via REPL command
+    log(LogLevel.WARN, `Embedding model mismatch for project "${projectName}". Using existing vector store for now. Use 'rebuild embeddings' in REPL to re-index.`)
     return await createVectorStoreFromJson(vectorStoreJsonPath, embeddings)
   } catch (error) {
-    return await createProjectStore(projectName, embeddings, appConfig)
+    // fall-through to (re)create
   }
+
+  // If we reach here, file missing → create fresh
+  return await createProjectStore(projectName, embeddings, appConfig)
 }
 
 /**

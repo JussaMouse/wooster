@@ -3,7 +3,7 @@ import { OpenAIEmbeddings } from '@langchain/openai';
 import { AppConfig } from '../configLoader';
 import { log, LogLevel } from '../logger';
 
-export type EmbeddingProvider = 'openai' | 'local';
+export type EmbeddingProvider = 'openai' | 'local' | 'server';
 
 export interface EmbeddingConfig {
   provider: EmbeddingProvider;
@@ -23,6 +23,15 @@ export class EmbeddingService {
       this.embeddings = new OpenAIEmbeddings({
         modelName: config.model,
         openAIApiKey: appConfig.openai.apiKey,
+      });
+    } else if (config.provider === 'server') {
+      // OpenAI-compatible local server (e.g., MLX embed server)
+      this.embeddings = new OpenAIEmbeddings({
+        modelName: config.model,
+        openAIApiKey: appConfig.openai.apiKey || 'local-key',
+        configuration: {
+          baseURL: appConfig.routing?.providers?.local?.embeddings?.serverUrl,
+        } as any,
       });
     } else {
       this.embeddings = new HuggingFaceTransformersEmbeddings({
@@ -52,7 +61,7 @@ export class EmbeddingService {
     
     if (localConfig?.enabled && localConfig.projects?.enabled) {
       return this.getInstance('projects', {
-        provider: 'local',
+        provider: 'server',
         model: localConfig.projects.model,
         dimensions: localConfig.projects.dimensions
       }, appConfig);
@@ -73,7 +82,7 @@ export class EmbeddingService {
     
     if (localConfig?.enabled && localConfig.userProfile?.enabled) {
       return this.getInstance('userProfile', {
-        provider: 'local',
+        provider: 'server',
         model: localConfig.userProfile.model,
         dimensions: localConfig.userProfile.dimensions
       }, appConfig);

@@ -23,6 +23,26 @@
     "temperature": "OPENAI_TEMPERATURE",
     "maxTokens": "OPENAI_MAX_TOKENS"
   },
+  "routing": {
+    "providers": {
+      "local": {
+        "embeddings": {
+          "enabled": "MLX_EMBEDDINGS_ENABLED",
+          "serverUrl": "MLX_EMBEDDINGS_URL",
+          "projects": {
+            "enabled": "MLX_PROJECT_EMBEDDINGS_ENABLED",
+            "model": "MLX_EMBEDDINGS_MODEL",
+            "dimensions": "MLX_EMBEDDINGS_DIMENSIONS"
+          },
+          "userProfile": {
+            "enabled": "MLX_USER_EMBEDDINGS_ENABLED",
+            "model": "MLX_EMBEDDINGS_MODEL",
+            "dimensions": "MLX_EMBEDDINGS_DIMENSIONS"
+          }
+        }
+      }
+    }
+  },
   "tavily": {
     "apiKey": "TAVILY_API_KEY"
   },

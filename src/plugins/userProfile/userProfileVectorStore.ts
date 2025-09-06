@@ -4,6 +4,8 @@ import { Document } from '@langchain/core/documents';
 import path from 'path';
 import { promises as fs } from 'fs';
 import { log, LogLevel } from '../../logger';
+import { EmbeddingService } from '../../embeddings/EmbeddingService';
+import { getConfig } from '../../configLoader';
 
 const getBaseVectorStorePath = (storePath: string) => path.join(storePath, 'user_profile_vector_store.json');
 
@@ -75,7 +77,9 @@ async function createVectorStoreFromJson(jsonPath: string, embeddings: OpenAIEmb
 }
 
 export async function initUserProfileStore(storePath: string): Promise<MemoryVectorStore> {
-  const embeddings = new OpenAIEmbeddings();
+  const appConfig = getConfig();
+  const userEmb = EmbeddingService.getUserProfileEmbeddings(appConfig);
+  const embeddings = userEmb.getEmbeddings() as OpenAIEmbeddings;
   const vectorStoreJsonPath = getBaseVectorStorePath(storePath);
 
   try {
