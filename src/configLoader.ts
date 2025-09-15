@@ -144,7 +144,8 @@ export interface AppConfig {
   env: string;
   appName: string;
   version: string;
-  chatMode: 'classic_tools' | 'code_agent';
+  // chatMode is deprecated; retained for backward compatibility in config files.
+  chatMode?: 'classic_tools' | 'code_agent';
   logging: LoggingConfig;
   openai: OpenAIConfig;
   tavily: TavilyConfig;

@@ -45,25 +45,7 @@ async function handleMainReplLineInternal(line: string): Promise<void> {
     return;
   }
 
-  if (lowerInput.startsWith('mode ')) {
-    const newMode = lowerInput.substring(5);
-    const config = getConfig();
-    if (newMode === 'code' || newMode === 'code_agent') {
-      config.chatMode = 'code_agent';
-      setConfig(config);
-      console.log('Switched to Code Agent mode.');
-    } else if (newMode === 'tools' || newMode === 'classic_tools') {
-      config.chatMode = 'classic_tools';
-      setConfig(config);
-      console.log('Switched to Classic Tools mode.');
-    } else {
-      console.log(`Unknown mode: ${newMode}. Available modes: code, tools`);
-    }
-    if (!mainReplManager.isPaused() && mainRl) {
-      mainRl.prompt();
-    }
-    return;
-  }
+  // Classic/Code mode switching removed; single Code-Agent path is always active.
 
   if (input) {
     const response = await agentRespond(input, chatHistory, defaultProjectNameGlobal);

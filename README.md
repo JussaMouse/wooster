@@ -42,26 +42,17 @@ Wooster is an AI assistant designed to be extended and customized. He uses LLMs 
     ```
     This will open the REPL (`>` prompt).
 
-### Modes: Classic Tools vs Code-Agent
+### Code-Agent is Always On
 
-Wooster now supports two agent execution modes:
-- `classic_tools` (default): LangChain Tools Agent with function-calling.
-- `code_agent`: The model emits a single JavaScript code block which runs in a secure sandbox with a minimal Tool API.
+Wooster now always runs the Code‑Agent: the model emits a single JavaScript code block which runs in a secure sandbox with a minimal Tool API.
 
-Configure the default in `config/default.json` or via environment:
+Relevant environment/config knobs:
 ```bash
-CHAT_MODE=code_agent # or classic_tools
 CODE_AGENT_MAX_ATTEMPTS=2
 CODE_AGENT_STEP_TIMEOUT_MS=20000
 CODE_AGENT_TOTAL_TIMEOUT_MS=60000
 CODE_AGENT_MEMORY_LIMIT_MB=128
 CODE_AGENT_MAX_OUTPUT_LENGTH=10000
-```
-
-You can also toggle at runtime in the REPL:
-```text
-> mode code   # switch to code-agent
-> mode tools  # switch back to classic tools
 ```
 
 For debugging code-agent runs:

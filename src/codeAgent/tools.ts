@@ -1,8 +1,10 @@
 import { log, LogLevel } from '../logger';
-import { queryKnowledgeBase } from '../agentExecutorService';
+import { queryKnowledgeBase, getCurrentActiveProjectName, getCurrentActiveProjectPath } from '../agentExecutorService';
 import { scheduleAgentTask } from '../schedulerTool';
 import { TavilySearch } from '@langchain/tavily';
 import { AppConfig, getConfig } from '../configLoader';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 function truncate(str: string, maxLength: number): string {
   if (str.length <= maxLength) {
@@ -108,7 +110,28 @@ export function createToolApi() {
     },
     writeNote: async (text: string) => {
       log(LogLevel.INFO, `[CodeAgent] writeNote called with: ${text}`);
-      // Placeholder implementation - will require access to project context
+      try {
+        const projectName = getCurrentActiveProjectName() || 'home';
+        const projectPath = getCurrentActiveProjectPath() || path.join(process.cwd(), 'projects', projectName);
+        const journalPath = path.join(projectPath, `${projectName}.md`);
+
+        // Ensure project directory exists
+        try { await fs.mkdir(projectPath, { recursive: true }); } catch {}
+
+        // Ensure journal exists with a minimal header
+        try { await fs.access(journalPath); }
+        catch { await fs.writeFile(journalPath, `# ${projectName} Journal\n\n`); }
+
+        const now = new Date();
+        const isoLocal = new Date(now.getTime() - now.getTimezoneOffset()*60000)
+          .toISOString().replace('T', ' ').slice(0, 16);
+        const entry = `## ${isoLocal}\n\n${text.trim()}\n\n`;
+        await fs.appendFile(journalPath, entry, { encoding: 'utf8' });
+        return `Note appended to ${path.relative(process.cwd(), journalPath)}`;
+      } catch (error: any) {
+        log(LogLevel.ERROR, '[CodeAgent] writeNote failed', { error });
+        return `Error writing note: ${error?.message || String(error)}`;
+      }
     },
     schedule: async (whenISO: string, text: string) => {
       log(LogLevel.INFO, `[CodeAgent] schedule called for "${text}" at ${whenISO}`);

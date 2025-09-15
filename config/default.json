@@ -2,7 +2,7 @@
   "env": "development",
   "appName": "Wooster",
   "version": "1.0.0",
-  "chatMode": "classic_tools",
+  "chatMode": "code_agent",
   "logLevel": "info",
   "logging": {
     "consoleLogLevel": "info",

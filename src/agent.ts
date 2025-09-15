@@ -1,6 +1,5 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, AIMessage, SystemMessage, BaseMessage } from "@langchain/core/messages";
-import { executeAgent } from "./agentExecutorService";
 import { executeCodeAgent } from './agentCodeExecutor';
 
 
@@ -44,11 +43,8 @@ export async function agentRespond(
 
   let agentResponse: string;
   try {
-    if (appConfigInstance.chatMode === 'code_agent') {
-      agentResponse = await executeCodeAgent(input, mappedChatHistory);
-    } else {
-      agentResponse = await executeAgent(input, mappedChatHistory);
-    }
+    // Single execution path: Code-Agent only
+    agentResponse = await executeCodeAgent(input, mappedChatHistory);
     log(LogLevel.INFO, `Agent received response from executor successfully.`);
   } catch (error) {
     log(LogLevel.ERROR, "Agent: Error calling executor", { error });

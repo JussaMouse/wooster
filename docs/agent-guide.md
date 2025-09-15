@@ -1,21 +1,8 @@
-# Wooster Agent Guide (Code-Agent + Classic)
+# Wooster Agent Guide (Code-Agent)
 
 This guide explains how to use Wooster’s agent(s) for day‑to‑day tasks: chat, web search, projects, GTD, notes, and API usage (web/voice).
 
-## Modes
-- `classic_tools` (default): Function‑calling agent; good with cloud models.
-- `code_agent`: Model emits one JS block; Wooster executes it with a minimal Tool API. Great for local MLX.
-
-Switch at runtime:
-```
-> mode code
-> mode tools
-```
-
-Enable by default in `.env`:
-```
-CHAT_MODE=code_agent
-```
+Wooster now always runs the Code‑Agent. The model emits a single JS block; Wooster executes it with a minimal Tool API. Great for local MLX and simple, durable control flow.
 
 ## Chat
 - Natural conversation in the REPL.
@@ -41,7 +28,7 @@ finalAnswer(`${first?.title || 'Result'}\n${first?.url || ''}\n${page.slice(0,40
 - Project directory: `projects/<name>/`
 - Journal: `projects/<name>/<name>.md`
 - Vector store per project for RAG.
-- Switch/create via built‑ins (in classic mode) or ask the agent in chat.
+- Switch/create via chat commands and project management helpers.
 
 ## GTD (Inbox/Sort/Next Actions)
 - Capture quickly to `gtd/inbox.md` via chat or API (see API section).
@@ -55,8 +42,7 @@ finalAnswer(`${first?.title || 'Result'}\n${first?.url || ''}\n${page.slice(0,40
 - Use Obsidian to browse/edit; Wooster reads your Markdown.
 
 ## RAG (Project Knowledge)
-- Ask: “what do our notes say about X in the current project?”
-- Code-Agent uses `queryRAG(query)` under the hood; classic mode uses the RAG tool.
+- Ask: “what do our notes say about X in the current project?” Code‑Agent uses `queryRAG(query)` under the hood.
 - Ensure relevant docs live under `projects/<name>/`.
 
 ## API Usage (Web App / Voice / Shortcuts)
