@@ -20,7 +20,7 @@ async function buildCodeAgentPrompt(userInput: string, chatHistory: BaseMessage[
   const codeAgentHeader = `You can solve tasks by emitting a single JavaScript code block, and nothing else.
 Rules:
 - Output exactly one fenced code block: \`\`\`js ... \`\`\` and no prose outside it.
-- Use only the provided APIs: webSearch(query), fetchText(url), queryRAG(query), writeNote(text), schedule(time, text), discordNotify(msg), signalNotify(msg), finalAnswer(text).
+- Use only the provided APIs: webSearch(query), fetchText(url), queryRAG(query), writeNote(text), capture(text), schedule(time, text), calendarList(opts?), calendarCreate(event), sendEmail(args), discordNotify(msg), signalNotify(msg), finalAnswer(text).
 - Keep code concise (≤ ~60 lines). Use try/catch and small helpers. Call finalAnswer once at the end.
 - Summarize long tool outputs before re-feeding them into the model. Do not print secrets.`;
 
@@ -48,6 +48,45 @@ finalAnswer(\`Project status: \${ragResponse}\`);
   return messages;
 }
 
+async function classifyToolNeed(prompt: string): Promise<'NONE' | 'TOOLS'> {
+  try {
+    const router = getModelRouter();
+    const model = await router.selectModel({
+      task: 'COMPLEX_REASONING',
+      context: router.createContext('COMPLEX_REASONING', { priority: 'fast' })
+    });
+    const system = new SystemMessage(
+      'Task: Decide if the user request needs tools or can be answered directly.\n' +
+      'Respond with ONLY one token: NONE or TOOLS.\n' +
+      'NONE if trivial Q&A or general knowledge; TOOLS if web, RAG, file write, schedule, email, calendar, notifications, or multi-step research.'
+    );
+    const human = new HumanMessage(prompt);
+    const res = await (model as any).invoke([system, human], { maxTokens: 8, temperature: 0.1 });
+    const text = String((res?.content ?? '')).trim().toUpperCase();
+    if (text.includes('NONE')) return 'NONE';
+    if (text.includes('TOOLS')) return 'TOOLS';
+  } catch (e) {
+    log(LogLevel.WARN, '[CodeAgent] pre-classifier failed, defaulting to TOOLS');
+  }
+  return 'TOOLS';
+}
+
+async function answerDirectly(userInput: string, chatHistory: BaseMessage[]): Promise<string> {
+  const router = getModelRouter();
+  const model = await router.selectModel({
+    task: 'COMPLEX_REASONING',
+    context: router.createContext('COMPLEX_REASONING', { priority: 'fast' })
+  });
+  const basePrompt = await buildCodeAgentPrompt('', []);
+  const systemOnly = basePrompt[0] as SystemMessage;
+  const answerSystem = new SystemMessage(
+    `${systemOnly.content}\n\nAnswer the user directly in plain text. Do not output code.`
+  );
+  const messages: BaseMessage[] = [answerSystem, ...chatHistory, new HumanMessage(userInput)];
+  const res = await (model as any).invoke(messages, { temperature: 0.3 });
+  return String(res?.content ?? '').trim();
+}
+
 export async function executeCodeAgent(
   userInput: string,
   chatHistory: BaseMessage[],
@@ -56,6 +95,18 @@ export async function executeCodeAgent(
   const config = getConfig();
   const { maxAttempts, stepTimeoutMs, totalTimeoutMs } = config.codeAgent;
   const startTime = Date.now();
+
+  // Pre-classifier: try to avoid sandbox when unnecessary
+  try {
+    const decision = await classifyToolNeed(userInput);
+    logCodeAgentInteraction({ event: 'tool_call', details: { classifier_decision: decision } });
+    if (decision === 'NONE') {
+      const answer = await answerDirectly(userInput, chatHistory);
+      logCodeAgentInteraction({ event: 'final_answer', details: { finalAnswer: answer } });
+      logCodeAgentInteraction({ event: 'finish', details: { finalAnswer: answer, status: 'success' } });
+      return answer;
+    }
+  } catch {}
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const remainingTime = totalTimeoutMs - (Date.now() - startTime);

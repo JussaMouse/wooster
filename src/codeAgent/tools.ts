@@ -3,6 +3,7 @@ import { queryKnowledgeBase, getCurrentActiveProjectName, getCurrentActiveProjec
 import { scheduleAgentTask } from '../schedulerTool';
 import { TavilySearch } from '@langchain/tavily';
 import { AppConfig, getConfig } from '../configLoader';
+import { getRegisteredService } from '../pluginManager';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -131,6 +132,69 @@ export function createToolApi() {
       } catch (error: any) {
         log(LogLevel.ERROR, '[CodeAgent] writeNote failed', { error });
         return `Error writing note: ${error?.message || String(error)}`;
+      }
+    },
+    capture: async (text: string) => {
+      log(LogLevel.INFO, `[CodeAgent] capture called with: ${text}`);
+      try {
+        const svc = getRegisteredService<any>('CaptureService');
+        if (!svc || typeof svc.captureItem !== 'function') {
+          return 'Error: CaptureService not available.';
+        }
+        const item = svc.captureItem(String(text || ''));
+        if (item && item.text) {
+          return `Captured: ${item.text}`;
+        }
+        return 'Error: Failed to capture item.';
+      } catch (error: any) {
+        log(LogLevel.ERROR, '[CodeAgent] capture failed', { error });
+        return `Error: ${error?.message || String(error)}`;
+      }
+    },
+    calendarList: async (optionsJson?: string) => {
+      log(LogLevel.INFO, `[CodeAgent] calendarList called.`);
+      try {
+        const listSvc = getRegisteredService<any>('ListCalendarEventsService');
+        if (typeof listSvc === 'function') {
+          const opts = optionsJson ? JSON.parse(String(optionsJson)) : undefined;
+          const res = await listSvc(opts);
+          return typeof res === 'string' ? res : JSON.stringify(res);
+        }
+        return 'Error: Calendar list service not available.';
+      } catch (error: any) {
+        log(LogLevel.ERROR, '[CodeAgent] calendarList failed', { error });
+        return `Error: ${error?.message || String(error)}`;
+      }
+    },
+    calendarCreate: async (eventJson: string) => {
+      log(LogLevel.INFO, `[CodeAgent] calendarCreate called.`);
+      try {
+        const svc = getRegisteredService<any>('CalendarService');
+        if (!svc || typeof svc.createEvent !== 'function') {
+          return 'Error: CalendarService not available.';
+        }
+        const event = JSON.parse(String(eventJson || '{}'));
+        const res = await svc.createEvent(event);
+        return typeof res === 'string' ? res : JSON.stringify(res);
+      } catch (error: any) {
+        log(LogLevel.ERROR, '[CodeAgent] calendarCreate failed', { error });
+        return `Error: ${error?.message || String(error)}`;
+      }
+    },
+    sendEmail: async (argsJson: string) => {
+      log(LogLevel.INFO, `[CodeAgent] sendEmail called.`);
+      try {
+        const svc = getRegisteredService<any>('EmailService');
+        if (!svc || typeof svc.send !== 'function') {
+          return 'Error: EmailService not available.';
+        }
+        const args = JSON.parse(String(argsJson || '{}'));
+        const res = await svc.send(args);
+        if (typeof res === 'string') return res;
+        try { return JSON.stringify(res); } catch { return String(res); }
+      } catch (error: any) {
+        log(LogLevel.ERROR, '[CodeAgent] sendEmail failed', { error });
+        return `Error: ${error?.message || String(error)}`;
       }
     },
     schedule: async (whenISO: string, text: string) => {

@@ -322,3 +322,11 @@ export function getPluginDirectoryNames(): string[] {
     return []
   }
 }
+
+/**
+ * Returns a registered service by name, or undefined if not found.
+ * Intended for Code Tool API wrappers to call into plugin-provided services.
+ */
+export function getRegisteredService<T = any>(name: string): T | undefined {
+  return registeredServices.get(name) as T | undefined
+}
