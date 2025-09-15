@@ -125,3 +125,79 @@ We will remove the legacy classic Tools Agent and make Code-Agent the single exe
 - Production servers should only differ via `.env`.
 - Use the `rebuild embeddings` REPL command after content or provider changes.
 - Keep logs shallow by default; enable `CODE_AGENT_DEBUG=1` only for troubleshooting.
+
+## Part 2: Code Tool API Wiring + Answer-First Pre-Classifier
+
+### Overview
+This phase wires high-value plugin services into the Code Tool API and introduces a lightweight pre-classifier to bias toward direct answers when tools are unnecessary. The goal is improved simplicity and durability: a small, normalized Tool surface with robust error handling, plus fewer tokens and sandbox runs when a simple answer suffices.
+
+### 1) Plugin Services → Code Tool API
+- Extend `src/codeAgent/tools.ts` with wrappers that call services registered by plugins via `PluginManager`:
+  - `capture(text: string) -> string`
+    - Uses `CaptureService.captureItem(text)`
+    - Returns a short confirmation string or an “Error: …” string.
+  - `calendarList(options?: ListEventsOptions) -> GCalEventData[] | string`
+    - Uses `ListCalendarEventsService(options)` if present, else `CalendarService` list helper.
+    - Returns events array or error string. Keep payload small (summarize in model code if needed).
+  - `calendarCreate(event: CreateEventOptions) -> GCalEventData | string`
+    - Uses `CalendarService.createEvent(event)`
+    - Returns created event or error string.
+  - `sendEmail(args: { to: string; subject: string; body: string; isHtml?: boolean }) -> { success: boolean; message: string; messageId?: string } | string`
+    - Uses `EmailService.send(args)`
+    - Returns structured result or error string.
+  - Keep `signalNotify(msg)` as-is for now (direct fallback), optionally add a service if the Signal plugin exposes one later.
+
+Implementation notes:
+- Do not throw. Always catch, log, and return concise error strings: `"Error: <message>"`.
+- Use the existing truncation helper for any string outputs.
+- Keep return shapes small and predictable to reduce token usage.
+
+### 2) PluginManager Accessor
+- Add a safe accessor in `src/pluginManager.ts`:
+  - `export function getRegisteredService<T = any>(name: string): T | undefined` that returns the service instance from the internal registry.
+- This preserves the plugin contract and lets `tools.ts` retrieve services without coupling to plugin internals.
+
+### 3) Update Code Tool Surface + Prompt Header
+- In `src/codeAgent/tools.ts`, export the new functions via `createToolApi()`.
+- Update the Code-Agent header (in `src/agentCodeExecutor.ts`) to list the newly allowed APIs:
+  - `capture`, `calendarList`, `calendarCreate`, `sendEmail`.
+- Keep the policy lines: one code block, call `finalAnswer(...)` once at end, summarize long outputs, no secrets.
+
+### 4) Answer-First Pre-Classifier
+- Purpose: avoid tool use and sandbox runs when a direct answer suffices.
+- Location: implement inside `executeCodeAgent(...)` before generating code.
+- Flow:
+  1. Build a tiny classification prompt: return ONLY `NONE` (answer directly) or `TOOLS` (emit code).
+  2. Call the router’s fast/cheap model with low temperature and small max tokens (≤16).
+  3. If `NONE` → run a direct-answer prompt path (same model, short output constraints), bypassing the sandbox; return the answer.
+  4. If `TOOLS` or invalid → proceed with the existing code-agent path.
+- Safety:
+  - Strictly parse the two-token response; default to `TOOLS` on ambiguity.
+  - Log decisions under `[CODE_AGENT]` events.
+
+### 5) Docs Trim + Surface Update
+- Update docs to reflect single Code-Agent path and the extended Tool API:
+  - `README.md` and `docs/agent-guide.md`: add `capture`, `calendarList`, `calendarCreate`, `sendEmail` to the surface list.
+  - Remove or rewrite classic-only sections in `docs/agent.md`, `docs/system.md`, `docs/code-agent-migration-review.md` about modes and function-calling tools.
+
+### 6) Tests
+- Unit tests (Jest):
+  - Mock `pluginManager.getRegisteredService` to simulate present/missing services.
+  - `capture(...)`: success path and missing-service error.
+  - `calendarCreate(...)` and `calendarList(...)`: success and error paths.
+  - `sendEmail(...)`: success and failure result shapes.
+  - Pre-classifier: deterministic prompts returning `NONE` vs `TOOLS`; ensures direct-answer path is used for trivial queries and code path for tool-y ones.
+- Integration smoke:
+  - Start app with minimal config; verify `writeNote` and `capture` append to files.
+  - If GCal/Gmail not configured, verify graceful error strings.
+
+### 7) Migration & Operational Notes
+- Wrappers tolerate missing services and return helpful error strings.
+- No plugin API changes required; initialization order does not break the agent (wrappers check availability at call time).
+- Keep `CODE_AGENT_DEBUG=1` for troubleshooting; trace decisions (`start`, `llm_request`, `llm_response`, `code_extracted`, `sandbox_run`, `tool_call`, `final_answer`, `error`, `finish`, plus `classifier_decision`).
+
+### 8) Acceptance Criteria (Part 2)
+- Tool API includes `capture`, `calendarList`, `calendarCreate`, `sendEmail`, with consistent, small outputs and robust error handling.
+- Pre-classifier reduces unnecessary sandbox runs without blocking valid tool use.
+- Docs updated to reflect the new surface and Code-Agent only.
+- Unit tests cover wrappers and classifier logic; integration smoke passes.
