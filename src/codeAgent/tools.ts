@@ -214,9 +214,9 @@ export function createToolApi() {
       try {
         const signalEnv = {
           cliPath: process.env.SIGNAL_CLI_PATH || '/opt/homebrew/bin/signal-cli',
-          number: process.env.SIGNAL_CLI_NUMBER,
-          to: process.env.SIGNAL_TO,
-          groupId: process.env.SIGNAL_GROUP_ID,
+          number: (process.env.SIGNAL_CLI_NUMBER || '').replace(/^['"]|['"]$/g, ''),
+          to: (process.env.SIGNAL_TO || '').replace(/^['"]|['"]$/g, ''),
+          groupId: (process.env.SIGNAL_GROUP_ID || '').replace(/^['"]|['"]$/g, ''),
           timeoutMs: Number(process.env.SIGNAL_CLI_TIMEOUT_MS || '20000'),
         } as any;
         const { sendSignalMessage } = await import('../plugins/signal');
@@ -225,6 +225,10 @@ export function createToolApi() {
         log(LogLevel.ERROR, '[CodeAgent] Error sending Signal message', { error });
         return `Error sending Signal message: ${error.message}`;
       }
+    },
+    // Alias used by some prompts
+    sendSignal: async (msg: string) => {
+      return (await (this as any).signalNotify?.(msg)) || 'Error: sendSignal alias failed.';
     },
   };
 }

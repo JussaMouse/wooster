@@ -20,7 +20,7 @@ async function buildCodeAgentPrompt(userInput: string, chatHistory: BaseMessage[
   const codeAgentHeader = `You can solve tasks by emitting a single JavaScript code block, and nothing else.
 Rules:
 - Output exactly one fenced code block: \`\`\`js ... \`\`\` and no prose outside it.
-- Use only the provided APIs: webSearch(query), fetchText(url), queryRAG(query), writeNote(text), capture(text), schedule(time, text), calendarList(opts?), calendarCreate(event), sendEmail(args), discordNotify(msg), signalNotify(msg), finalAnswer(text).
+- Use only the provided APIs: webSearch(query), fetchText(url), queryRAG(query), writeNote(text), capture(text), schedule(time, text), calendarList(opts?), calendarCreate(event), sendEmail(args), discordNotify(msg), signalNotify(msg), sendSignal(msg), finalAnswer(text).
 - Keep code concise (≤ ~60 lines). Use try/catch and small helpers. Call finalAnswer once at the end.
 - Summarize long tool outputs before re-feeding them into the model. Do not print secrets.`;
 
