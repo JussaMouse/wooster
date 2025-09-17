@@ -55,9 +55,21 @@ export class CodeSandbox {
     references.push(finalAnswerRef);
     await jail.set('__tool_ref_finalAnswer', finalAnswerRef);
     
-    const consoleLogRef = new ivm.Reference((...args: any[]) => stdout.push(args.map(arg => String(arg)).join(' ')));
+    const consoleLogRef = new ivm.Reference((...args: any[]) => {
+      stdout.push(args.map(arg => String(arg)).join(' '));
+      try {
+        const { log, LogLevel } = require('../logger');
+        log(LogLevel.WARN, '[SANDBOX][console.log] %s', stdout[stdout.length - 1]);
+      } catch {}
+    });
     references.push(consoleLogRef);
-    const consoleErrorRef = new ivm.Reference((...args: any[]) => stderr.push(args.map(arg => String(arg)).join(' ')));
+    const consoleErrorRef = new ivm.Reference((...args: any[]) => {
+      stderr.push(args.map(arg => String(arg)).join(' '));
+      try {
+        const { log, LogLevel } = require('../logger');
+        log(LogLevel.WARN, '[SANDBOX][console.error] %s', stderr[stderr.length - 1]);
+      } catch {}
+    });
     references.push(consoleErrorRef);
     // Expose console refs under hidden names; shims will call them
     await jail.set('__tool_ref_console_log', consoleLogRef);

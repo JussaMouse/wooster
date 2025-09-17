@@ -32,6 +32,13 @@ function readEnv(): SignalEnv {
   return { cliPath, number, to, groupId, timeoutMs };
 }
 
+function mask(value?: string): string {
+  if (!value) return '';
+  const s = String(value);
+  if (s.length <= 4) return '****';
+  return s.slice(0, 2) + '***' + s.slice(-2);
+}
+
 export async function sendSignalMessage(env: SignalEnv, message: string): Promise<string> {
   if (!env.number) throw new Error('SIGNAL_CLI_NUMBER not configured');
   // Use -a (account) per current signal-cli recommendations
@@ -44,8 +51,27 @@ export async function sendSignalMessage(env: SignalEnv, message: string): Promis
     // Fallback to Note-to-Self if no recipient specified
     args.push('-m', message, env.number);
   }
-  const { stdout } = await execFileAsync(env.cliPath, args, { timeout: env.timeoutMs, maxBuffer: 2 * 1024 * 1024 });
-  return (stdout || '').toString();
+  // High-visibility logs to aid diagnostics
+  const toMask = mask(env.to);
+  const groupMask = mask(env.groupId);
+  const acctMask = mask(env.number);
+  // Use WARN so it shows even in quiet console mode
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { log, LogLevel } = require('../../logger');
+  log(LogLevel.WARN, `Signal: exec send (cli:${env.cliPath} acct:${acctMask} to:${toMask} group:${groupMask})`);
+  try {
+    const { stdout, stderr } = await execFileAsync(env.cliPath, args, { timeout: env.timeoutMs, maxBuffer: 2 * 1024 * 1024 });
+    const sErr = String(stderr || '').trim();
+    const sOut = String(stdout || '').trim();
+    if (sErr) {
+      log(LogLevel.WARN, `Signal: stderr -> ${sErr}`);
+    }
+    log(LogLevel.WARN, `Signal: stdout -> ${sOut}`);
+    return (stdout || '').toString();
+  } catch (e: any) {
+    log(LogLevel.ERROR, `Signal: exec error: ${e?.message || String(e)}`);
+    throw e;
+  }
 }
 
 export class SignalPlugin implements WoosterPlugin {
@@ -64,7 +90,7 @@ export class SignalPlugin implements WoosterPlugin {
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
     this.services = services;
     this.env = readEnv();
-    services.log(LogLevel.INFO, `Signal plugin initialized. Using signal-cli at ${this.env.cliPath}`);
+    services.log(LogLevel.WARN, `Signal plugin initialized. cli:${this.env.cliPath} acct:${mask(this.env.number)} to:${mask(this.env.to)} group:${mask(this.env.groupId)}`);
     // Register programmatic service so other plugins can send via Signal
     this.service = {
       send: async (message: string, options?: { to?: string; groupId?: string }) => {

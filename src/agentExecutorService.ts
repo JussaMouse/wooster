@@ -356,7 +356,10 @@ export async function executeAgent(
       chat_history: chatHistory,
       current_date_time: formattedDateTime,
     });
-    log(LogLevel.DEBUG, "Agent execution result:", { result });
+    log(LogLevel.WARN, "Agent execution result (summary): type=%s keys=%s", typeof result, Object.keys(result || {}).join(','));
+    try {
+      log(LogLevel.WARN, "Agent output (first 200 chars): %s", String(result?.output || '').slice(0, 200));
+    } catch {}
 
     // Post-process: if the model printed a JS code block calling sendSignal/signal_notify,
     // execute the Signal send via registered SignalService so the action happens even if tools weren't invoked.
