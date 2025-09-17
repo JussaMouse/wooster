@@ -228,7 +228,21 @@ export function createToolApi() {
     },
     // Alias used by some prompts
     sendSignal: async (msg: string) => {
-      return (await (this as any).signalNotify?.(msg)) || 'Error: sendSignal alias failed.';
+      log(LogLevel.INFO, `[CodeAgent] sendSignal (alias) called with: ${msg}`);
+      try {
+        const signalEnv = {
+          cliPath: process.env.SIGNAL_CLI_PATH || '/opt/homebrew/bin/signal-cli',
+          number: (process.env.SIGNAL_CLI_NUMBER || '').replace(/^['"]|['"]$/g, ''),
+          to: (process.env.SIGNAL_TO || '').replace(/^['"]|['"]$/g, ''),
+          groupId: (process.env.SIGNAL_GROUP_ID || '').replace(/^['"]|['"]$/g, ''),
+          timeoutMs: Number(process.env.SIGNAL_CLI_TIMEOUT_MS || '20000'),
+        } as any;
+        const { sendSignalMessage } = await import('../plugins/signal');
+        return await (sendSignalMessage as any)(signalEnv, msg);
+      } catch (error: any) {
+        log(LogLevel.ERROR, '[CodeAgent] Error sending Signal message (alias)', { error });
+        return `Error sending Signal message: ${error.message}`;
+      }
     },
   };
 }
