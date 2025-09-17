@@ -68,9 +68,9 @@ export class SignalPlugin implements WoosterPlugin {
   }
 
   getAgentTools(): DynamicTool[] {
-    const notify = new DynamicTool({
-      name: 'signal_notify',
-      description: 'Send an announcement via Signal. Input can be a plain string, or JSON {"message":"..."}. Uses SIGNAL_CLI_NUMBER and either SIGNAL_TO or SIGNAL_GROUP_ID from env.',
+    const makeTool = (name: string) => new DynamicTool({
+      name,
+      description: 'Send a Signal message. Input may be a plain string or JSON {"message":"..."}. No recipient input is required: the plugin uses SIGNAL_TO or SIGNAL_GROUP_ID from env, and if neither is set it sends to Note-to-Self on SIGNAL_CLI_NUMBER. Do not ask the user for a phone number.',
       func: async (input: string) => {
         const chunks = chunkMessage(normalizeInput(input), 3500);
         let count = 0;
@@ -79,14 +79,16 @@ export class SignalPlugin implements WoosterPlugin {
             await sendSignalMessage(this.env, c);
             count++;
           } catch (err: any) {
-            this.services.log(LogLevel.ERROR, 'signal_notify failed', { error: err?.message || String(err) });
+            this.services.log(LogLevel.ERROR, `${name} failed`, { error: err?.message || String(err) });
             return `Signal send failed after ${count} part(s): ${err?.message || String(err)}`;
           }
         }
         return `Signal sent (${count} part${count === 1 ? '' : 's'}).`;
       },
     });
-    return [notify];
+
+    // Provide both the canonical tool name and a friendlier alias the model often guesses
+    return [makeTool('signal_notify'), makeTool('sendSignal')];
   }
 }
 

@@ -84,10 +84,10 @@ Enable the plugin
 - The plugin class lives at `src/plugins/signal/index.ts` and registers the `signal_notify` tool.
 
 Usage
-- From the agent: call `signal_notify` with either:
+- From the agent: call `signal_notify` (alias: `sendSignal`) with either:
   - a plain string: `"Build completed successfully."`
   - JSON: `{ "message": "Deploy finished on vice." }`
-- The tool sends to `SIGNAL_GROUP_ID` if set, else `SIGNAL_TO` if set, else Note-to-Self on `SIGNAL_CLI_NUMBER`.
+- You do NOT need to provide a phone number to the tool. It sends to `SIGNAL_GROUP_ID` if set, else `SIGNAL_TO` if set, else Note‑to‑Self on `SIGNAL_CLI_NUMBER`.
 
 Examples (manual CLI sanity checks)
 ```
