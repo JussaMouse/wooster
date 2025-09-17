@@ -34,7 +34,8 @@ function readEnv(): SignalEnv {
 
 export async function sendSignalMessage(env: SignalEnv, message: string): Promise<string> {
   if (!env.number) throw new Error('SIGNAL_CLI_NUMBER not configured');
-  const args: string[] = ['-u', env.number, 'send'];
+  // Use -a (account) per current signal-cli recommendations
+  const args: string[] = ['-a', env.number, 'send'];
   if (env.groupId) {
     args.push('-g', env.groupId, '-m', message);
   } else if (env.to) {

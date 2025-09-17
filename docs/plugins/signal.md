@@ -29,23 +29,23 @@ Alternative: Dedicated number on server (primary registration)
   2) Register the number with signal-cli (you may be prompted for a CAPTCHA token):
      - Basic SMS registration:
        ```bash
-       signal-cli -u "+15551234567" register
+       signal-cli -a "+15551234567" register
        ```
      - If a CAPTCHA is required, open `https://signalcaptchas.org/registration/generate.html` in a browser, solve it, and pass the token:
        ```bash
-       signal-cli -u "+15551234567" register --captcha <CAPTCHA_TOKEN>
+       signal-cli -a "+15551234567" register --captcha <CAPTCHA_TOKEN>
        ```
      - If SMS doesn’t arrive, try a voice call verification:
        ```bash
-       signal-cli -u "+15551234567" register --voice [--captcha <CAPTCHA_TOKEN>]
+       signal-cli -a "+15551234567" register --voice [--captcha <CAPTCHA_TOKEN>]
        ```
   3) Verify once you receive the 6-digit code on that number:
      ```bash
-     signal-cli -u "+15551234567" verify 123456
+     signal-cli -a "+15551234567" verify 123456
      ```
   4) (Optional) Set a profile name for this dedicated account:
      ```bash
-     signal-cli -u "+15551234567" updateProfile --name "Wooster Bot"
+     signal-cli -a "+15551234567" updateProfile --name "Wooster Bot"
      ```
   5) Configure Wooster environment variables for this dedicated account:
      ```
@@ -58,11 +58,11 @@ Alternative: Dedicated number on server (primary registration)
   6) Sanity-check from CLI:
      ```bash
      # Send to your personal phone from the dedicated account
-     signal-cli -u "+15551234567" send -m "Hello from Wooster bot" +1555YOURPERSONALNUMBER
+     signal-cli -a "+15551234567" send -m "Hello from Wooster bot" +1555YOURPERSONALNUMBER
 
      # Or send to a group (first list and copy the id)
-     signal-cli -u "+15551234567" listGroups
-     signal-cli -u "+15551234567" send -g GROUP_ID -m "Deploy done"
+     signal-cli -a "+15551234567" listGroups
+     signal-cli -a "+15551234567" send -g GROUP_ID -m "Deploy done"
      ```
 
 Environment variables (.env)
@@ -92,14 +92,14 @@ Usage
 Examples (manual CLI sanity checks)
 ```
 # Note to Self
-signal-cli -u "+15551234567" send -m "Test from server" +15551234567
+signal-cli -a "+15551234567" send -m "Test from server" +15551234567
 
 # To a contact
-signal-cli -u "+15551234567" send -m "Hello!" +15559876543
+signal-cli -a "+15551234567" send -m "Hello!" +15559876543
 
 # To a group
-signal-cli -u "+15551234567" listGroups   # copy groupId
-signal-cli -u "+15551234567" send -g GROUP_ID -m "Deploy done"
+signal-cli -a "+15551234567" listGroups   # copy groupId
+signal-cli -a "+15551234567" send -g GROUP_ID -m "Deploy done"
 ```
 
 Design notes
