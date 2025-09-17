@@ -35,6 +35,10 @@ finalAnswer(\`Here's a summary from the first result: \${summary}\`);
 // Example 2: RAG query and cite
 const ragResponse = await queryRAG('What is the project status?');
 finalAnswer(\`Project status: \${ragResponse}\`);
+
+// Example 3: Send a Signal message using env defaults
+await sendSignal('Test from Wooster');
+finalAnswer('Signal send requested.');
 `;
   
   const finalSystemPrompt = `${baseSystemPrompt}\n\n${codeAgentHeader}\n\n${fewShotExamples}`;

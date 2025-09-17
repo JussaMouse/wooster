@@ -71,6 +71,32 @@ export function createToolApi() {
     log(LogLevel.WARN, '[CodeAgent] Tavily API key not configured. webSearch will be a no-op.');
   }
 
+  const normalizeSignalMessageInput = (msg: any): string => {
+    try {
+      if (typeof msg === 'string') {
+        // Try to parse JSON string with { message: "..." }
+        const maybeObj = JSON.parse(msg);
+        if (maybeObj && typeof maybeObj === 'object' && typeof maybeObj.message === 'string') {
+          return maybeObj.message;
+        }
+        return msg;
+      }
+      if (msg && typeof msg === 'object' && typeof msg.message === 'string') {
+        return msg.message;
+      }
+      return String(msg ?? '');
+    } catch {
+      return String(msg ?? '');
+    }
+  };
+
+  const mask = (v?: string) => {
+    if (!v) return '';
+    const s = String(v);
+    if (s.length <= 4) return '****';
+    return s.slice(0, 2) + '***' + s.slice(-2);
+  };
+
   return {
     webSearch: async (query: string) => {
       log(LogLevel.INFO, `[CodeAgent] webSearch called with: ${query}`);
@@ -209,8 +235,9 @@ export function createToolApi() {
       log(LogLevel.INFO, `[CodeAgent] discordNotify called with: ${msg}`);
       // Placeholder implementation
     },
-    signalNotify: async (msg: string) => {
-      log(LogLevel.INFO, `[CodeAgent] signalNotify called with: ${msg}`);
+    signalNotify: async (msg: any) => {
+      const text = normalizeSignalMessageInput(msg);
+      log(LogLevel.INFO, `[CodeAgent] signalNotify called with: ${text}`);
       try {
         const signalEnv = {
           cliPath: process.env.SIGNAL_CLI_PATH || '/opt/homebrew/bin/signal-cli',
@@ -220,15 +247,18 @@ export function createToolApi() {
           timeoutMs: Number(process.env.SIGNAL_CLI_TIMEOUT_MS || '20000'),
         } as any;
         const { sendSignalMessage } = await import('../plugins/signal');
-        return await (sendSignalMessage as any)(signalEnv, msg);
+        const res = await (sendSignalMessage as any)(signalEnv, text);
+        log(LogLevel.INFO, `[CodeAgent] signalNotify delivered (to:${mask(signalEnv.to)} group:${mask(signalEnv.groupId)} fallbackNote:${!signalEnv.to && !signalEnv.groupId})`);
+        return res;
       } catch (error: any) {
         log(LogLevel.ERROR, '[CodeAgent] Error sending Signal message', { error });
         return `Error sending Signal message: ${error.message}`;
       }
     },
     // Alias used by some prompts
-    sendSignal: async (msg: string) => {
-      log(LogLevel.INFO, `[CodeAgent] sendSignal (alias) called with: ${msg}`);
+    sendSignal: async (msg: any) => {
+      const text = normalizeSignalMessageInput(msg);
+      log(LogLevel.INFO, `[CodeAgent] sendSignal (alias) called with: ${text}`);
       try {
         const signalEnv = {
           cliPath: process.env.SIGNAL_CLI_PATH || '/opt/homebrew/bin/signal-cli',
@@ -238,7 +268,9 @@ export function createToolApi() {
           timeoutMs: Number(process.env.SIGNAL_CLI_TIMEOUT_MS || '20000'),
         } as any;
         const { sendSignalMessage } = await import('../plugins/signal');
-        return await (sendSignalMessage as any)(signalEnv, msg);
+        const res = await (sendSignalMessage as any)(signalEnv, text);
+        log(LogLevel.INFO, `[CodeAgent] sendSignal delivered (to:${mask(signalEnv.to)} group:${mask(signalEnv.groupId)} fallbackNote:${!signalEnv.to && !signalEnv.groupId})`);
+        return res;
       } catch (error: any) {
         log(LogLevel.ERROR, '[CodeAgent] Error sending Signal message (alias)', { error });
         return `Error sending Signal message: ${error.message}`;
