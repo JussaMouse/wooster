@@ -11,7 +11,7 @@ This summarizes how Wooster runs today, focusing on the main loop, agent stack, 
 - **Agent stack (LangChain Tools Agent)**
   - `src/agent.ts` maps REPL history to `BaseMessage[]` and calls `executeAgent(...)`.
   - `src/agentExecutorService.ts` builds a LangChain `AgentExecutor` with tools (core + plugin-provided).
-  - Tools include file ops, knowledge base query (RAG), scheduling, and plugin tools. The agent decides whether to call tools or answer directly; observations are fed back until a final output.
+  - Tools include file ops, knowledge base query (RAG), scheduling, and plugin tools. The agent decides whether to call tools or answer directly; oan bservations are fed back until a final output.
 
 - **Prompting**
   - System prompt: `prompts/base_system_prompt.txt` plus any additional `.txt` in `prompts/` (alphabetical). The agent prompt describes persona, capabilities, and tools.
