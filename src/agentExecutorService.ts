@@ -18,6 +18,7 @@ import { ChatDebugFileCallbackHandler } from "./chatDebugFileCallbackHandler";
 import { scheduleAgentTaskTool } from "./schedulerTool";
 import { createFileTool, readFileTool } from './fileSystemTool';
 import { initializeProjectVectorStore } from './projectStoreManager';
+import { getRegisteredService } from './pluginManager';
 
 let projectVectorStoreInstance: MemoryVectorStore | null = null;
 let tools: any[] = [];
@@ -327,6 +328,55 @@ export async function executeAgent(
       current_date_time: formattedDateTime,
     });
     log(LogLevel.DEBUG, "Agent execution result:", { result });
+
+    // Post-process: if the model printed a JS code block calling sendSignal/signal_notify,
+    // execute the Signal send via registered SignalService so the action happens even if tools weren't invoked.
+    try {
+      const outputText = String(result?.output ?? '');
+      const codeBlockMatch = outputText.match(/```(?:js|javascript)?\n([\s\S]*?)```/i);
+      if (codeBlockMatch && codeBlockMatch[1]) {
+        const code = codeBlockMatch[1];
+        const callMatch = code.match(/(?:sendSignal|signal_notify|signalNotify)\s*\(\s*([\s\S]*?)\s*\)/);
+        if (callMatch) {
+          const rawArg = callMatch[1].trim();
+          let messageToSend: string | null = null;
+          // Try object form first
+          if (rawArg.startsWith('{')) {
+            try {
+              const obj = JSON.parse(rawArg);
+              if (obj && typeof obj.message === 'string') {
+                messageToSend = obj.message;
+              }
+            } catch {}
+          }
+          // Try string literal form
+          if (!messageToSend) {
+            const strMatch = rawArg.match(/^(["'])([\s\S]*?)\1/);
+            if (strMatch) {
+              messageToSend = strMatch[2];
+            }
+          }
+          if (messageToSend && messageToSend.trim()) {
+            const signalService = getRegisteredService<{ send: (msg: string, opts?: { to?: string; groupId?: string }) => Promise<void> }>('SignalService');
+            if (signalService && typeof signalService.send === 'function') {
+              try {
+                await signalService.send(messageToSend.trim());
+                log(LogLevel.INFO, `Post-processor: Dispatched Signal message from printed code block.`);
+                // Optionally, override the output to reflect actual send
+                return `Signal message sent: ${messageToSend.trim()}`;
+              } catch (e: any) {
+                log(LogLevel.ERROR, `Post-processor: Failed to send Signal message from printed code block: ${e?.message || String(e)}`);
+              }
+            } else {
+              log(LogLevel.WARN, `Post-processor: SignalService not available to dispatch printed code block.`);
+            }
+          }
+        }
+      }
+    } catch (ppErr: any) {
+      log(LogLevel.WARN, `Post-processor error (code block Signal detect): ${ppErr?.message || String(ppErr)}`);
+    }
+
     return result.output;
   } catch (error: any) {
     log(LogLevel.ERROR, "Error during agent execution:", { error: error.message, stack: error.stack });
