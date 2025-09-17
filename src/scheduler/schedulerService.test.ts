@@ -1,54 +1,6 @@
 import { SchedulerService, _resetForTesting } from './schedulerService';
 import { SchedulerRepository } from './schedulerRepository';
 import { Cron } from 'croner';
-
-jest.mock('./schedulerRepository');
-jest.mock('croner');
-jest.mock('../logger');
-
-const mockCron = { stop: jest.fn() } as any;
-(Cron as any).mockImplementation(() => mockCron);
-
-describe('SchedulerService (regression)', () => {
-  let mockRepo: any;
-
-  beforeEach(() => {
-    _resetForTesting();
-    jest.clearAllMocks();
-    mockRepo = {
-      addScheduleItem: jest.fn(),
-      getScheduleItemById: jest.fn(),
-      deleteScheduleItem: jest.fn(),
-      getAllActiveScheduleItems: jest.fn().mockReturnValue([]),
-      getScheduleItemByKey: jest.fn(),
-    };
-    (SchedulerRepository.create as any) = jest.fn().mockResolvedValue(mockRepo);
-    (Cron as any).mockImplementation(() => mockCron);
-  });
-
-  it('creates and schedules an item (AGENT_PROMPT)', async () => {
-    const newItem = {
-      description: 'Test task',
-      schedule_expression: '* * * * *',
-      task_handler_type: 'AGENT_PROMPT' as const,
-      task_key: 'test-task',
-      payload: '{"foo":"bar"}',
-      execution_policy: 'DEFAULT_SKIP_MISSED' as const,
-    };
-    const createdItem = { id: 'id-1', is_active: true, created_at: '', ...newItem };
-    mockRepo.getScheduleItemById.mockReturnValue(createdItem);
-
-    await SchedulerService.create(newItem);
-
-    expect(mockRepo.addScheduleItem).toHaveBeenCalled();
-    expect(mockRepo.getScheduleItemById).toHaveBeenCalled();
-    expect(Cron).toHaveBeenCalledWith(newItem.schedule_expression, expect.any(Function));
-  });
-});
-
-import { SchedulerService, _resetForTesting } from './schedulerService';
-import { SchedulerRepository } from './schedulerRepository';
-import { Cron } from 'croner';
 import { NewScheduleItemPayload, ScheduleItem } from '../types/schedulerCore';
 
 jest.mock('./schedulerRepository');
