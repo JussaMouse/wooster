@@ -212,6 +212,12 @@ Do not change the active project context itself without explicit instruction.
 IMPORTANT: When adding journal entries, always append to the project's main journal file which is named '${currentActiveProjectName}.md' in the active project directory. Do NOT create separate 'journal.md' files.
 To add content to an existing file (e.g., add an entry to a log file), you should first use the 'read_file_content' tool to get the current content. Then, append your new content to the existing content in your internal thought process. Finally, use the 'create_file' tool to save the entire new combined content back to the same file. This ensures you don't overwrite existing data unintentionally when the user asks to add something.
 
+TOOLS-USAGE POLICY:
+- Never output or print code when invoking tools. Call tools directly using the Tools API.
+- If the user says "Use the tool X ...", you MUST call tool X and not print example code.
+- For sending Signal messages: ALWAYS use the 'sendSignal' tool (alias: 'signal_notify'). Do not ask for a recipient; the plugin uses environment defaults (SIGNAL_GROUP_ID → SIGNAL_TO → Note-to-Self on SIGNAL_CLI_NUMBER). Provide the message as input (prefer JSON: {"message":"..."}).
+- If a tool returns an error, report it succinctly; otherwise confirm success.
+
 Current date and time: {current_date_time}`;
 
   const prompt = ChatPromptTemplate.fromMessages([
