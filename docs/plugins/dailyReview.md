@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-Wooster's Daily Review is an automated feature designed to provide you with a consolidated and engaging overview of your day each morning. It's delivered via email, helping you stay organized and informed about your schedule, priorities, and local weather.
+Wooster's Daily Review is an automated feature designed to provide you with a consolidated and engaging overview of your day each morning. It's delivered via Signal or email (configurable), helping you stay organized and informed about your schedule, priorities, and local weather.
 
 ## 2. Content & Structure
 
@@ -29,10 +29,11 @@ The Daily Review email is styled by Wooster with a touch of personality and "cut
    - Summarizes your most recent workout entry from the Personal Health plugin (requires Personal Health plugin).
    - Includes the date and content of the workout.
 
-## 3. Email Format & Style
+## 3. Delivery & Format
 
-- The email is HTML formatted for a richer presentation.
-- Wooster is encouraged to use a creative and friendly style, potentially including emojis, to make the Daily Review engaging. The specific design elements might vary from day to day for a pleasant surprise.
+- **Signal:** Plain text message formatted for readability.
+- **Email:** HTML formatted for a richer presentation.
+- Wooster uses a friendly style, with emojis where appropriate.
 
 ## 4. Configuration Requirements
 
@@ -42,7 +43,7 @@ To enable and correctly receive the Daily Review, ensure the following are confi
 
 This file, located at `config/dailyReview.json` in your Wooster project root, stores your personal settings for the Daily Review. This includes:
 *   Which content modules are active (e.g., `calendar`, `weather`, `healthLog`, `nextActions`).
-*   Delivery channel preferences (e.g., email recipient, enabling/disabling email).
+*   Delivery channel preferences (e.g., Signal and/or email settings).
 *   The `scheduleCron` expression for when the review is generated and sent. The default schedule if not otherwise configured is **7:30 AM daily** (`"30 7 * * *"`).
 
 *   **Initial Setup:** Upon first use, or if you wish to reset your settings, you should copy the provided example configuration:
@@ -53,24 +54,41 @@ This file, located at `config/dailyReview.json` in your Wooster project root, st
 *   **Automatic Creation:** If `config/dailyReview.json` does not exist when Wooster starts, the Daily Review plugin will automatically create it with default values. It may also auto-enable certain content modules (like Weather, Calendar, or Fitness Log) if their underlying services/plugins are detected, and set `hasCompletedInitialSetup` to `true`.
 *   **Key Settings:** Refer to the output of the "get_daily_review_help" agent tool for a detailed list of all configurable settings within this file and their current values.
 
-### b. Recipient Email Address (for Email Delivery)
+### b. Signal Delivery (recommended)
+   - Enable the Signal plugin and configure `.env`:
+     - `SIGNAL_CLI_NUMBER` (required), optionally `SIGNAL_TO` or `SIGNAL_GROUP_ID`.
+   - In `config/dailyReview.json`, enable the Signal channel and (optionally) override the recipient:
+     ```json
+     {
+       "deliveryChannels": {
+         "signal": {
+           "enabled": true,
+           "to": "+1555YOURPERSONALNUMBER",
+           "groupId": ""
+         }
+       }
+     }
+     ```
+   - If both `to` and `groupId` are empty, Daily Review goes to the dedicated account's Note‑to‑Self (not your personal phone).
+
+### c. Recipient Email Address (for Email Delivery)
    - The primary way to set the recipient for email delivery is via the `recipient` field within the `email` channel settings in `config/dailyReview.json`.
    - If this field is not set or is an empty string in `config/dailyReview.json`, the system defaults to using the value of the **`GMAIL_USER_PERSONAL_EMAIL_ADDRESS`** environment variable from your `.env` file.
    - **Example `.env` entry:** `GMAIL_USER_PERSONAL_EMAIL_ADDRESS="your_personal_email@example.com"`
 
-### c. Email Sending Capabilities (for Email Delivery)
+### d. Email Sending Capabilities (for Email Delivery)
    - **Environment Variables:**
      - `GMAIL_USER_EMAIL_ADDRESS` (Wooster's sending email, e.g., your Gmail address used by the Gmail Plugin)
      - `GMAIL_APP_PASSWORD` (If using Gmail, the app password for Wooster, associated with `GMAIL_USER_EMAIL_ADDRESS`)
    - **Description:** These are required for Wooster to send any emails, including the Daily Review. Refer to the Gmail Plugin or general email tool configuration for details.
 
-### d. Weather Tool Configuration (for Weather Module)
+### e. Weather Tool Configuration (for Weather Module)
    - **Environment Variables:**
      - `WEATHER_CITY`
      - `OPENWEATHERMAP_API_KEY`
    - **Description:** Essential for fetching the weather forecast if the weather module is enabled. Refer to the Weather Tool/Plugin documentation for setup.
 
-### e. Daily Review Schedule
+### f. Daily Review Schedule
    - The schedule for when the Daily Review email is generated and sent is primarily configured via the `scheduleCron` setting within the `config/dailyReview.json` file.
    - The default value used by the plugin when creating a new configuration is `"30 7 * * *"` (7:30 AM daily).
    - You can customize this cron expression in `config/dailyReview.json` to change the timing.
@@ -78,9 +96,9 @@ This file, located at `config/dailyReview.json` in your Wooster project root, st
 
 ## 5. Triggering Mechanism
 
-- The Daily Review is primarily designed to be an **automated email sent once per day** according to the schedule in `config/dailyReview.json`.
+- The Daily Review is designed to be an **automated message sent once per day** (via Signal and/or email) according to the schedule in `config/dailyReview.json`.
 - It is managed by Wooster's `SchedulerService`.
-  - **Task Key:** `dailyReview.sendEmail` (as returned by the plugin's `getScheduledTaskSetups` method).
+  - **Task Key:** `dailyReview.send` (as returned by the plugin's `getScheduledTaskSetups` method).
   - **Schedule:** Defined by the `scheduleCron` setting in `config/dailyReview.json`.
   - **Execution Policy:** `RUN_ONCE_PER_PERIOD_CATCH_UP`. This policy ensures that:
     - If Wooster is running at the scheduled time, the review is sent.
@@ -92,9 +110,10 @@ This file, located at `config/dailyReview.json` in your Wooster project root, st
 
 This feature, depending on enabled content modules, relies on:
 - The `config/dailyReview.json` file for its core configuration.
+- **Signal Delivery:**
+    - Signal plugin enabled and configured (`SIGNAL_CLI_NUMBER`, optional `SIGNAL_TO`/`SIGNAL_GROUP_ID`).
 - **Email Delivery:**
-    - An Email Service (e.g., provided by the Gmail Plugin).
-    - Correctly configured email credentials in `.env`.
+    - Email Service (e.g., Gmail Plugin) and credentials in `.env`.
 - **Calendar Events:**
     - A Calendar Service/Function (e.g., `getCalendarEventsFunction` provided by a Calendar Plugin).
 - **Weather Forecast:**

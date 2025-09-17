@@ -1,5 +1,6 @@
 import { DynamicTool } from '@langchain/core/tools';
 import { WoosterPlugin, AppConfig, CoreServices, LogLevel } from '../../types/plugin';
+import { SignalService } from './types';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 
@@ -48,11 +49,22 @@ export class SignalPlugin implements WoosterPlugin {
 
   private services!: CoreServices;
   private env!: SignalEnv;
+  private service!: SignalService;
 
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
     this.services = services;
     this.env = readEnv();
     services.log(LogLevel.INFO, `Signal plugin initialized. Using signal-cli at ${this.env.cliPath}`);
+    // Register programmatic service so other plugins can send via Signal
+    this.service = {
+      send: async (message: string, options?: { to?: string; groupId?: string }) => {
+        const effectiveEnv = { ...this.env };
+        if (options?.to) effectiveEnv.to = options.to;
+        if (options?.groupId) effectiveEnv.groupId = options.groupId;
+        await sendSignalMessage(effectiveEnv, message);
+      },
+    };
+    services.registerService('SignalService', this.service);
   }
 
   getAgentTools(): DynamicTool[] {

@@ -9,6 +9,11 @@ export interface DailyReviewUserConfig {
       enabled: boolean;
       recipient?: string;
     };
+    signal?: {
+      enabled: boolean;
+      to?: string;       // optional override recipient
+      groupId?: string;  // optional group id
+    };
     discord?: { // Optional Discord channel
       enabled: boolean;
       webhookUrl?: string;

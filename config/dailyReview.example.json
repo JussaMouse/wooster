@@ -6,6 +6,11 @@
     "email": {
       "enabled": false,
       "recipient": "your_email@example.com"
+    },
+    "signal": {
+      "enabled": false,
+      "to": "+15551234567",
+      "groupId": ""
     }
   },
   "contentModules": {

@@ -429,6 +429,33 @@ class DailyReviewPluginDefinition implements WoosterPlugin {
     }
   }
 
+  private async sendDailyReviewSignal(): Promise<void> {
+    if (!this.userConfig || !this.userConfig.isDailyReviewEnabled || !this.userConfig.deliveryChannels.signal?.enabled) {
+      this.logMsg(LogLevel.INFO, 'Daily review Signal not sent due to user configuration (disabled overall or signal channel disabled).');
+      return;
+    }
+
+    const signalService = this.coreServices.getService("SignalService") as { send: (msg: string, opts?: { to?: string; groupId?: string }) => Promise<void> } | undefined;
+    if (!signalService) {
+      this.logMsg(LogLevel.ERROR, "SignalService not available. Cannot send daily review via Signal.");
+      return;
+    }
+
+    try {
+      this.logMsg(LogLevel.INFO, 'Preparing to send daily review via Signal.');
+      const reviewData = await this.getDailyReviewContentInternal();
+      const textBody = this.formatReviewDataToText(reviewData);
+      const opts = {
+        to: this.userConfig.deliveryChannels.signal?.to,
+        groupId: this.userConfig.deliveryChannels.signal?.groupId,
+      };
+      await signalService.send(textBody, opts);
+      this.logMsg(LogLevel.INFO, 'Daily review sent via Signal.');
+    } catch (error: any) {
+      this.logMsg(LogLevel.ERROR, 'Failed to send daily review via Signal.', { error: error.message, stack: error.stack });
+    }
+  }
+
   async initialize(config: AppConfig, services: CoreServices): Promise<void> {
     this.appConfig = config;
     this.coreServices = services;
@@ -540,8 +567,9 @@ It checks for available services (Calendar, Weather, etc.) on first setup to aut
     let scheduleSource = "Plugin Default";
 
     if (this.userConfig) {
-      isEnabled = this.userConfig.isDailyReviewEnabled && 
-                  (this.userConfig.deliveryChannels.email?.enabled ?? false);
+      const emailEnabled = this.userConfig.deliveryChannels.email?.enabled ?? false;
+      const signalEnabled = this.userConfig.deliveryChannels.signal?.enabled ?? false;
+      isEnabled = this.userConfig.isDailyReviewEnabled && (emailEnabled || signalEnabled);
       
       if (this.userConfig.isDailyReviewEnabled) {
         scheduleSource = "User Config: dailyReview.json (isDailyReviewEnabled=true)";
@@ -552,8 +580,8 @@ It checks for available services (Calendar, Weather, etc.) on first setup to aut
         scheduleSource = "User Config: dailyReview.json (isDailyReviewEnabled=false)";
       }
       
-      if (!this.userConfig.deliveryChannels.email?.enabled && this.userConfig.isDailyReviewEnabled) {
-        scheduleSource += " (Email delivery disabled in dailyReview.json)";
+      if (!emailEnabled && !signalEnabled && this.userConfig.isDailyReviewEnabled) {
+        scheduleSource += " (All delivery channels disabled in dailyReview.json)";
       }
     } else {
       scheduleSource = "Error: User config not loaded";
@@ -569,18 +597,26 @@ It checks for available services (Calendar, Weather, etc.) on first setup to aut
     }
 
     if (!isEnabled) {
-      this.logMsg(LogLevel.INFO, "Daily review email task not scheduled: disabled by user configuration or email channel disabled.");
+      this.logMsg(LogLevel.INFO, "Daily review task not scheduled: disabled by user configuration or all delivery channels disabled.");
     } else {
-      this.logMsg(LogLevel.INFO, `Daily review email task will be scheduled. Effective Cron: ${effectiveSchedule}, Source: ${scheduleSource}`);
+      this.logMsg(LogLevel.INFO, `Daily review task will be scheduled. Effective Cron: ${effectiveSchedule}, Source: ${scheduleSource}`);
     }
 
+    // A single scheduled task that, when fired, will deliver via any enabled channels (Signal and/or Email)
+    const deliverDailyReview = async () => {
+      await Promise.allSettled([
+        this.sendDailyReviewSignal(),
+        this.sendDailyReviewEmail(),
+      ]);
+    };
+
     return {
-      taskKey: "dailyReview.sendEmail",
-      description: "Sends the Daily Review email based on user configuration.",
+      taskKey: "dailyReview.send",
+      description: "Sends the Daily Review via configured delivery channels (Signal, Email).",
       defaultScheduleExpression: this.getDefaultUserConfig().scheduleCron,
       effectiveScheduleExpression: effectiveSchedule,
       isEnabledByPlugin: isEnabled,
-      functionToExecute: this.sendDailyReviewEmail.bind(this),
+      functionToExecute: deliverDailyReview,
       executionPolicy: 'RUN_ONCE_PER_PERIOD_CATCH_UP'
     };
   }
