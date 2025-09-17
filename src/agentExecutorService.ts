@@ -321,6 +321,35 @@ export async function executeAgent(
   const formattedDateTime = parseDateString(currentDateTime) || currentDateTime;
 
   try {
+    // Fast-path: intercept explicit sendSignal/signal_notify commands and execute directly via SignalService
+    const directSignalMatch = userInput.match(/^\s*(sendSignal|signal_notify)\s*(\{[\s\S]*\}|"[\s\S]*"|'[\s\S]*')?\s*$/i);
+    if (directSignalMatch) {
+      let rawArg = directSignalMatch[2] || '';
+      let messageToSend: string | null = null;
+      rawArg = rawArg.trim();
+      if (rawArg.startsWith('{')) {
+        try { const obj = JSON.parse(rawArg); if (obj && typeof obj.message === 'string') messageToSend = obj.message; } catch {}
+      }
+      if (!messageToSend) {
+        const strMatch = rawArg.match(/^(["'])([\s\S]*?)\1$/);
+        if (strMatch) messageToSend = strMatch[2];
+      }
+      if (!messageToSend) messageToSend = 'Test message';
+      const signalService = getRegisteredService<{ send: (msg: string, opts?: { to?: string; groupId?: string }) => Promise<void> }>('SignalService');
+      if (!signalService || typeof signalService.send !== 'function') {
+        log(LogLevel.ERROR, 'Direct Signal path: SignalService not available.');
+        return 'Error: Signal service not available.';
+      }
+      try {
+        await signalService.send(messageToSend.trim());
+        log(LogLevel.INFO, `Direct Signal path: Sent Signal message.`);
+        return `Signal message sent: ${messageToSend.trim()}`;
+      } catch (e: any) {
+        log(LogLevel.ERROR, `Direct Signal path: Failed to send Signal message: ${e?.message || String(e)}`);
+        return `Error sending Signal message: ${e?.message || String(e)}`;
+      }
+    }
+
     log(LogLevel.INFO, "Executing agent with input and chat history", { userInput, chatHistoryLength: chatHistory.length });
     const result = await agentExecutorInstance.invoke({
       input: userInput,
