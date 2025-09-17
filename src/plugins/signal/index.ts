@@ -14,11 +14,20 @@ type SignalEnv = {
   timeoutMs: number;
 };
 
+function stripQuotes(value?: string): string | undefined {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
 function readEnv(): SignalEnv {
   const cliPath = process.env.SIGNAL_CLI_PATH || '/opt/homebrew/bin/signal-cli';
-  const number = process.env.SIGNAL_CLI_NUMBER;
-  const to = process.env.SIGNAL_TO;
-  const groupId = process.env.SIGNAL_GROUP_ID;
+  const number = stripQuotes(process.env.SIGNAL_CLI_NUMBER);
+  const to = stripQuotes(process.env.SIGNAL_TO);
+  const groupId = stripQuotes(process.env.SIGNAL_GROUP_ID);
   const timeoutMs = Number(process.env.SIGNAL_CLI_TIMEOUT_MS || '20000');
   return { cliPath, number, to, groupId, timeoutMs };
 }
