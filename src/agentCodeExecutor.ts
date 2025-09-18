@@ -4,6 +4,7 @@ import { AppConfig, getConfig } from './configLoader';
 import { getModelRouter } from './routing/ModelRouterService';
 import { CodeSandbox } from './codeAgent/CodeSandbox';
 import { createToolApi } from './codeAgent/tools';
+import { getRegisteredService } from './pluginManager';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -53,6 +54,11 @@ finalAnswer('Signal send requested.');
 }
 
 async function classifyToolNeed(prompt: string): Promise<'NONE' | 'TOOLS'> {
+  // Heuristic fast-path: if the user explicitly asks to send via Signal, force tools
+  const p = (prompt || '').toLowerCase();
+  if (/(\bsendsignal\b|\bsignal_notify\b|send\s+via\s+signal|via\s+signal|signal\s+message)/.test(p)) {
+    return 'TOOLS';
+  }
   try {
     const router = getModelRouter();
     const model = await router.selectModel({
@@ -107,6 +113,42 @@ export async function executeCodeAgent(
     if (decision === 'NONE') {
       const answer = await answerDirectly(userInput, chatHistory);
       logCodeAgentInteraction({ event: 'final_answer', details: { finalAnswer: answer } });
+
+      // Post-process: if the LLM returned a code block that calls sendSignal/signalNotify, dispatch via SignalService
+      try {
+        const codeMatch = answer.match(/```(?:js|javascript)?\n([\s\S]*?)```/i);
+        if (codeMatch && codeMatch[1]) {
+          const code = codeMatch[1];
+          const callMatch = code.match(/(?:sendSignal|signal_notify|signalNotify)\s*\(\s*([\s\S]*?)\s*\)/);
+          if (callMatch) {
+            let rawArg = (callMatch[1] || '').trim();
+            let msg: string | null = null;
+            if (rawArg.startsWith('{')) {
+              try { const o = JSON.parse(rawArg); if (o && typeof o.message === 'string') msg = o.message; } catch {}
+            }
+            if (!msg) {
+              const s = rawArg.match(/^(["'])([\s\S]*?)\1$/);
+              if (s) msg = s[2];
+            }
+            if (msg && msg.trim()) {
+              const svc = getRegisteredService<{ send: (m: string) => Promise<void> }>('SignalService');
+              if (svc && typeof svc.send === 'function') {
+                try {
+                  await svc.send(msg.trim());
+                  const out = `Signal message sent: ${msg.trim()}`;
+                  logCodeAgentInteraction({ event: 'finish', details: { finalAnswer: out, status: 'success' } });
+                  return out;
+                } catch (e: any) {
+                  const out = `Error sending Signal message: ${e?.message || String(e)}`;
+                  logCodeAgentInteraction({ event: 'finish', details: { finalAnswer: out, status: 'failure' } });
+                  return out;
+                }
+              }
+            }
+          }
+        }
+      } catch {}
+
       logCodeAgentInteraction({ event: 'finish', details: { finalAnswer: answer, status: 'success' } });
       return answer;
     }
