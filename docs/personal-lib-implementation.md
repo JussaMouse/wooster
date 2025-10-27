@@ -93,6 +93,14 @@ Net effect
 The router stays in control of when RAG runs; kb_query is on-demand and citation-enforced.
 Your notes get first-class CRUD, robust linking/aliases, safe backups, and scheduled curation—without forcing RAG unless asked.
 
+# User Profile integration (kept separate)
+
+- The User Profile remains a separate KB namespace (e.g., `user_profile`) and is not merged with general notes/books.
+- Same backend engine (SQLite/FTS + vectors), but excluded from `kb_query` by default; accessed only when explicitly requested (e.g., “recall my …”) or via profile tools (`save_user_profile`, `recall_user_profile`).
+- Policy: prefer local-only models for profile operations; opt-in cloud fallback.
+- Backups: included as a separate folder/zip in nightly exports; optional encryption.
+- Rationale: tiny footprint (no performance concern), reduced risk of leaking personal facts in general answers, and cleaner prompts/evals while still unifying storage/ops.
+
 # Changes to current system:
 Core system changes (code)
 • Replace legacy RAG pipeline
