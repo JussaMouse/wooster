@@ -101,6 +101,52 @@ Your notes get first-class CRUD, robust linking/aliases, safe backups, and sched
 - Backups: included as a separate folder/zip in nightly exports; optional encryption.
 - Rationale: tiny footprint (no performance concern), reduced risk of leaking personal facts in general answers, and cleaner prompts/evals while still unifying storage/ops.
 
+# Projects integration (project as note)
+
+- Model: A project is a first-class note with frontmatter (type: project). All project semantics live in this note; large assets stay in a folder.
+- Active project: a pointer to a project note id; agent tools use this id to scope queries and listings.
+- Example project note frontmatter:
+
+```yaml
+---
+id: 20251028-proj-espresso-machine
+type: project
+title: Fix Espresso Machine
+status: active            # active | paused | done | dropped
+area: home
+created: 2025-10-28
+due: 2025-11-15
+tags: [project, home, repairs]
+assets_dir: projects/espresso-machine
+related: [20251020-note-pressure-tuning]
+prompt: |
+  When scoped here, prefer coffee-repair docs and parts vendors.
+---
+```
+
+- Storage
+  - Notes live under `notes/projects/<slug>.md` (Obsidian-friendly).
+  - Assets remain under `projects/<slug>/` and are indexed; frontmatter `assets_dir` points to the folder.
+  - Library namespace is still `notes`; project scoping filters by the project note id and its backlinks.
+
+- Agent/tooling updates
+  - `createProject` → create a project note (+ optional `assets_dir`).
+  - `openProject` → set `activeProjectId` to the project note id.
+  - `listFilesInActiveProject` → list notes linking to the project note + files under `assets_dir`.
+  - Journal entries can append in the project note or create daily sub-notes linked back to it.
+  - `kb_query(..., scope={ projectId })` limits retrieval to the project note neighborhood.
+
+- Migration (backward compatible)
+  - For each `projects/<name>/`:
+    - Create a project note with `type: project` and set `assets_dir` to the existing folder.
+    - Move `<name>.md` content into the project note body; put `prompt.txt` into frontmatter `prompt`.
+    - Keep the folder for assets (PDFs/images/code); index it as before.
+  - Continue ingesting existing `projects/*` during transition; prefer project-note semantics once present.
+
+- Defaults
+  - `Home` becomes a project note (id: `home`).
+  - New projects create both the project note and an `assets_dir` by default (configurable).
+
 # Changes to current system:
 Core system changes (code)
 • Replace legacy RAG pipeline
