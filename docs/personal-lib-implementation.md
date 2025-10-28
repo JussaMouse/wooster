@@ -187,3 +187,59 @@ Remove/Archive: Superseded by the unified KB + ZK design and the current code-ag
 - Local-first: keep models/services local to cut network latency; fall back only when needed.
 
 Bottom line: You will notice longer first-time ingest and a small per-query overhead from hybrid retrieval and (sometimes) re-ranking. With gating, batching, tuned indexes, and lightweight reranking, interactive latency remains well within “snappy CLI” expectations while accuracy and grounding improve substantially.
+
+# Frontend plan (no graph view)
+
+• Goals
+- Obsidian-like, local-first UI for browsing, searching, and editing notes.
+- Default to fast FTS; enable semantic/hybrid on demand; surface backlinks/unlinked mentions.
+- Keep it minimal; no graph view.
+
+• MVP scope
+- File tree sidebar (folders, tags, recent), note editor/preview, backlinks panel, global search (FTS), create/rename/move notes, atomic save with index status.
+
+• UI layout
+- Top bar: search box (mode: Notes/FTS [default], Semantic, Hybrid), filters (tags/folder/date), toggle “Include library”.
+- Left sidebar: folders (notes/daily/areas/projects), tags, recent, favorites.
+- Main: editor (Markdown) with split preview; right panel shows frontmatter, backlinks, unlinked mentions; status chip (Indexing/Indexed).
+- Footer: job queue depth, last ingest time.
+
+• Core interactions
+- New note (⌘N) with template (frontmatter id/title/tags). Rename (F2). Move (⌘⇧M).
+- [[link]] autocomplete by id/title/alias. Unlinked suggestion accept/add.
+- Search: instant FTS; semantic/hybrid runs async with spinner; results show snippets and (for hybrid) cited block spans.
+
+• Backend/API (served by existing frontend plugin)
+- Notes CRUD
+  - GET /api/notes?query=...&mode=fts|semantic|hybrid&tags=...&folder=...
+  - GET /api/notes/:id, POST /api/notes, PUT /api/notes/:id, DELETE /api/notes/:id
+  - GET /api/notes/:id/backlinks, GET /api/notes/:id/unlinked, POST /api/notes/:id/rename, POST /api/notes/:id/move
+- ZK helpers
+  - POST /api/zk/create, POST /api/zk/alias, POST /api/zk/link, POST /api/zk/suggest_links
+- KB queries
+  - POST /api/kb/query { query, scope: notes|books|all, citations?: boolean }
+- System/meta
+  - GET /api/kb/status (db open, collection ready, queue depth), GET /api/kb/stats
+
+• Tech choices
+- Keep current frontend plugin; serve a small Next.js app or a static SPA (Vite + React) mounted at /.
+- Editor: simple Markdown editor (CodeMirror/Monaco minimal config) + preview (remark/rehype).
+- Styling: Tailwind CSS (utility-first, fast to iterate) or minimal CSS.
+- State: client-side fetch + SWR (stale-while-revalidate) for results; debounce search.
+
+• Performance
+- Immediate FTS search; defer semantic/hybrid; virtualized results list.
+- Batch save/index signals; display per-note index status.
+- LRU cache for recent searches and note metadata; pre-open DB on server start.
+
+• Security/hosting
+- Local-only by default; bind to 127.0.0.1; optional basic auth for remote.
+- CSRF unnecessary in local trusted mode; enable if exposed.
+
+• Phased rollout
+- Phase 1: FTS search, CRUD, backlinks/unlinked, editor/preview, status chip.
+- Phase 2: Semantic/hybrid toggle with citations; filters; batch operations (rename/move).
+- Phase 3: Link suggestions panel, export ZIP, settings for privacy tags (#private exclude from vectors), keyboard shortcuts.
+
+• Out of scope
+- Graph view (explicitly excluded).
