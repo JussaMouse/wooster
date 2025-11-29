@@ -44,41 +44,83 @@ export class KnowledgeBaseService {
     const config = getConfig();
 
     try {
-      // 1. FTS Search
-      let ftsQuery = `
-        SELECT 
-          b.id as blockId,
-          b.doc_id as docId,
-          b.text,
-          fts_blocks.rank,
-          d.title,
-          d.path
-        FROM fts_blocks
-        JOIN blocks b ON b.rowid = fts_blocks.rowid
-        JOIN documents d ON d.id = b.doc_id
-        WHERE fts_blocks MATCH ? 
-      `;
+      // Helper to run FTS query safely
+      const runFts = (queryString: string) => {
+        // Sanitize query for FTS5: strip special chars that cause syntax errors (quote, star, parens, etc)
+        // Keep alphanumerics, spaces, and simple punctuation that doesn't break FTS
+        const safeQuery = queryString.replace(/["*:[\]()]/g, ' ').trim();
+        if (!safeQuery) return [];
+
+        let ftsQuery = `
+          SELECT 
+            b.id as blockId,
+            b.doc_id as docId,
+            b.text,
+            fts_blocks.rank,
+            d.title,
+            d.path
+          FROM fts_blocks
+          JOIN blocks b ON b.rowid = fts_blocks.rowid
+          JOIN documents d ON d.id = b.doc_id
+          WHERE fts_blocks MATCH ? 
+        `;
+        const params: any[] = [safeQuery];
+        if (args.scope?.namespace) {
+          ftsQuery += ` AND d.namespace = ?`;
+          params.push(args.scope.namespace);
+        }
+        ftsQuery += ` ORDER BY fts_blocks.rank ASC LIMIT ?`;
+        params.push(limit * 2);
+
+        try {
+            return this.db.prepare(ftsQuery).all(...params) as any[];
+        } catch (e) {
+            log(LogLevel.WARN, `FTS Query failed`, { error: e, query: safeQuery });
+            return [];
+        }
+      };
+
+      // 1. FTS Search Strategy
+      // Attempt 1: Exact query (sanitized)
+      let ftsHits = runFts(args.query);
       
-      const params: any[] = [args.query];
-
-      if (args.scope?.namespace) {
-        ftsQuery += ` AND d.namespace = ?`;
-        params.push(args.scope.namespace);
+      // Attempt 2: If few results, try cleaning punctuation further (e.g. "mean?" -> "mean")
+      if (ftsHits.length < 3) {
+        const cleanQuery = args.query.replace(/[^\w\s]/g, '').trim();
+        if (cleanQuery && cleanQuery !== args.query.replace(/["*:[\]()]/g, ' ').trim()) {
+             const hits2 = runFts(cleanQuery);
+             const existingIds = new Set(ftsHits.map(h => h.blockId));
+             for (const h of hits2) {
+                 if (!existingIds.has(h.blockId)) {
+                     ftsHits.push(h);
+                     existingIds.add(h.blockId);
+                 }
+             }
+        }
       }
-
-      ftsQuery += ` ORDER BY fts_blocks.rank ASC LIMIT ?`;
-      params.push(limit * 2); 
-
-      const stmt = this.db.prepare(ftsQuery);
-      const ftsHits = stmt.all(...params) as any[];
+      
+      // Attempt 3: OR search (bag of words) if still very few results
+      if (ftsHits.length < 3) {
+         const words = args.query.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(w => w.length > 2);
+         if (words.length > 1) {
+             const orQuery = words.join(' OR ');
+             const hits3 = runFts(orQuery);
+             const existingIds = new Set(ftsHits.map(h => h.blockId));
+             for (const h of hits3) {
+                 if (!existingIds.has(h.blockId)) {
+                     ftsHits.push(h);
+                     existingIds.add(h.blockId);
+                 }
+             }
+         }
+      }
 
       // 2. Vector Search
       let vectorHits: { id: string; score: number }[] = [];
       let queryVector: number[] = [];
 
-      if (config.personalLibrary?.vector?.path || true) { // Always try vector search if possible
+      if (config.personalLibrary?.vector?.path || true) { 
         try {
-             // We need to embed the query
              const embeddings = await this.embeddingService.getEmbeddings().embedQuery(args.query);
              queryVector = embeddings;
              vectorHits = await this.vectorStore.query(queryVector, limit * 2);
@@ -88,7 +130,6 @@ export class KnowledgeBaseService {
       }
 
       // 3. Merge Results
-      // We need to hydrate vector hits to get text/metadata
       const vectorIds = vectorHits.map(h => h.id);
       let vectorContexts: any[] = [];
       
@@ -101,21 +142,13 @@ export class KnowledgeBaseService {
             WHERE b.id IN (${placeholders})
         `);
         const vectorDocs = vectorDocsStmt.all(...vectorIds) as any[];
-        // Map back to preserve score/order
         vectorContexts = vectorHits.map(hit => {
             const doc = vectorDocs.find(d => d.blockId === hit.id);
             if (!doc) return null;
-            return {
-                ...doc,
-                score: hit.score,
-                source: 'vector'
-            };
+            return { ...doc, score: hit.score, source: 'vector' };
         }).filter(Boolean);
       }
 
-      // Simple merge: Dedupe by blockId, prioritize FTS for exact matches?
-      // For now, just concat and slice? Or RRF?
-      // Let's just concat unique blockIds.
       const allContexts = [...ftsHits.map(h => ({...h, score: -h.rank, source: 'fts'})), ...vectorContexts];
       const seen = new Set();
       const contexts = [];
@@ -134,7 +167,6 @@ export class KnowledgeBaseService {
 
       const finalContexts = contexts.slice(0, limit);
 
-      // Record trace
       const duration = Date.now() - start;
       this.saveTrace({
         id: traceId,
@@ -147,10 +179,7 @@ export class KnowledgeBaseService {
         lat_ms: duration
       });
 
-      return {
-        contexts: finalContexts,
-        traceId
-      };
+      return { contexts: finalContexts, traceId };
 
     } catch (error) {
       log(LogLevel.ERROR, `KB Query failed`, { error, query: args.query });
