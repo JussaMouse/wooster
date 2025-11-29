@@ -18,29 +18,36 @@ function extractJsCodeBlock(response: string): string | null {
 async function buildCodeAgentPrompt(userInput: string, chatHistory: BaseMessage[]): Promise<BaseMessage[]> {
   const baseSystemPrompt = await fs.readFile(path.join(process.cwd(), 'prompts', 'base_system_prompt.txt'), 'utf-8');
   
-  const codeAgentHeader = `You can solve tasks by emitting a single JavaScript code block, and nothing else.
-Rules:
-- Output exactly one fenced code block: \`\`\`js ... \`\`\` and no prose outside it.
-- Use only the provided APIs: webSearch(query), fetchText(url), queryRAG(query), writeNote(text), capture(text), schedule(time, text), calendarList(opts?), calendarCreate(event), sendEmail(args), discordNotify(msg), signalNotify(msg), sendSignal(msg), finalAnswer(text).
-- Keep code concise (≤ ~60 lines). Use try/catch and small helpers. Call finalAnswer once at the end.
-- Summarize long tool outputs before re-feeding them into the model. Do not print secrets.`;
+    const codeAgentHeader = `You can solve tasks by emitting a single JavaScript code block, and nothing else.
+    Rules:
+    - Output exactly one fenced code block: \`\`\`js ... \`\`\` and no prose outside it.
+    - Use only the provided APIs:
+      - webSearch(query): Search the public web.
+      - fetchText(url): Read a webpage.
+      - kb_query(query, scope?): Hybrid search (Text+Vector) of your Personal Library (notes, projects). Use this for "search library", "my notes", "recall", "what do I know about...".
+      - zk_create(title, body, tags?): Create a new note.
+      - queryRAG(query): DEPRECATED (maps to kb_query).
+      - writeNote(text): Append to daily journal.
+      - capture(text), schedule(time, text), calendarList(opts?), calendarCreate(event), sendEmail(args), discordNotify(msg), signalNotify(msg), sendSignal(msg), finalAnswer(text).
+    - Keep code concise (≤ ~60 lines). Use try/catch and small helpers. Call finalAnswer once at the end.
+    - Summarize long tool outputs before re-feeding them into the model. Do not print secrets.`;
 
-  const fewShotExamples = `
-// Example 1: Web search and summarize
-const searchResults = await webSearch('latest news on AI');
-const firstResultUrl = searchResults.results[0].url;
-const content = await fetchText(firstResultUrl);
-const summary = content.slice(0, 500); // simplified summary
-finalAnswer(\`Here's a summary from the first result: \${summary}\`);
+    const fewShotExamples = `
+    // Example 1: Web search and summarize
+    const searchResults = await webSearch('latest news on AI');
+    const firstResultUrl = searchResults.results[0].url;
+    const content = await fetchText(firstResultUrl);
+    const summary = content.slice(0, 500); // simplified summary
+    finalAnswer(\`Here's a summary from the first result: \${summary}\`);
 
-// Example 2: RAG query and cite
-const ragResponse = await queryRAG('What is the project status?');
-finalAnswer(\`Project status: \${ragResponse}\`);
+    // Example 2: Personal Library (KB) query and cite
+    const kbResponse = await kb_query('What is the project status?');
+    finalAnswer(\`Found in library: \${kbResponse}\`);
 
-// Example 3: Send a Signal message using env defaults
-await sendSignal('Test from Wooster');
-finalAnswer('Signal send requested.');
-`;
+    // Example 3: Send a Signal message using env defaults
+    await sendSignal('Test from Wooster');
+    finalAnswer('Signal send requested.');
+    `;
   
   const finalSystemPrompt = `${baseSystemPrompt}\n\n${codeAgentHeader}\n\n${fewShotExamples}`;
 
