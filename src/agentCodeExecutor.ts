@@ -138,12 +138,6 @@ export async function executeCodeAgent(
       const codeMatch = extractJsCodeBlock(answer);
       if (codeMatch) {
          log(LogLevel.WARN, '[CodeAgent] Classifier said NONE, but model outputted code. Falling back to execution.');
-         // We found code, so we skip returning 'answer' and proceed to the sandbox loop below.
-         // Ideally, we should just reuse the `codeMatch` string, but the loop below re-prompts the model.
-         // To be efficient, we can inject this response into the loop's first attempt.
-         // Actually, simpler: just break out of this if block and let the loop run.
-         // BUT we need to make sure we don't re-prompt if we already have the code.
-         
          // Let's run the sandbox directly here with the code we found.
          logCodeAgentInteraction({ event: 'code_extracted', details: { code: codeMatch, fallback: true } });
          const sandbox = new CodeSandbox(stepTimeoutMs, totalTimeoutMs);
@@ -155,34 +149,20 @@ export async function executeCodeAgent(
              logCodeAgentInteraction({ event: 'finish', details: { finalAnswer: result.finalAnswer, status: 'success' } });
              return result.finalAnswer;
          }
-         // If sandbox failed, we could fall back to the loop, or just return the error.
-         // Let's return the error or the original answer text if execution failed?
-         // Actually, if it tried to run code and failed, it's better to let the loop retry.
-      } else {
-          logCodeAgentInteraction({ event: 'final_answer', details: { finalAnswer: answer } });
-          
-          // ... existing signal check ...
-          try {
-            const codeMatch = answer.match(/```(?:js|javascript)?\n([\s\S]*?)```/i);
-            if (codeMatch && codeMatch[1]) {
-              const code = codeMatch[1];
-              const callMatch = code.match(/(?:sendSignal|signal_notify|signalNotify)\s*\(\s*([\s\S]*?)\s*\)/);
-              if (callMatch) {
-                  // ... signal handling ...
-                  // Note: This block is somewhat redundant if we handle generic code blocks above,
-                  // but sendSignal logic here is specific to "dispatch via SignalService" without sandbox.
-                  // However, if we moved to generic sandbox execution above, that covers sendSignal too!
-                  // So the block above effectively supercedes this legacy "Post-process" block for JS code blocks.
-                  // We'll leave this specific signal check for now as legacy fallback for partial code snippets, 
-                  // but the new block handles full fenced blocks.
-              }
-            }
-          } catch {}
-
-          logCodeAgentInteraction({ event: 'finish', details: { finalAnswer: answer, status: 'success' } });
-          return answer;
+         // If execution failed, we could return the error or let the loop retry.
+         // For now, let's return the error message if any, or the original text if nothing else.
+         if (result.error) {
+             return `I tried to execute the code but failed: ${result.error}`;
+         }
       }
-    }
+
+      // Legacy signal handling (can be kept or removed if covered by generic fallback)
+      try {
+        const legacyCodeMatch = answer.match(/```(?:js|javascript)?\n([\s\S]*?)```/i);
+        if (legacyCodeMatch && legacyCodeMatch[1]) {
+          const code = legacyCodeMatch[1];
+          const callMatch = code.match(/(?:sendSignal|signal_notify|signalNotify)\s*\(\s*([\s\S]*?)\s*\)/);
+          if (callMatch) {
             let rawArg = (callMatch[1] || '').trim();
             let msg: string | null = null;
             if (rawArg.startsWith('{')) {
@@ -211,6 +191,7 @@ export async function executeCodeAgent(
         }
       } catch {}
 
+      logCodeAgentInteraction({ event: 'final_answer', details: { finalAnswer: answer } });
       logCodeAgentInteraction({ event: 'finish', details: { finalAnswer: answer, status: 'success' } });
       return answer;
     }
