@@ -215,6 +215,13 @@ export function loadConfig(): AppConfig {
   }
 
   // Fix: Ensure boolean flags for local embeddings are actually booleans
+  if (loadedConfig.routing?.providers?.openai) {
+    const oa = loadedConfig.routing.providers.openai;
+    if (typeof oa.enabled === 'string') {
+        oa.enabled = (oa.enabled as string).toLowerCase() === 'true';
+    }
+  }
+
   const localEmb = loadedConfig.routing?.providers?.local?.embeddings;
   if (localEmb) {
     if (typeof localEmb.enabled === 'string') {

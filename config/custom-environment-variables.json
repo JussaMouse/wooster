@@ -26,9 +26,15 @@
   "routing": {
     "enabled": "ROUTING_ENABLED",
     "providers": {
+      "openai": {
+        "enabled": "OPENAI_ENABLED"
+      },
       "local": {
         "enabled": "ROUTING_LOCAL_ENABLED",
         "serverUrl": "ROUTING_LOCAL_SERVER_URL",
+        "models": {
+            "fast": "ROUTING_LOCAL_MODEL_FAST"
+        },
         "embeddings": {
           "enabled": "MLX_EMBEDDINGS_ENABLED",
           "serverUrl": "MLX_EMBEDDINGS_URL",
