@@ -48,8 +48,9 @@ async function buildCodeAgentPrompt(userInput: string, chatHistory: BaseMessage[
     if (hits.length === 0) {
         finalAnswer("I couldn't find any information on that in your library.");
     } else {
-        // Synthesize answer from hits
-        const summary = hits.map(h => \`- \${h.title}: \${h.text.slice(0, 100)}...\`).join('\\n');
+        // Use top 3 hits or filter to most relevant to synthesize answer
+        const relevantHits = hits.slice(0, 3);
+        const summary = relevantHits.map(h => \`- \${h.title}: \${h.text.slice(0, 150)}...\`).join('\\n');
         finalAnswer(\`According to your notes:\\n\${summary}\`);
     }
 
