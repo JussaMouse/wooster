@@ -145,6 +145,15 @@ async function main() {
   const embConfig = projectEmb.getConfig();
   log(LogLevel.INFO, `Embeddings: Initialized ${embConfig.provider} embeddings with model '${embConfig.model}'`);
   
+  // --- Concise Startup Summary ---
+  const chatModel = appConfig.openai.modelName; // Assuming this is active, or check router?
+  const embModel = embConfig.model;
+  const embProvider = embConfig.provider;
+  console.log(`\n--------------------------------------------------`);
+  console.log(`  Chat Model:      ${chatModel}`);
+  console.log(`  Embedding Model: ${embModel} (${embProvider})`);
+  console.log(`--------------------------------------------------\n`);
+
   const defaultProjectName = 'home';
   const projectDir = path.join(projectBasePath, defaultProjectName);
   if (!fs.existsSync(projectDir)) {
