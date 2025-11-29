@@ -72,9 +72,12 @@ async function buildCodeAgentPrompt(userInput: string, chatHistory: BaseMessage[
 async function classifyToolNeed(prompt: string): Promise<'NONE' | 'TOOLS'> {
   // Heuristic fast-path: if the user explicitly asks to send via Signal, force tools
   const p = (prompt || '').toLowerCase();
-  if (/(\bsendsignal\b|\bsignal_notify\b|send\s+via\s+signal|via\s+signal|signal\s+message)/.test(p)) {
+  
+  // Force tools for signal, library, search, notes
+  if (/(\bsendsignal\b|\bsignal_notify\b|send\s+via\s+signal|via\s+signal|signal\s+message|search\s+library|search\s+notes|my\s+notes|recall|what\s+does\s+.*mean)/.test(p)) {
     return 'TOOLS';
   }
+
   try {
     const router = getModelRouter();
     const model = await router.selectModel({
