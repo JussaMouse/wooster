@@ -155,10 +155,24 @@ export function createToolApi() {
       log(LogLevel.INFO, `[CodeAgent] kb_query called with: ${query}`);
       try {
         const kb = KnowledgeBaseService.getInstance();
+        
+        // Normalize scope: if string and not a standard namespace, treat as null (global search)
+        let normalizedScope = scope;
+        if (typeof scope === 'string') {
+            const validNamespaces = ['notes', 'user_profile', 'books'];
+            if (validNamespaces.includes(scope)) {
+                normalizedScope = { namespace: scope };
+            } else {
+                // If scope is a random string (e.g. 'definition'), ignore it to avoid empty results.
+                // Or we could treat it as a filter tag? For now, safer to ignore.
+                normalizedScope = undefined;
+            }
+        }
+
         const res = await kb.queryHybrid({ 
             query, 
             topK: 5, 
-            scope: typeof scope === 'string' ? { namespace: scope } : scope 
+            scope: normalizedScope
         });
         
         if (res.contexts.length === 0) return "No results found.";
