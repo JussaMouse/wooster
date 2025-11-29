@@ -131,7 +131,17 @@ export function createToolApi() {
           return `Error fetching URL: ${response.statusText}`;
         }
         const text = await response.text();
-        return truncate(text, maxOutputLength);
+        
+        // Simple HTML cleanup
+        let clean = text
+          .replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "")
+          .replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gim, "")
+          .replace(/<head\b[^>]*>([\s\S]*?)<\/head>/gim, "") // Remove head content
+          .replace(/<[^>]+>/g, ' ') // Strip tags
+          .replace(/\s+/g, ' ') // Collapse whitespace
+          .trim();
+
+        return truncate(clean, maxOutputLength);
       } catch (error: any) {
         return `Error fetching URL: ${error.message}`;
       }
