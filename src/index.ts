@@ -13,6 +13,8 @@ import { OpenAIEmbeddings } from "@langchain/openai";
 import { EmbeddingService } from './embeddings/EmbeddingService';
 import { initializeProjectVectorStore } from './projectStoreManager';
 
+import { IngestionService } from './services/ingestion/IngestionService';
+
 // --- Directory Setup ---
 const projectBasePath = path.join(process.cwd(), 'projects');
 const userProfilePath = path.join(process.cwd(), '.user_profile');
@@ -160,6 +162,9 @@ async function main() {
   
   await SchedulerService.start();
   log(LogLevel.INFO, "SchedulerService started.");
+
+  await IngestionService.getInstance().start();
+  log(LogLevel.INFO, "IngestionService started.");
 
   mainRl = createAndConfigureMainRl();
 

@@ -140,6 +140,24 @@ export interface ModelRoutingConfig {
   };
 }
 
+export interface PersonalLibraryConfig {
+  dbPath: string;
+  vector: {
+    provider: 'qdrant' | 'faiss';
+    path?: string;
+    url?: string;
+    model?: string;
+    dimensions: number;
+  };
+  namespaces: {
+    notes: string;
+    user_profile: string;
+  };
+  privacy: {
+    excludeTags: string[];
+  };
+}
+
 export interface AppConfig {
   env: string;
   appName: string;
@@ -159,6 +177,7 @@ export interface AppConfig {
   apiPlugin?: ApiPluginConfig;
   personalHealth?: PersonalHealthConfig;
   routing?: ModelRoutingConfig;
+  personalLibrary?: PersonalLibraryConfig;
   codeAgent: {
     maxAttempts: number;
     stepTimeoutMs: number;

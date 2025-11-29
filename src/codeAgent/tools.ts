@@ -4,8 +4,14 @@ import { scheduleAgentTask } from '../schedulerTool';
 import { TavilySearch } from '@langchain/tavily';
 import { AppConfig, getConfig } from '../configLoader';
 import { getRegisteredService } from '../pluginManager';
-import * as fs from 'fs/promises';
+import * as fsPromises from 'fs/promises';
+import * as fs from 'fs';
 import * as path from 'path';
+
+import { KnowledgeBaseService } from '../services/knowledgeBase/KnowledgeBaseService';
+import { IngestionService } from '../services/ingestion/IngestionService';
+import { v4 as uuidv4 } from 'uuid';
+import slugify from 'slugify';
 
 function truncate(str: string, maxLength: number): string {
   if (str.length <= maxLength) {
@@ -132,8 +138,76 @@ export function createToolApi() {
     },
     queryRAG: async (query: string) => {
       log(LogLevel.INFO, `[CodeAgent] queryRAG called with: ${query}`);
-      const result = await queryKnowledgeBase(query);
-      return truncate(result, maxOutputLength);
+      // Deprecated but supported via KB
+      const kb = KnowledgeBaseService.getInstance();
+      try {
+         const res = await kb.queryHybrid({ query, topK: 5 });
+         const text = res.contexts.map(c => `[${c.metadata.title}] ${c.text}`).join('\n\n');
+         return truncate(text, maxOutputLength);
+      } catch (e) {
+         log(LogLevel.ERROR, `KB Fallback Error`, {error: e});
+         // Fallback to old RAG if KB fails? Or just error.
+         const result = await queryKnowledgeBase(query);
+         return truncate(result, maxOutputLength);
+      }
+    },
+    kb_query: async (query: string, scope?: any) => {
+      log(LogLevel.INFO, `[CodeAgent] kb_query called with: ${query}`);
+      try {
+        const kb = KnowledgeBaseService.getInstance();
+        const res = await kb.queryHybrid({ 
+            query, 
+            topK: 5, 
+            scope: typeof scope === 'string' ? { namespace: scope } : scope 
+        });
+        
+        if (res.contexts.length === 0) return "No results found.";
+
+        return JSON.stringify(res.contexts.map(c => ({
+            id: c.docId,
+            title: c.metadata.title,
+            text: truncate(c.text, 500),
+            score: c.score,
+            path: c.metadata.path
+        })), null, 2);
+      } catch (e: any) {
+        log(LogLevel.ERROR, `kb_query failed`, {error: e});
+        return `Error: ${e.message}`;
+      }
+    },
+    zk_create: async (title: string, body: string, tags: string[] = []) => {
+        log(LogLevel.INFO, `[CodeAgent] zk_create called: ${title}`);
+        try {
+            const slug = slugify(title, { lower: true, strict: true });
+            // Default location: notes/
+            const notesDir = 'notes';
+            if (!fs.existsSync(notesDir)) await fsPromises.mkdir(notesDir, { recursive: true }); 
+            
+            const filename = `${slug}.md`;
+            const filePath = path.join(notesDir, filename);
+            
+            if (await fsPromises.stat(filePath).then(()=>true).catch(()=>false)) {
+                return `Error: File ${filename} already exists.`;
+            }
+
+            const id = uuidv4();
+            const frontmatter = `---
+id: ${id}
+title: ${title}
+created: ${Date.now()}
+tags: ${JSON.stringify(tags)}
+---
+`;
+            const content = `${frontmatter}\n${body}`;
+            await fsPromises.writeFile(filePath, content);
+            
+            // Trigger ingest immediately
+            IngestionService.getInstance().queueFile(filePath); // Need to expose queueFile public
+            
+            return `Created note: ${filePath} (ID: ${id})`;
+        } catch (e: any) {
+            return `Error: ${e.message}`;
+        }
     },
     writeNote: async (text: string) => {
       log(LogLevel.INFO, `[CodeAgent] writeNote called with: ${text}`);
@@ -143,17 +217,17 @@ export function createToolApi() {
         const journalPath = path.join(projectPath, `${projectName}.md`);
 
         // Ensure project directory exists
-        try { await fs.mkdir(projectPath, { recursive: true }); } catch {}
+        try { await fsPromises.mkdir(projectPath, { recursive: true }); } catch {}
 
         // Ensure journal exists with a minimal header
-        try { await fs.access(journalPath); }
-        catch { await fs.writeFile(journalPath, `# ${projectName} Journal\n\n`); }
+        try { await fsPromises.access(journalPath); }
+        catch { await fsPromises.writeFile(journalPath, `# ${projectName} Journal\n\n`); }
 
         const now = new Date();
         const isoLocal = new Date(now.getTime() - now.getTimezoneOffset()*60000)
           .toISOString().replace('T', ' ').slice(0, 16);
         const entry = `## ${isoLocal}\n\n${text.trim()}\n\n`;
-        await fs.appendFile(journalPath, entry, { encoding: 'utf8' });
+        await fsPromises.appendFile(journalPath, entry, { encoding: 'utf8' });
         return `Note appended to ${path.relative(process.cwd(), journalPath)}`;
       } catch (error: any) {
         log(LogLevel.ERROR, '[CodeAgent] writeNote failed', { error });
@@ -177,12 +251,19 @@ export function createToolApi() {
         return `Error: ${error?.message || String(error)}`;
       }
     },
-    calendarList: async (optionsJson?: string) => {
+    calendarList: async (options?: any) => {
       log(LogLevel.INFO, `[CodeAgent] calendarList called.`);
       try {
         const listSvc = getRegisteredService<any>('ListCalendarEventsService');
         if (typeof listSvc === 'function') {
-          const opts = optionsJson ? JSON.parse(String(optionsJson)) : undefined;
+          let opts: any = undefined;
+          if (options === undefined || options === null || options === '') {
+            opts = undefined;
+          } else if (typeof options === 'string') {
+            try { opts = JSON.parse(options); } catch { opts = undefined; }
+          } else if (typeof options === 'object') {
+            opts = options;
+          }
           const res = await listSvc(opts);
           return typeof res === 'string' ? res : JSON.stringify(res);
         }
@@ -223,12 +304,31 @@ export function createToolApi() {
         return `Error: ${error?.message || String(error)}`;
       }
     },
-    schedule: async (whenISO: string, text: string) => {
-      log(LogLevel.INFO, `[CodeAgent] schedule called for "${text}" at ${whenISO}`);
+    schedule: async (when: any, text: string) => {
+      const messageText = String(text ?? '').trim();
+      let timeExpression: string;
+      if (typeof when === 'number' && isFinite(when)) {
+        timeExpression = `in ${when} minutes`;
+      } else if (typeof when === 'string') {
+        const w = when.trim();
+        if (/^\d+$/.test(w)) {
+          timeExpression = `in ${w} minutes`;
+        } else if (/^\d+\s*(m|min|min\.|mins|minutes)$/i.test(w)) {
+          const n = (w.match(/^\d+/) || ['0'])[0];
+          timeExpression = `in ${n} minutes`;
+        } else {
+          timeExpression = w;
+        }
+      } else {
+        timeExpression = String(when ?? '').trim();
+      }
+      log(LogLevel.INFO, `[CodeAgent] schedule called for "${messageText}" at ${timeExpression}`);
+      // Ensure the scheduled task will send a Signal message at execution time
+      const payload = `sendSignal {"message":"${messageText.replace(/"/g, '\\"')}"}`;
       return scheduleAgentTask({
-        taskPayload: text,
-        timeExpression: whenISO,
-        humanReadableDescription: text,
+        taskPayload: payload,
+        timeExpression,
+        humanReadableDescription: messageText,
       });
     },
     discordNotify: async (msg: string) => {
