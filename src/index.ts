@@ -135,17 +135,6 @@ async function main() {
   log(LogLevel.INFO, `Wooster starting up... v${appConfig.version}`);
   log(LogLevel.DEBUG, 'Application Config:', { appConfig });
 
-  // Debug Configuration Loading
-  const localEmb = appConfig.routing?.providers?.local?.embeddings;
-  console.log("DEBUG: Local Embeddings Config Status:", {
-      enabled: localEmb?.enabled,
-      type_enabled: typeof localEmb?.enabled,
-      url: localEmb?.serverUrl,
-      project_enabled: localEmb?.projects?.enabled,
-      type_project_enabled: typeof localEmb?.projects?.enabled,
-      model: localEmb?.projects?.model
-  });
-
   if (!appConfig.openai.apiKey || appConfig.openai.apiKey.startsWith('YOUR_OPENAI_API_KEY')) {
     log(LogLevel.WARN, 'OpenAI API key is not set. AI-related features will be disabled.');
   }
