@@ -146,11 +146,18 @@ async function main() {
   log(LogLevel.INFO, `Embeddings: Initialized ${embConfig.provider} embeddings with model '${embConfig.model}'`);
   
   // --- Concise Startup Summary ---
-  const chatModel = appConfig.openai.modelName; // Assuming this is active, or check router?
+  let chatModel = appConfig.openai.modelName;
+  const openaiEnabled = appConfig.routing?.providers?.openai?.enabled !== false;
+  const localEnabled = appConfig.routing?.providers?.local?.enabled;
+  
+  if (!openaiEnabled && localEnabled) {
+      chatModel = appConfig.routing?.providers?.local?.models?.fast || 'Local Model';
+  }
+
   const embModel = embConfig.model;
   const embProvider = embConfig.provider;
   console.log(`\n--------------------------------------------------`);
-  console.log(`  Chat Model:      ${chatModel}`);
+  console.log(`  Chat Model:      ${chatModel} ${!openaiEnabled ? '(Local)' : '(OpenAI)'}`);
   console.log(`  Embedding Model: ${embModel} (${embProvider})`);
   console.log(`--------------------------------------------------\n`);
 
