@@ -24,13 +24,14 @@ async function buildCodeAgentPrompt(userInput: string, chatHistory: BaseMessage[
     - Use only the provided APIs:
       - webSearch(query): Search the public web.
       - fetchText(url): Read a webpage.
-      - kb_query(query, scope?): Hybrid search (Text+Vector) of your Personal Library (notes, projects). Use this for "search library", "my notes", "recall", "what do I know about...".
+      - kb_query(query, scope?): Hybrid search (Text+Vector) of your Personal Library (notes, projects). Returns JSON. Use this for "search library", "my notes", "recall", "what do I know about...".
       - zk_create(title, body, tags?): Create a new note.
       - queryRAG(query): DEPRECATED (maps to kb_query).
       - writeNote(text): Append to daily journal.
       - capture(text), schedule(time, text), calendarList(opts?), calendarCreate(event), sendEmail(args), discordNotify(msg), signalNotify(msg), sendSignal(msg), finalAnswer(text).
     - Keep code concise (≤ ~60 lines). Use try/catch and small helpers. Call finalAnswer once at the end.
-    - Summarize long tool outputs before re-feeding them into the model. Do not print secrets.`;
+    - Summarize long tool outputs before re-feeding them into the model. Do not print secrets.
+    - When using kb_query or webSearch, READ the results and SYNTHESIZE a natural language answer. Do not just dump the raw JSON output in finalAnswer.`;
 
     const fewShotExamples = `
     // Example 1: Web search and summarize
@@ -42,7 +43,15 @@ async function buildCodeAgentPrompt(userInput: string, chatHistory: BaseMessage[
 
     // Example 2: Personal Library (KB) query and cite
     const kbResponse = await kb_query('What is the project status?');
-    finalAnswer(\`Found in library: \${kbResponse}\`);
+    // Parse and summarize the JSON result
+    const hits = JSON.parse(kbResponse);
+    if (hits.length === 0) {
+        finalAnswer("I couldn't find any information on that in your library.");
+    } else {
+        // Synthesize answer from hits
+        const summary = hits.map(h => \`- \${h.title}: \${h.text.slice(0, 100)}...\`).join('\\n');
+        finalAnswer(\`According to your notes:\\n\${summary}\`);
+    }
 
     // Example 3: Send a Signal message using env defaults
     await sendSignal('Test from Wooster');
