@@ -214,6 +214,27 @@ export function loadConfig(): AppConfig {
     loadedConfig.openai.maxTokens = parseInt(loadedConfig.openai.maxTokens, 10);
   }
 
+  // Fix: Ensure boolean flags for local embeddings are actually booleans
+  const localEmb = loadedConfig.routing?.providers?.local?.embeddings;
+  if (localEmb) {
+    if (typeof localEmb.enabled === 'string') {
+      localEmb.enabled = (localEmb.enabled as string).toLowerCase() === 'true';
+    }
+    if (localEmb.projects && typeof localEmb.projects.enabled === 'string') {
+      localEmb.projects.enabled = (localEmb.projects.enabled as string).toLowerCase() === 'true';
+    }
+    if (localEmb.userProfile && typeof localEmb.userProfile.enabled === 'string') {
+      localEmb.userProfile.enabled = (localEmb.userProfile.enabled as string).toLowerCase() === 'true';
+    }
+    // Also fix dimensions if string
+    if (localEmb.projects && typeof localEmb.projects.dimensions === 'string') {
+        localEmb.projects.dimensions = parseInt(localEmb.projects.dimensions as string, 10);
+    }
+    if (localEmb.userProfile && typeof localEmb.userProfile.dimensions === 'string') {
+        localEmb.userProfile.dimensions = parseInt(localEmb.userProfile.dimensions as string, 10);
+    }
+  }
+
   currentConfig = loadedConfig;
   log(LogLevel.DEBUG, 'Application Config Loaded:', { appConfig: currentConfig });
   return currentConfig;
