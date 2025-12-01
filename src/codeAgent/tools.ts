@@ -438,13 +438,10 @@ tags: ${JSON.stringify(tags)}
         try {
             const { listPlugins } = await import('../pluginManager');
             const plugins = listPlugins();
-            if (plugins.length === 0) {
-                return "No plugins are currently active.";
-            }
-            return `Active Plugins:\n- ${plugins.join('\n- ')}`;
+            return plugins;
         } catch (error: any) {
             log(LogLevel.ERROR, '[CodeAgent] list_plugins failed', { error });
-            return `Error listing plugins: ${error.message}`;
+            return [`Error listing plugins: ${error.message}`];
         }
     },
     discordNotify: async (msg: string) => {
