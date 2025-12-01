@@ -32,7 +32,7 @@ async function buildCodeAgentPrompt(userInput: string, chatHistory: BaseMessage[
       - capture(text), schedule(time, text), list_scheduled_tasks(), calendarList(opts?), calendarCreate(event), sendEmail(args), discordNotify(msg), signalNotify(msg), sendSignal(msg), finalAnswer(text).
     - Keep code concise (≤ ~60 lines). Use try/catch and small helpers. Call finalAnswer once at the end.
     - Summarize long tool outputs before re-feeding them into the model. Do not print secrets.
-    - When using kb_query or webSearch, READ the results and SYNTHESIZE a natural language answer. Do not just dump the raw JSON output in finalAnswer.`;
+    - When using kb_query, list_scheduled_tasks, or webSearch, READ the results (often JSON) and SYNTHESIZE a natural language answer. Do not just dump the raw JSON output in finalAnswer.`;
 
     const fewShotExamples = `
     // Example 1: Web search and summarize
