@@ -374,16 +374,15 @@ tags: ${JSON.stringify(tags)}
         try {
             const tasks = await SchedulerService.getAllScheduledTasks();
             if (tasks.length === 0) {
-                return "No tasks currently scheduled.";
+                return [];
             }
-            // Return JSON string so the agent can parse it reliably
-            const simplified = tasks.map(t => ({
+            // Return raw array so the agent can use .map() on it directly
+            return tasks.map(t => ({
                 id: t.id,
                 schedule: t.schedule_expression,
                 description: t.description,
                 active: t.is_active
             }));
-            return JSON.stringify(simplified, null, 2);
         } catch (error: any) {
             log(LogLevel.ERROR, '[CodeAgent] list_scheduled_tasks failed', { error });
             return `Error listing tasks: ${error.message}`;
