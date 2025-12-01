@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import initSqlJs, { Database, SqlJsStatic } from 'sql.js';
+import Database from 'better-sqlite3';
 import {
   ScheduleItem,
   NewScheduleItemPayload,
@@ -10,8 +10,6 @@ import { log, LogLevel } from '../logger';
 const DB_PATH = path.join(process.cwd(), 'database', 'scheduler.sqlite3');
 const DB_DIR = path.dirname(DB_PATH);
 
-let SQL: SqlJsStatic | null = null;
-
 function ensureDbDirectory() {
   if (!fs.existsSync(DB_DIR)) {
     fs.mkdirSync(DB_DIR, { recursive: true });
@@ -19,35 +17,22 @@ function ensureDbDirectory() {
 }
 
 export class SchedulerRepository {
-  private db: Database;
+  private db: Database.Database;
 
-  private constructor(db: Database) {
+  private constructor(db: Database.Database) {
     this.db = db;
   }
 
   public static async create(): Promise<SchedulerRepository> {
     ensureDbDirectory();
-    if (!SQL) {
-      SQL = await initSqlJs();
-    }
-    
-    const dbData = fs.existsSync(DB_PATH) ? fs.readFileSync(DB_PATH) : null;
-    const db = dbData ? new SQL.Database(dbData) : new SQL.Database();
+    const db = new Database(DB_PATH);
+    db.pragma('journal_mode = WAL'); // Enable WAL for robustness
     
     const repo = new SchedulerRepository(db);
     repo.initDatabase();
     return repo;
   }
   
-  private persist() {
-    try {
-      const data = this.db.export();
-      fs.writeFileSync(DB_PATH, data);
-    } catch (error) {
-      log(LogLevel.ERROR, 'Failed to persist scheduler database', { error });
-    }
-  }
-
   private initDatabase(): void {
     const createSchedulesTable = `
       CREATE TABLE IF NOT EXISTS schedules (
@@ -61,55 +46,47 @@ export class SchedulerRepository {
         created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
       );
     `;
-    this.db.run(createSchedulesTable);
-    this.persist();
-    log(LogLevel.INFO, 'Scheduler database initialized with simplified schema.');
+    this.db.exec(createSchedulesTable);
+    log(LogLevel.INFO, 'Scheduler database initialized with better-sqlite3.');
   }
   
-  private resultsToItems(results: any[]): ScheduleItem[] {
-    if (!results.length) return [];
-    return results[0].values.map((row: any[]) => {
-      const item: { [key: string]: any } = {};
-      results[0].columns.forEach((col: string, i: number) => {
-        item[col] = row[i];
-      });
-      // Manually convert boolean fields from 0/1 to false/true
-      item.is_active = !!item.is_active;
-      return item as ScheduleItem;
-    });
-  }
-
   addScheduleItem(id: string, item: NewScheduleItemPayload): void {
     const { description, schedule_expression, payload, task_key, task_handler_type } = item;
     const sql = `INSERT INTO schedules 
                    (id, description, schedule_expression, payload, task_key, task_handler_type)
                  VALUES (?, ?, ?, ?, ?, ?)`;
-    this.db.run(sql, [id, description, schedule_expression, payload || null, task_key, task_handler_type]);
-    this.persist();
+    this.db.prepare(sql).run(id, description, schedule_expression, payload || null, task_key, task_handler_type);
   }
 
   getAllActiveScheduleItems(): ScheduleItem[] {
-    const res = this.db.exec("SELECT * FROM schedules WHERE is_active = 1");
-    return this.resultsToItems(res);
+    const rows = this.db.prepare("SELECT * FROM schedules WHERE is_active = 1").all() as any[];
+    return rows.map((row: any) => ({
+        ...row,
+        is_active: Boolean(row.is_active)
+    }));
   }
   
   getScheduleItemById(id: string): ScheduleItem | undefined {
-    const res = this.db.exec('SELECT * FROM schedules WHERE id = ?', [id]);
-    return this.resultsToItems(res)[0];
+    const row = this.db.prepare('SELECT * FROM schedules WHERE id = ?').get(id) as any;
+    if (!row) return undefined;
+    return {
+        ...row,
+        is_active: Boolean(row.is_active)
+    };
   }
   
   getScheduleItemByKey(task_key: string): ScheduleItem | undefined {
-    const res = this.db.exec('SELECT * FROM schedules WHERE task_key = ?', [task_key]);
-    return this.resultsToItems(res)[0];
+    const row = this.db.prepare('SELECT * FROM schedules WHERE task_key = ?').get(task_key) as any;
+    if (!row) return undefined;
+    return {
+        ...row,
+        is_active: Boolean(row.is_active)
+    };
   }
 
   deleteScheduleItem(id: string): boolean {
-    this.db.run('DELETE FROM schedules WHERE id = ?', [id]);
-    const changes = this.db.getRowsModified();
-    if (changes > 0) {
-      this.persist();
-    }
-    return changes > 0;
+    const info = this.db.prepare('DELETE FROM schedules WHERE id = ?').run(id);
+    return info.changes > 0;
   }
 }
 
@@ -120,4 +97,4 @@ export async function getSchedulerRepository(): Promise<SchedulerRepository> {
     schedulerRepositoryInstance = await SchedulerRepository.create();
   }
   return schedulerRepositoryInstance;
-} 
+}

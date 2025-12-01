@@ -69,7 +69,28 @@ export class SchedulerService {
   public static async start(): Promise<void> {
     const repo = await getRepo();
     const items = repo.getAllActiveScheduleItems();
+    
+    log(LogLevel.INFO, `SchedulerService checking ${items.length} active items for scheduling...`);
+
+    const now = new Date();
+
     for (const item of items) {
+      // Missed Job Handling ("Catch Up")
+      // Check if it's a one-off timestamp that is in the past
+      const isISO = !item.schedule_expression.includes(' ') && !item.schedule_expression.includes('*'); // Basic heuristic for ISO date vs Cron
+      if (isISO) {
+        const scheduleTime = new Date(item.schedule_expression);
+        if (!isNaN(scheduleTime.getTime()) && scheduleTime < now) {
+            log(LogLevel.WARN, `Task "${item.description}" was scheduled for ${item.schedule_expression} (past). Executing immediately as 'Catch Up'.`);
+            await executeTask(item);
+            
+            // Disable/Delete the one-off task so it doesn't try to run again (though Cron wouldn't run it anyway)
+            // Actually, let's delete it to keep DB clean.
+            await SchedulerService.delete(item.id);
+            continue; // Skip scheduling with Croner
+        }
+      }
+
       scheduleTask(item);
     }
     log(LogLevel.INFO, `SchedulerService started with ${activeJobs.size} jobs.`);
@@ -126,6 +147,8 @@ export async function ensureScheduleIsManaged(setup: ScheduledTaskSetupOptions, 
 
   } else {
     log(LogLevel.INFO, `Scheduler: Found existing schedule for task key "${setup.taskKey}". No action needed.`);
+    // Ensure function is registered even if DB record exists
+    registerDirectScheduledFunction(setup.taskKey, setup.functionToExecute);
   }
 }
 
