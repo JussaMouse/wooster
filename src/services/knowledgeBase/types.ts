@@ -13,7 +13,7 @@ export interface DocumentRecord {
 export interface BlockRecord {
   id: string;
   doc_id: string;
-  kind: 'paragraph' | 'heading' | 'code' | 'list_item' | 'blockquote';
+  kind: 'paragraph' | 'heading' | 'code' | 'list_item' | 'blockquote' | 'metadata';
   heading_path: string;
   start_offset: number;
   end_offset: number;
