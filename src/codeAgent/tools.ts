@@ -373,12 +373,20 @@ tags: ${JSON.stringify(tags)}
         timeExpression = String(when ?? '').trim();
       }
       log(LogLevel.INFO, `[CodeAgent] schedule called for "${messageText}" at ${timeExpression}`);
+
+      // Sanitize input: If agent passed 'sendSignal("foo")', extract 'foo' to avoid double-wrapping
+      let cleanText = messageText;
+      const match = cleanText.match(/^\s*(?:sendSignal|signal_notify|signalNotify)\s*\(\s*(["'])([\s\S]*?)\1\s*\)\s*$/i);
+      if (match) {
+          cleanText = match[2];
+      } 
+      
       // Ensure the scheduled task will send a Signal message at execution time
-      const payload = `sendSignal {"message":"${messageText.replace(/"/g, '\\"')}"}`;
+      const payload = `sendSignal {"message":"${cleanText.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"}`;
       return scheduleAgentTask({
         taskPayload: payload,
         timeExpression,
-        humanReadableDescription: messageText,
+        humanReadableDescription: cleanText,
       });
     },
     list_scheduled_tasks: async () => {
@@ -392,7 +400,11 @@ tags: ${JSON.stringify(tags)}
             return tasks.map(t => ({
                 id: t.id,
                 schedule: t.schedule_expression,
+                due: t.schedule_expression,   // Alias for agent robustness
+                when: t.schedule_expression,  // Alias for agent robustness
                 description: t.description,
+                task: t.description,          // Alias for agent robustness
+                title: t.description,         // Alias for agent robustness
                 active: t.is_active
             }));
         } catch (error: any) {

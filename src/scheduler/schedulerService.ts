@@ -41,7 +41,14 @@ async function executeTask(item: ScheduleItem): Promise<void> {
   try {
     if (task_handler_type === 'AGENT_PROMPT') {
       if (coreServices?.agent && payload) {
-        await coreServices.agent.call({ input: payload });
+        const agent = coreServices.agent as any;
+        if (typeof agent.invoke === 'function') {
+             await agent.invoke({ input: payload });
+        } else if (typeof agent.call === 'function') {
+             await agent.call({ input: payload });
+        } else {
+            log(LogLevel.ERROR, `Agent execution failed: coreServices.agent has no invoke or call method.`);
+        }
       }
     } else if (task_handler_type === 'DIRECT_FUNCTION') {
       const func = directFunctionRegistry.get(task_key);

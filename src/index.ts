@@ -6,9 +6,9 @@ import fs from 'fs';
 import { bootstrapLogger, applyLoggerConfig, log, LogLevel } from './logger';
 import { loadConfig, getConfig,setConfig } from './configLoader';
 import { SchedulerService } from './scheduler/schedulerService';
-import { initializeAgentExecutorService } from './agentExecutorService';
+import { initializeAgentExecutorService, getAgentExecutor, setActiveProject, getActiveProjectPath, getCurrentActiveProjectName } from './agentExecutorService';
 import { setAgentConfig, agentRespond } from './agent';
-import { loadPlugins } from './pluginManager';
+import { loadPlugins, getRegisteredService, registerService } from './pluginManager';
 import { OpenAIEmbeddings } from "@langchain/openai";
 import { EmbeddingService } from './embeddings/EmbeddingService';
 import { initializeProjectVectorStore } from './projectStoreManager';
@@ -172,6 +172,20 @@ async function main() {
   
   await initializeAgentExecutorService(defaultProjectName, projectDir, projectVectorStore, embeddings, appConfig);
   log(LogLevel.INFO, "AgentExecutorService initialized.");
+  
+  // Inject agent and core services into SchedulerService so it can execute agent tasks
+  const agentExecutor = await getAgentExecutor();
+  SchedulerService.setCoreServices({
+      agent: agentExecutor,
+      getConfig: getConfig,
+      log: log,
+      registerService: registerService,
+      getService: getRegisteredService,
+      setActiveProject: setActiveProject,
+      getActiveProjectPath: getActiveProjectPath,
+      getActiveProjectName: getCurrentActiveProjectName,
+      // We don't expose getProjectVectorStore to scheduler yet as it's rarely needed there
+  });
   
   await loadPlugins();
   log(LogLevel.INFO, "Plugins loaded.");
