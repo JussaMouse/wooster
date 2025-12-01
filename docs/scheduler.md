@@ -2,23 +2,22 @@
 
 ## 1. Overview
 
-The Wooster Scheduler System is responsible for managing and executing tasks at predefined times or intervals. It has been redesigned with simplicity, reliability, and maintainability as core principles. It supports recurring tasks (via cron expressions) and one-off future tasks using a single, robust library.
+The Wooster Scheduler System is responsible for managing and executing tasks at predefined times or intervals. It has been redesigned with simplicity, reliability, and maintainability as core principles. It supports recurring tasks (via cron expressions) and one-off future tasks using `croner` and `better-sqlite3`.
 
 ## 2. Core Components
 
 *   **`SchedulerService` (`src/scheduler/schedulerService.ts`)**: The central static class for all scheduling operations.
-    *   Uses **`croner`** for all scheduling logic, including cron parsing and job execution.
-    *   Provides a simple, `async` API: `start()`, `create()`, `delete()`, `getByKey()`.
-    *   No longer contains complex catch-up logic; a task runs at its scheduled time, or the next one if the application was offline.
-*   **`SchedulerRepository` (`src/scheduler/schedulerRepository.ts`)**: Manages data persistence using `sql.js`.
-    *   Interacts with a simplified SQLite database (`database/scheduler.sqlite3`).
-    *   Stores only the essential schedule definitions. The complex execution log has been **removed**.
+    *   Uses **`croner`** for all scheduling logic.
+    *   Provides a simple, `async` API: `start()`, `create()`, `delete()`, `getByKey()`, `getAllScheduledTasks()`.
+    *   **Missed Job Handling**: On startup, it checks for one-off tasks scheduled in the past and executes them immediately ("Catch Up"), then removes them.
+*   **`SchedulerRepository` (`src/scheduler/schedulerRepository.ts`)**: Manages data persistence using **`better-sqlite3`**.
+    *   Interacts with a simplified SQLite database (`database/scheduler.sqlite3`) in WAL mode for crash safety.
 *   **`scheduleAgentTaskTool` (`src/schedulerTool.ts`)**: A tool available to the Wooster agent, allowing it to schedule new tasks.
 *   **Direct Function Registration**: System-level tasks (like a Daily Review) are registered as direct functions with specific `task_key`s.
 
 ## 3. Simplified Database Schema
 
-The scheduler uses a single, lean `schedules` table. The `task_execution_log` table has been **removed**.
+The scheduler uses a single, lean `schedules` table.
 
 | Column | Type | Description | Example |
 | :--- | :--- | :--- | :--- |

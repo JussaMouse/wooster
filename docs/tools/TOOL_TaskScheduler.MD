@@ -50,9 +50,9 @@ Schedules a task for the agent to perform at a specified future time. Input MUST
 
 ## 6. Dependencies & Configuration
 
-- **Underlying System**: Wooster's Scheduler Service (`src/scheduler/schedulerService.ts`) which uses `node-schedule` and an SQLite database (`database/memory.db`) for persistence.
+- **Underlying System**: Wooster's Scheduler Service (`src/scheduler/schedulerService.ts`) which uses `croner` and an SQLite database (`database/scheduler.sqlite3`) accessed via `better-sqlite3`.
 - **Date Parsing**: `parseDateString` (from `src/scheduler/scheduleParser.ts`) which uses `chrono-node`.
-- **Function**: The `func` within `agentExecutorService.ts` calls `createAgentTaskSchedule`.
+- **Function**: The `func` within `schedulerTool.ts` calls `SchedulerService.create`.
 - **Configuration** (from `.env` - see `06 CONFIG.MD`):
     - No specific environment variables are *required* to enable/disable this tool itself, as it's a core capability. Its functionality relies on the scheduler system being operational.
 
