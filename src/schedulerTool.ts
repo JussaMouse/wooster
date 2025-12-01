@@ -33,7 +33,7 @@ export async function scheduleAgentTask(args: ScheduleAgentTaskArgs): Promise<st
     return `Error: The specified time "${timeExpression}" is in the past. Please provide a future time.`;
   }
 
-  const taskKey = 'agent.respond';
+  const taskKey = `agent.respond.${uuidv4()}`;
   
   log(LogLevel.DEBUG, '[Tool:scheduleAgentTask] Calling SchedulerService.create', { description: humanReadableDescription, scheduleDate, taskPayload, taskKey });
   

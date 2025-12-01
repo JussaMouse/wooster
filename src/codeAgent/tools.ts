@@ -345,12 +345,24 @@ tags: ${JSON.stringify(tags)}
     schedule: async (when: any, text: string) => {
       const messageText = String(text ?? '').trim();
       let timeExpression: string;
+
+      const isTimestamp = (n: number) => n > 1000000000000; // e.g. > year 2001 in ms
+      
       if (typeof when === 'number' && isFinite(when)) {
-        timeExpression = `in ${when} minutes`;
+        if (isTimestamp(when)) {
+            timeExpression = new Date(when).toISOString();
+        } else {
+            timeExpression = `in ${when} minutes`;
+        }
       } else if (typeof when === 'string') {
         const w = when.trim();
         if (/^\d+$/.test(w)) {
-          timeExpression = `in ${w} minutes`;
+            const num = parseInt(w, 10);
+            if (isTimestamp(num)) {
+                timeExpression = new Date(num).toISOString();
+            } else {
+                timeExpression = `in ${w} minutes`;
+            }
         } else if (/^\d+\s*(m|min|min\.|mins|minutes)$/i.test(w)) {
           const n = (w.match(/^\d+/) || ['0'])[0];
           timeExpression = `in ${n} minutes`;
