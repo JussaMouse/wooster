@@ -242,6 +242,16 @@ export function loadConfig(): AppConfig {
     }
   }
 
+  // Fix: Ensure boolean flags for plugins are actually booleans
+  if (loadedConfig.plugins) {
+      for (const key in loadedConfig.plugins) {
+          const pluginConf = loadedConfig.plugins[key];
+          if (pluginConf && typeof pluginConf.enabled === 'string') {
+              pluginConf.enabled = (pluginConf.enabled as string).toLowerCase() === 'true';
+          }
+      }
+  }
+
   currentConfig = loadedConfig;
   log(LogLevel.DEBUG, 'Application Config Loaded:', { appConfig: currentConfig });
   return currentConfig;

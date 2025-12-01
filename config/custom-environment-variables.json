@@ -92,6 +92,12 @@
     },
     "signal": {
       "enabled": "PLUGIN_SIGNAL_ENABLED"
+    },
+    "gcal": {
+      "enabled": "PLUGIN_GCAL_ENABLED"
+    },
+    "gmail": {
+      "enabled": "PLUGIN_GMAIL_ENABLED"
     }
   }
 } 
