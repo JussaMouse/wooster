@@ -383,4 +383,53 @@ export class KnowledgeBaseService {
       blocks: blocks.c
     };
   }
+
+  /**
+   * Finds and reads a document content by exact or fuzzy match on title/path.
+   */
+  public async readDocument(query: string): Promise<string | null> {
+    // 1. Try exact path match
+    let doc = this.db.prepare('SELECT path, title FROM documents WHERE path = ?').get(query) as any;
+    if (doc) return this.readParamsFromFile(doc.path);
+
+    // 2. Try exact title match
+    doc = this.db.prepare('SELECT path, title FROM documents WHERE title = ?').get(query) as any;
+    if (doc) return this.readParamsFromFile(doc.path);
+
+    // 3. Try fuzzy match (like 'inbox', 'gtd/inbox', 'notes/todo')
+    // We prioritize path matches over title matches for file retrieval
+    const likeQuery = `%${query}%`;
+    doc = this.db.prepare(`
+        SELECT path, title 
+        FROM documents 
+        WHERE path LIKE ? OR title LIKE ? 
+        ORDER BY 
+          CASE WHEN path = ? THEN 1
+               WHEN title = ? THEN 2
+               WHEN path LIKE ? THEN 3
+               ELSE 4 END
+        LIMIT 1
+    `).get(likeQuery, likeQuery, query, query, `${query}%`) as any;
+
+    if (doc) return this.readParamsFromFile(doc.path);
+
+    return null;
+  }
+
+  private readParamsFromFile(filePath: string): string | null {
+    try {
+        // Check if file exists
+        // Note: filePath is relative to workspace root usually? Or as stored.
+        // Ingestion stores relative paths usually (e.g. 'notes/foo.md').
+        // We assume CWD is workspace root.
+        const fs = require('fs');
+        if (fs.existsSync(filePath)) {
+            return fs.readFileSync(filePath, 'utf-8');
+        }
+        return null;
+    } catch (e) {
+        log(LogLevel.WARN, `Failed to read file ${filePath}`, { error: e });
+        return null;
+    }
+  }
 }

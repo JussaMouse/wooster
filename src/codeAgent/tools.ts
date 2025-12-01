@@ -199,6 +199,19 @@ export function createToolApi() {
         return `Error: ${e.message}`;
       }
     },
+    read_note: async (name: string) => {
+        log(LogLevel.INFO, `[CodeAgent] read_note called with: ${name}`);
+        try {
+            const kb = KnowledgeBaseService.getInstance();
+            const content = await kb.readDocument(name);
+            if (content) {
+                return content; // Return full content
+            }
+            return `Error: Could not find a note matching "${name}". Try kb_query to search for keywords.`;
+        } catch (e: any) {
+            return `Error reading note: ${e.message}`;
+        }
+    },
     zk_create: async (title: string, body: string, tags: string[] = []) => {
         log(LogLevel.INFO, `[CodeAgent] zk_create called: ${title}`);
         try {

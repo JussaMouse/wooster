@@ -24,7 +24,8 @@ async function buildCodeAgentPrompt(userInput: string, chatHistory: BaseMessage[
     - Use only the provided APIs:
       - webSearch(query): Search the public web.
       - fetchText(url): Read a webpage.
-      - kb_query(query, scope?): Hybrid search (Text+Vector) of your Personal Library (notes, projects). Returns JSON. Use this for "search library", "my notes", "recall", "what do I know about...".
+      - kb_query(query, scope?): Hybrid search (Text+Vector) of your Personal Library.
+      - read_note(name): Read the full content of a note by title or path (e.g. "inbox", "project-alpha").
       - zk_create(title, body, tags?): Create a new note.
       - queryRAG(query): DEPRECATED (maps to kb_query).
       - writeNote(text): Append to daily journal.
