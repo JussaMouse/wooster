@@ -142,6 +142,18 @@ export class SchedulerService {
     return deleted;
   }
 
+  public static async toggleTask(id: string, isActive: boolean): Promise<boolean> {
+    const repo = await getRepo();
+    if (isActive) {
+        const item = repo.getScheduleItemById(id);
+        if (item) scheduleTask(item);
+    } else {
+        activeJobs.get(id)?.stop();
+        activeJobs.delete(id);
+    }
+    return repo.updateScheduleItem(id, { is_active: isActive });
+  }
+
   public static stopAll(): void {
     for (const job of activeJobs.values()) job.stop();
     activeJobs.clear();

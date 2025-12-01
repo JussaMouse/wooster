@@ -419,6 +419,20 @@ tags: ${JSON.stringify(tags)}
             return `Error deleting task: ${error.message}`;
         }
     },
+    toggle_scheduled_task: async (id: string, active: boolean) => {
+        log(LogLevel.INFO, `[CodeAgent] toggle_scheduled_task called for ID: ${id} active: ${active}`);
+        try {
+            const success = await SchedulerService.toggleTask(id, active);
+            if (success) {
+                return `Successfully set task ${id} to ${active ? 'active' : 'inactive'}.`;
+            } else {
+                return `Failed to toggle task. ID ${id} not found.`;
+            }
+        } catch (error: any) {
+            log(LogLevel.ERROR, '[CodeAgent] toggle_scheduled_task failed', { error });
+            return `Error toggling task: ${error.message}`;
+        }
+    },
     discordNotify: async (msg: string) => {
       log(LogLevel.INFO, `[CodeAgent] discordNotify called with: ${msg}`);
       // Placeholder implementation

@@ -88,6 +88,22 @@ export class SchedulerRepository {
     const info = this.db.prepare('DELETE FROM schedules WHERE id = ?').run(id);
     return info.changes > 0;
   }
+
+  updateScheduleItem(id: string, updates: Partial<ScheduleItem>): boolean {
+    const keys = Object.keys(updates).filter(k => k !== 'id');
+    if (keys.length === 0) return false;
+    
+    const setClause = keys.map(k => `${k} = ?`).join(', ');
+    const values = keys.map(k => {
+        const val = (updates as any)[k];
+        return typeof val === 'boolean' ? (val ? 1 : 0) : val;
+    });
+    values.push(id);
+    
+    const sql = `UPDATE schedules SET ${setClause} WHERE id = ?`;
+    const info = this.db.prepare(sql).run(...values);
+    return info.changes > 0;
+  }
 }
 
 let schedulerRepositoryInstance: SchedulerRepository | null = null;

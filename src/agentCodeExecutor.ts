@@ -32,6 +32,7 @@ async function buildCodeAgentPrompt(userInput: string, chatHistory: BaseMessage[
       - capture(text), schedule(time, text)
       - list_scheduled_tasks(): Returns an array of formatted strings (e.g. "ID: ... | Time: ...").
       - delete_scheduled_task(id): Delete a scheduled task by ID.
+      - toggle_scheduled_task(id, active): Enable/Disable a task (boolean active).
       - calendarList(opts?), calendarCreate(event), sendEmail(args), discordNotify(msg), signalNotify(msg), sendSignal(msg), finalAnswer(text).
     - Keep code concise (≤ ~60 lines). Use try/catch and small helpers. Call finalAnswer once at the end.
     - Summarize long tool outputs before re-feeding them into the model. Do not print secrets.
