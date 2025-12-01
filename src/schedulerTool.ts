@@ -1,5 +1,6 @@
 import { DynamicTool } from "@langchain/core/tools";
 import { v4 as uuidv4 } from 'uuid';
+import { Cron } from 'croner';
 import { log, LogLevel } from "./logger";
 import { SchedulerService } from "./scheduler/schedulerService";
 import { parseDateString } from "./scheduler/scheduleParser";
@@ -22,17 +23,27 @@ export async function scheduleAgentTask(args: ScheduleAgentTaskArgs): Promise<st
   }
 
   const scheduleDate = parseDateString(timeExpression);
+  let finalScheduleExpression: string;
 
-  if (!scheduleDate) {
-    log(LogLevel.WARN, '[Tool:scheduleAgentTask] Could not parse timeExpression.', { timeExpression });
-    return `Error: Could not parse the time expression "${timeExpression}". Please use a clearer format (e.g., 'tomorrow at 5pm', 'in 2 hours').`;
+  if (scheduleDate) {
+    if (scheduleDate.getTime() < Date.now()) {
+        log(LogLevel.WARN, '[Tool:scheduleAgentTask] Attempted to schedule in the past.', { scheduleDate: scheduleDate.toLocaleString(), timeExpression });
+        return `Error: The specified time "${timeExpression}" is in the past. Please provide a future time.`;
+    }
+    finalScheduleExpression = scheduleDate.toISOString();
+  } else {
+    // Try parsing as Cron
+    try {
+        // Croner throws if invalid
+        new Cron(timeExpression); 
+        finalScheduleExpression = timeExpression;
+        log(LogLevel.INFO, '[Tool:scheduleAgentTask] Valid cron expression detected.', { timeExpression });
+    } catch (e) {
+        log(LogLevel.WARN, '[Tool:scheduleAgentTask] Could not parse timeExpression as Date or Cron.', { timeExpression });
+        return `Error: Could not parse the time expression "${timeExpression}". Please use a clearer format (e.g., 'tomorrow at 5pm', 'in 2 hours') or a valid Cron expression (e.g. '0 9 * * *').`;
+    }
   }
   
-  if (scheduleDate.getTime() < Date.now()) {
-    log(LogLevel.WARN, '[Tool:scheduleAgentTask] Attempted to schedule in the past.', { scheduleDate: scheduleDate.toLocaleString(), timeExpression });
-    return `Error: The specified time "${timeExpression}" is in the past. Please provide a future time.`;
-  }
-
   const taskKey = `agent.respond.${uuidv4()}`;
   
   log(LogLevel.DEBUG, '[Tool:scheduleAgentTask] Calling SchedulerService.create', { description: humanReadableDescription, scheduleDate, taskPayload, taskKey });
@@ -40,7 +51,7 @@ export async function scheduleAgentTask(args: ScheduleAgentTaskArgs): Promise<st
   try {
     const newSchedule = await SchedulerService.create({
       description: humanReadableDescription,
-      schedule_expression: scheduleDate.toISOString(),
+      schedule_expression: finalScheduleExpression,
       task_handler_type: 'AGENT_PROMPT',
       task_key: taskKey, 
       payload: JSON.stringify(taskPayload), 
@@ -48,7 +59,7 @@ export async function scheduleAgentTask(args: ScheduleAgentTaskArgs): Promise<st
     });
 
     if (newSchedule && newSchedule.id) {
-      const confirmationMessage = `Task "${humanReadableDescription}" has been scheduled successfully for ${scheduleDate.toLocaleString()}.`;
+      const confirmationMessage = `Task "${humanReadableDescription}" has been scheduled successfully for ${finalScheduleExpression} (ID: ${newSchedule.id}).`;
       log(LogLevel.INFO, '[Tool:scheduleAgentTask] Task scheduled successfully.', { scheduleId: newSchedule.id, confirmationMessage });
       return confirmationMessage;
     } else {
