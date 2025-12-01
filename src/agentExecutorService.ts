@@ -321,8 +321,14 @@ export async function executeAgent(
   const formattedDateTime = parseDateString(currentDateTime) || currentDateTime;
 
   try {
+    // Clean user input of wrapping quotes if present, common when passing JSON-stringified payloads
+    let cleanInput = userInput.trim();
+    if (cleanInput.length > 1 && cleanInput.startsWith('"') && cleanInput.endsWith('"')) {
+        try { cleanInput = JSON.parse(cleanInput); } catch {}
+    }
+    
     // Fast-path: intercept explicit sendSignal/signal_notify commands and execute directly via SignalService
-    const directSignalMatch = userInput.match(/^\s*(sendSignal|signal_notify)\s*(\{[\s\S]*\}|"[\s\S]*"|'[\s\S]*')?\s*$/i);
+    const directSignalMatch = cleanInput.match(/^\s*(sendSignal|signal_notify)\s*(\{[\s\S]*\}|"[\s\S]*"|'[\s\S]*')?\s*$/i);
     if (directSignalMatch) {
       let rawArg = directSignalMatch[2] || '';
       let messageToSend: string | null = null;
@@ -350,9 +356,9 @@ export async function executeAgent(
       }
     }
 
-    log(LogLevel.INFO, "Executing agent with input and chat history", { userInput, chatHistoryLength: chatHistory.length });
+    log(LogLevel.INFO, "Executing agent with input and chat history", { userInput: cleanInput, chatHistoryLength: chatHistory.length });
     const result = await agentExecutorInstance.invoke({
-      input: userInput,
+      input: cleanInput,
       chat_history: chatHistory,
       current_date_time: formattedDateTime,
     });

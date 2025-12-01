@@ -41,7 +41,12 @@ async function executeTask(item: ScheduleItem): Promise<void> {
   try {
     if (task_handler_type === 'AGENT_PROMPT') {
       if (coreServices?.executeAgent && payload) {
-        await coreServices.executeAgent(payload, []);
+        let cleanPayload = payload;
+        // Attempt to unwrap JSON stringified string if double-wrapped
+        if (cleanPayload.startsWith('"') && cleanPayload.endsWith('"')) {
+            try { cleanPayload = JSON.parse(cleanPayload); } catch {}
+        }
+        await coreServices.executeAgent(cleanPayload, []);
       } else if (coreServices?.agent && payload) {
         const agent = coreServices.agent as any;
         if (typeof agent.invoke === 'function') {
