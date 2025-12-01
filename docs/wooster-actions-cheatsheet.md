@@ -35,6 +35,7 @@ Wooster automatically indexes `notes/`, `projects/`, and `gtd/`.
 | **Journaling** | `Log to journal: "Meeting went well"` | Appends text to your daily project journal. |
 | **Capture** | `Capture "Buy milk"` | Saves item to your Inbox (GTD). |
 | **Schedule Task** | `Remind me in 30 mins to "Check oven"` | Schedules a task/notification. |
+| **List Scheduled** | `What tasks are scheduled?` | Lists all pending/recurring tasks. |
 | **Calendar** | `List my events for today` | Checks Google Calendar (if configured). |
 | **Email** | `Send email to bob@example.com...` | Sends an email via Gmail (if configured). |
 | **Signal** | `Send Signal message to Mom...` | Sends a message via Signal CLI (if configured). |

@@ -368,6 +368,19 @@ tags: ${JSON.stringify(tags)}
         humanReadableDescription: messageText,
       });
     },
+    list_scheduled_tasks: async () => {
+        log(LogLevel.INFO, `[CodeAgent] list_scheduled_tasks called.`);
+        try {
+            const tasks = await SchedulerService.getAllScheduledTasks();
+            if (tasks.length === 0) {
+                return "No tasks currently scheduled.";
+            }
+            return tasks.map(t => `[${t.schedule_expression}] ${t.description} (ID: ${t.id})`).join('\n');
+        } catch (error: any) {
+            log(LogLevel.ERROR, '[CodeAgent] list_scheduled_tasks failed', { error });
+            return `Error listing tasks: ${error.message}`;
+        }
+    },
     discordNotify: async (msg: string) => {
       log(LogLevel.INFO, `[CodeAgent] discordNotify called with: ${msg}`);
       // Placeholder implementation

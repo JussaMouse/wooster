@@ -122,6 +122,11 @@ export class SchedulerService {
     const repo = await getRepo();
     return repo.getScheduleItemByKey(task_key);
   }
+
+  public static async getAllScheduledTasks(): Promise<ScheduleItem[]> {
+    const repo = await getRepo();
+    return repo.getAllActiveScheduleItems();
+  }
 }
 
 export async function ensureScheduleIsManaged(setup: ScheduledTaskSetupOptions, config: AppConfig, pluginName: string): Promise<void> {

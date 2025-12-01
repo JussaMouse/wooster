@@ -5,15 +5,13 @@ The Scheduler system in Wooster handles both recurring tasks (via Cron expressio
 
 ## Reliability & Durability
 
-### Persistence (⚠️ Concern)
-- **Current State:** The `SchedulerRepository` uses `sql.js` (SQLite in WASM/memory) and manually persists the entire database to disk (`fs.writeFileSync`) after every write.
-- **Risk:** This is less robust than a native SQLite driver like `better-sqlite3`. If the application crashes or loses power immediately after a DB operation but before the file write completes, data could be corrupted or lost. It also loads the full DB into memory, which is fine for small schedules but less scalable.
-- **Recommendation:** Migrate `SchedulerRepository` to use `better-sqlite3` (same as the Knowledge Base). This enables WAL mode, crash-safe writes, and better performance.
+### Persistence (✅ Fixed)
+- **Implementation:** `SchedulerRepository` now uses `better-sqlite3`, enabling WAL mode and robust crash safety.
+- **Recommendation:** Implemented.
 
-### Missed Jobs (⚠️ Concern)
-- **Current State:** On startup, `SchedulerService.start()` loads all active items and instantiates `new Cron(item.schedule_expression)`.
-- **Risk:** If the server is down when a one-off task (scheduled via specific ISO timestamp) was supposed to run, it is unclear if `croner` fires it immediately upon restart. Standard cron behavior usually skips missed windows.
-- **Recommendation:** Implement a explicit "catch-up" logic on startup. Query for tasks with `next_run < now` (or similar metadata) and execute them or mark them as failed.
+### Missed Jobs (✅ Fixed)
+- **Implementation:** `SchedulerService` now checks for expired one-off tasks on startup and executes them immediately as "Catch Up".
+- **Recommendation:** Implemented.
 
 ## Architecture & Modularity
 
@@ -31,12 +29,12 @@ The Scheduler system in Wooster handles both recurring tasks (via Cron expressio
 - **Complexity:** The split between `sql.js` here and `better-sqlite3` elsewhere adds unnecessary cognitive load and dependency bloat.
 
 ## Final Verdict
-**Rating: 🟡 Functional but Fragile**
+**Rating: 🟢 Robust and Production-Ready**
 
-The scheduler works for basic needs but relies on a suboptimal persistence strategy (`sql.js`) and lacks robust handling for downtime/missed jobs. It is well-integrated with the agent and plugins but should be refactored to use `better-sqlite3` for production-grade reliability.
+The scheduler has been refactored to use `better-sqlite3` and now handles missed jobs gracefully. It is well-integrated and reliable.
 
 ### Action Plan
-1.  **Refactor DB:** Switch `SchedulerRepository` to `better-sqlite3`.
-2.  **Unified DB Config:** Share database connection logic/config with KnowledgeBase if possible, or at least use the same library.
-3.  **Missed Task Handling:** Add logic to check for and handle expired one-off tasks on startup.
+1.  **Refactor DB:** Done.
+2.  **Unified DB Config:** Done (implicitly via standard dependency).
+3.  **Missed Task Handling:** Done.
 
