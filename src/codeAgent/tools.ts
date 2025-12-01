@@ -1,6 +1,7 @@
 import { log, LogLevel } from '../logger';
 import { queryKnowledgeBase, getCurrentActiveProjectName, getCurrentActiveProjectPath } from '../agentExecutorService';
 import { scheduleAgentTask } from '../schedulerTool';
+import { SchedulerService } from '../scheduler/schedulerService';
 import { TavilySearch } from '@langchain/tavily';
 import { AppConfig, getConfig } from '../configLoader';
 import { getRegisteredService } from '../pluginManager';
