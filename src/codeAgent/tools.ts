@@ -433,6 +433,20 @@ tags: ${JSON.stringify(tags)}
             return `Error toggling task: ${error.message}`;
         }
     },
+    list_plugins: async () => {
+        log(LogLevel.INFO, `[CodeAgent] list_plugins called.`);
+        try {
+            const { listPlugins } = await import('../pluginManager');
+            const plugins = listPlugins();
+            if (plugins.length === 0) {
+                return "No plugins are currently active.";
+            }
+            return `Active Plugins:\n- ${plugins.join('\n- ')}`;
+        } catch (error: any) {
+            log(LogLevel.ERROR, '[CodeAgent] list_plugins failed', { error });
+            return `Error listing plugins: ${error.message}`;
+        }
+    },
     discordNotify: async (msg: string) => {
       log(LogLevel.INFO, `[CodeAgent] discordNotify called with: ${msg}`);
       // Placeholder implementation
