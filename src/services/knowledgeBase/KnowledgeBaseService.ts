@@ -232,6 +232,25 @@ export class KnowledgeBaseService {
         });
     }
 
+    // Add synthetic metadata block to ensure file path and title are FTS-searchable
+    const metadataText = `File: ${path} Title: ${parsed.title}`;
+    const metadataHash = computeHash(metadataText);
+    let metaBlockId = existingHashMap.get(metadataHash);
+    if (!metaBlockId) {
+        metaBlockId = uuidv4();
+        vectorsToUpsert.push({ id: metaBlockId, text: metadataText });
+    }
+    blocksToInsert.push({
+      id: metaBlockId,
+      doc_id: effectiveId,
+      kind: 'metadata',
+      heading_path: '[]',
+      start_offset: 0,
+      end_offset: 0,
+      text: metadataText,
+      block_hash: metadataHash
+    });
+
     // Generate embeddings for new blocks
     if (vectorsToUpsert.length > 0) {
         try {
