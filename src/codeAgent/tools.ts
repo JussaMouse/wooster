@@ -396,9 +396,37 @@ tags: ${JSON.stringify(tags)}
             if (tasks.length === 0) {
                 return [];
             }
-            // Return array of strings to avoid agent hallucination of property names.
-            // Format: "ID: <id> | Time: <schedule> | Task: <description>"
-            return tasks.map(t => `ID: ${t.id} | Time: ${t.schedule_expression} | Task: ${t.description} | Active: ${t.is_active}`);
+            log(LogLevel.DEBUG, `[CodeAgent] list_scheduled_tasks retrieved ${tasks.length} tasks:`, tasks);
+            
+            // Return objects with every conceivable alias to prevent agent confusion
+            return tasks.map(t => ({
+                id: t.id,
+                
+                // Time aliases
+                schedule: t.schedule_expression,
+                due: t.schedule_expression,
+                when: t.schedule_expression,
+                time: t.schedule_expression,
+                date: t.schedule_expression,
+                cron: t.schedule_expression,
+                next: t.schedule_expression,
+                
+                // Description aliases
+                description: t.description,
+                desc: t.description,
+                task: t.description,
+                title: t.description,
+                summary: t.description,
+                text: t.description,
+                content: t.description,
+                name: t.description,
+                action: t.description,
+                note: t.description,
+                payload: t.description,
+                
+                active: t.is_active,
+                status: t.is_active ? 'active' : 'inactive'
+            }));
         } catch (error: any) {
             log(LogLevel.ERROR, '[CodeAgent] list_scheduled_tasks failed', { error });
             return [`Error listing tasks: ${error.message}`];
