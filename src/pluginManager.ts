@@ -47,89 +47,6 @@ const coreServicesInstance: CoreServices = {
   // emailService and NextActionsService are examples; actual access is via getService
 }
 
-async function processPlugin(plugin: WoosterPlugin, config: AppConfig, actualEntryPoint: string) {
-  log(LogLevel.INFO, `PluginManager: processPlugin started for plugin candidate from entry point: "${actualEntryPoint}"`);
-
-  const pluginStatic = plugin as any; // Type assertion to access potential static members
-  const pName = pluginStatic.pluginName || pluginStatic.name; // Prefer pluginName
-  const pVersion = pluginStatic.version;
-  const pDescription = pluginStatic.description;
-
-  if (plugin && typeof pName === 'string' && pName &&
-      typeof pVersion === 'string' && pVersion &&
-      typeof pDescription === 'string' && pDescription) {
-
-    const isEnabled = config.plugins[pName];
-    if (isEnabled === false) {
-      log(LogLevel.INFO, 'Plugin "%s" (v%s) is disabled via configuration. Skipping load.', pName, pVersion);
-      return;
-    }
-
-    log(LogLevel.INFO, 'Loading plugin: "%s" v%s (Path: %s)', pName, pVersion, actualEntryPoint);
-
-    if (typeof plugin.initialize === 'function') {
-      try {
-        await plugin.initialize(config, coreServicesInstance);
-        log(LogLevel.INFO, 'Plugin "%s" initialized successfully.', pName);
-      } catch (initError: any) {
-        log(LogLevel.ERROR, 'Error initializing plugin "%s": %s. Plugin will not be fully active.', pName, initError.message, { error: initError });
-        return;
-      }
-    }
-
-    log(LogLevel.DEBUG, `PluginManager: Checking getScheduledTaskSetups for plugin "${pName}"`);
-    if (typeof plugin.getScheduledTaskSetups === 'function') {
-      log(LogLevel.DEBUG, `PluginManager: Plugin "${pName}" implements getScheduledTaskSetups. Calling it.`);
-      try {
-        const setups = plugin.getScheduledTaskSetups();
-        log(LogLevel.DEBUG, `PluginManager: Raw setups from "${pName}":`, { setups });
-        const setupArray = Array.isArray(setups) ? setups : (setups ? [setups] : []);
-
-        for (const setup of setupArray) {
-          log(LogLevel.DEBUG, `PluginManager: Processing a setup object from "${pName}":`, { setup });
-          if (setup &&
-              typeof setup.taskKey === 'string' && setup.taskKey &&
-              typeof setup.description === 'string' && setup.description &&
-              typeof setup.defaultScheduleExpression === 'string' && setup.defaultScheduleExpression &&
-              typeof setup.functionToExecute === 'function' &&
-              typeof setup.executionPolicy === 'string' && setup.executionPolicy
-             ) {
-            log(LogLevel.INFO, `PluginManager: Plugin "${pName}" provides valid scheduled task setup for: "${setup.taskKey}". Preparing to manage with scheduler.`);
-            await ensureScheduleIsManaged(setup, config, pName);
-          } else {
-            log(LogLevel.WARN, `PluginManager: Plugin "${pName}" provided an invalid or incomplete ScheduledTaskSetupOptions object. Skipping this setup.`, { setup });
-          }
-        }
-      } catch (scheduleSetupError: any) {
-        log(LogLevel.ERROR, `Error getting or processing scheduled task setups from plugin "${pName}": ${scheduleSetupError.message}`, { error: scheduleSetupError });
-      }
-    }
-
-    if (typeof plugin.getAgentTools === 'function') {
-      try {
-        const toolsFromPlugin = plugin.getAgentTools();
-        if (Array.isArray(toolsFromPlugin)) {
-          pluginProvidedAgentTools.push(...toolsFromPlugin);
-          log(LogLevel.INFO, 'Plugin "%s" provided %d agent tool(s): %s', pName, toolsFromPlugin.length, toolsFromPlugin.map(t => t.name).join(', '));
-        } else if (toolsFromPlugin) {
-          log(LogLevel.WARN, 'Plugin "%s" getAgentTools() did not return an array or was empty. Tools not loaded from this plugin.', pName);
-        }
-      } catch (toolError: any) {
-        log(LogLevel.ERROR, 'Error calling getAgentTools() on plugin "%s": %s. Tools not loaded from this plugin.', pName, toolError.message, { error: toolError });
-      }
-    }
-    loadedPlugins.push(plugin); // Still pushing the constructor
-
-  } else {
-    let missingDetails = [];
-    if (!plugin) missingDetails.push("plugin definition");
-    if (typeof pName !== 'string' || !pName) missingDetails.push("name (pluginName or name property)");
-    if (typeof pVersion !== 'string' || !pVersion) missingDetails.push("version property");
-    if (typeof pDescription !== 'string' || !pDescription) missingDetails.push("description property");
-    log(LogLevel.WARN, 'Module at "%s" does not export a valid Wooster plugin class. Missing or invalid static properties: %s.', actualEntryPoint, missingDetails.join(', '));
-  }
-}
-
 /**
  * Dynamically load plugins from subdirectories within `src/plugins/`.
  * Initializes them and collects any agent tools or scheduled tasks they provide.
@@ -159,9 +76,20 @@ export async function loadPlugins() {
         typeof pVersion === 'string' && pVersion &&
         typeof pDescription === 'string' && pDescription) {
 
-      const isEnabled = appConfig.plugins[pName];
+      // Check for configuration enablement
+      // Priority: 1. Environment Variable (Automatic) 2. Config File
+      let isEnabled = appConfig.plugins[pName];
+
+      // Automatic Environment Variable Detection (Option 3)
+      // e.g., plugin "gcal" -> checks PLUGIN_GCAL_ENABLED
+      const autoEnvVar = `PLUGIN_${pName.toUpperCase()}_ENABLED`;
+      if (process.env[autoEnvVar] !== undefined) {
+        isEnabled = process.env[autoEnvVar]!.toLowerCase() === 'true';
+        log(LogLevel.DEBUG, `PluginManager: Environment variable ${autoEnvVar} found. Overriding enabled status to: ${isEnabled}`);
+      }
+
       if (isEnabled === false) {
-        log(LogLevel.INFO, 'Plugin "%s" (v%s) is disabled via configuration. Skipping load.', pName, pVersion);
+        log(LogLevel.INFO, 'Plugin "%s" (v%s) is disabled via configuration/environment. Skipping load.', pName, pVersion);
         return;
       }
 
