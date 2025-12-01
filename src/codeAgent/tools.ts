@@ -396,20 +396,12 @@ tags: ${JSON.stringify(tags)}
             if (tasks.length === 0) {
                 return [];
             }
-            // Return raw array so the agent can use .map() on it directly
-            return tasks.map(t => ({
-                id: t.id,
-                schedule: t.schedule_expression,
-                due: t.schedule_expression,   // Alias for agent robustness
-                when: t.schedule_expression,  // Alias for agent robustness
-                description: t.description,
-                task: t.description,          // Alias for agent robustness
-                title: t.description,         // Alias for agent robustness
-                active: t.is_active
-            }));
+            // Return array of strings to avoid agent hallucination of property names.
+            // Format: "ID: <id> | Time: <schedule> | Task: <description>"
+            return tasks.map(t => `ID: ${t.id} | Time: ${t.schedule_expression} | Task: ${t.description} | Active: ${t.is_active}`);
         } catch (error: any) {
             log(LogLevel.ERROR, '[CodeAgent] list_scheduled_tasks failed', { error });
-            return `Error listing tasks: ${error.message}`;
+            return [`Error listing tasks: ${error.message}`];
         }
     },
     discordNotify: async (msg: string) => {
