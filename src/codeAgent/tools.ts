@@ -398,38 +398,25 @@ tags: ${JSON.stringify(tags)}
             }
             log(LogLevel.DEBUG, `[CodeAgent] list_scheduled_tasks retrieved ${tasks.length} tasks:`, tasks);
             
-            // Return objects with every conceivable alias to prevent agent confusion
-            return tasks.map(t => ({
-                id: t.id,
-                
-                // Time aliases
-                schedule: t.schedule_expression,
-                due: t.schedule_expression,
-                when: t.schedule_expression,
-                time: t.schedule_expression,
-                date: t.schedule_expression,
-                cron: t.schedule_expression,
-                next: t.schedule_expression,
-                
-                // Description aliases
-                description: t.description,
-                desc: t.description,
-                task: t.description,
-                title: t.description,
-                summary: t.description,
-                text: t.description,
-                content: t.description,
-                name: t.description,
-                action: t.description,
-                note: t.description,
-                payload: t.description,
-                
-                active: t.is_active,
-                status: t.is_active ? 'active' : 'inactive'
-            }));
+            // Return formatted strings to ensure the agent sees exactly what we want it to see
+            return tasks.map(t => `ID: ${t.id} | Time: ${t.schedule_expression} | Task: ${t.description} | Active: ${t.is_active}`);
         } catch (error: any) {
             log(LogLevel.ERROR, '[CodeAgent] list_scheduled_tasks failed', { error });
             return [`Error listing tasks: ${error.message}`];
+        }
+    },
+    delete_scheduled_task: async (id: string) => {
+        log(LogLevel.INFO, `[CodeAgent] delete_scheduled_task called for ID: ${id}`);
+        try {
+            const success = await SchedulerService.delete(id);
+            if (success) {
+                return `Successfully deleted task with ID: ${id}`;
+            } else {
+                return `Failed to delete task. ID ${id} not found.`;
+            }
+        } catch (error: any) {
+            log(LogLevel.ERROR, '[CodeAgent] delete_scheduled_task failed', { error });
+            return `Error deleting task: ${error.message}`;
         }
     },
     discordNotify: async (msg: string) => {
