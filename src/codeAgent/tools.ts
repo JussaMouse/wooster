@@ -363,7 +363,7 @@ tags: ${JSON.stringify(tags)}
             } else {
                 timeExpression = `in ${w} minutes`;
             }
-        } else if (/^\d+\s*(m|min|min\.|mins|minutes)$/i.test(w)) {
+        } else if (/^\d+\s*(m|min|mins|minute|minutes)$/i.test(w)) {
           const n = (w.match(/^\d+/) || ['0'])[0];
           timeExpression = `in ${n} minutes`;
         } else {
