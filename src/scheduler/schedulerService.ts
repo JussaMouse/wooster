@@ -63,6 +63,15 @@ async function executeTask(item: ScheduleItem): Promise<void> {
         await func(payload ? JSON.parse(payload) : {});
       }
     }
+
+    // Post-execution cleanup for one-off tasks
+    const job = activeJobs.get(item.id);
+    const isISO = !item.schedule_expression.includes(' ') && !item.schedule_expression.includes('*');
+    if ((job && !job.nextRun()) || isISO) {
+        log(LogLevel.INFO, `Task "${item.description}" completed (one-off). Deleting from schedule.`);
+        await SchedulerService.delete(item.id);
+    }
+
   } catch (error) {
     log(LogLevel.ERROR, `Error executing task: "${item.description}"`, { id: item.id, error });
   }
@@ -124,7 +133,13 @@ export class SchedulerService {
     activeJobs.get(id)?.stop();
     activeJobs.delete(id);
     const repo = await getRepo();
-    return repo.deleteScheduleItem(id);
+    const deleted = repo.deleteScheduleItem(id);
+    if (deleted) {
+        log(LogLevel.INFO, `SchedulerService: Deleted task ${id} from database.`);
+    } else {
+        log(LogLevel.WARN, `SchedulerService: Requested to delete task ${id} but it was not found in database.`);
+    }
+    return deleted;
   }
 
   public static stopAll(): void {
