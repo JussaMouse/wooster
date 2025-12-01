@@ -5,7 +5,7 @@ import fs from 'fs';
 
 import { bootstrapLogger, applyLoggerConfig, log, LogLevel } from './logger';
 import { loadConfig, getConfig,setConfig } from './configLoader';
-import { SchedulerService } from './scheduler/schedulerService';
+import { SchedulerService, setCoreServices as setSchedulerCoreServices } from './scheduler/schedulerService';
 import { initializeAgentExecutorService, getAgentExecutor, setActiveProject, getActiveProjectPath, getCurrentActiveProjectName } from './agentExecutorService';
 import { setAgentConfig, agentRespond } from './agent';
 import { loadPlugins, getRegisteredService, registerService } from './pluginManager';
@@ -175,7 +175,7 @@ async function main() {
   
   // Inject agent and core services into SchedulerService so it can execute agent tasks
   const agentExecutor = await getAgentExecutor();
-  SchedulerService.setCoreServices({
+  setSchedulerCoreServices({
       agent: agentExecutor,
       getConfig: getConfig,
       log: log,

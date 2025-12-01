@@ -330,3 +330,11 @@ export function getPluginDirectoryNames(): string[] {
 export function getRegisteredService<T = any>(name: string): T | undefined {
   return registeredServices.get(name) as T | undefined
 }
+
+export function registerService(name: string, service: any): void {
+  if (registeredServices.has(name)) {
+    log(LogLevel.WARN, `PluginManager: Service with name "${name}" is already registered. Overwriting.`)
+  }
+  registeredServices.set(name, service)
+  log(LogLevel.INFO, `PluginManager: Service "${name}" registered.`)
+}

@@ -144,7 +144,7 @@ async function initializeTools() {
   log(LogLevel.INFO, "AgentExecutorService: Total tools initialized: %d. Tool names: %s", tools.length, tools.map(t => `${t.name} (desc: ${t.description.substring(0, 70)}...)`).join('\n'));
 }
 
-async function getAgentExecutor(forceRecreate = false): Promise<AgentExecutor> {
+export async function getAgentExecutor(forceRecreate = false): Promise<AgentExecutor> {
   if (agentExecutorInstance && !forceRecreate) {
     return agentExecutorInstance;
   }
