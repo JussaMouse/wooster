@@ -24,15 +24,19 @@ async function buildCodeAgentPrompt(userInput: string, chatHistory: BaseMessage[
     - Use only the provided APIs:
       - webSearch(query): Search the public web.
       - fetchText(url): Read a webpage.
-      - kb_query(query, scope?): Hybrid search (Text+Vector) of your Personal Library.
-      - read_note(name): Read the full content of a note by title or path (e.g. "inbox", "project-alpha").
-      - zk_create(title, body, tags?): Create a new note.
+      - kb_query(query, scope?): Hybrid search (Text+Vector) of your Personal Library. Returns JSON string of hits.
+      - read_note(name): Read the full content of a note by title or path (e.g. "inbox", "project-alpha"). Returns string.
+      - zk_create(title, body, tags?): Create a new note. Returns status string.
       - queryRAG(query): DEPRECATED (maps to kb_query).
       - writeNote(text): Append to daily journal.
-      - capture(text), schedule(time, text), list_scheduled_tasks(), calendarList(opts?), calendarCreate(event), sendEmail(args), discordNotify(msg), signalNotify(msg), sendSignal(msg), finalAnswer(text).
+      - capture(text), schedule(time, text)
+      - list_scheduled_tasks(): Returns an array of formatted strings (e.g. "ID: ... | Time: ...").
+      - delete_scheduled_task(id): Delete a scheduled task by ID.
+      - calendarList(opts?), calendarCreate(event), sendEmail(args), discordNotify(msg), signalNotify(msg), sendSignal(msg), finalAnswer(text).
     - Keep code concise (≤ ~60 lines). Use try/catch and small helpers. Call finalAnswer once at the end.
     - Summarize long tool outputs before re-feeding them into the model. Do not print secrets.
-    - When using kb_query, list_scheduled_tasks, or webSearch, READ the results (often JSON) and SYNTHESIZE a natural language answer. Do not just dump the raw JSON output in finalAnswer.`;
+    - When using kb_query or webSearch, READ the results (often JSON) and SYNTHESIZE a natural language answer. 
+    - For list_scheduled_tasks, simply join the strings with newlines to display them. Do not try to parse properties.`;
 
     const fewShotExamples = `
     // Example 1: Web search and summarize
