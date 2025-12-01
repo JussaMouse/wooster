@@ -6,7 +6,7 @@ import fs from 'fs';
 import { bootstrapLogger, applyLoggerConfig, log, LogLevel } from './logger';
 import { loadConfig, getConfig,setConfig } from './configLoader';
 import { SchedulerService, setCoreServices as setSchedulerCoreServices } from './scheduler/schedulerService';
-import { initializeAgentExecutorService, getAgentExecutor, setActiveProject, getActiveProjectPath, getCurrentActiveProjectName } from './agentExecutorService';
+import { initializeAgentExecutorService, getAgentExecutor, setActiveProject, getActiveProjectPath, getCurrentActiveProjectName, executeAgent } from './agentExecutorService';
 import { setAgentConfig, agentRespond } from './agent';
 import { loadPlugins, getRegisteredService, registerService } from './pluginManager';
 import { OpenAIEmbeddings } from "@langchain/openai";
@@ -177,6 +177,7 @@ async function main() {
   const agentExecutor = await getAgentExecutor();
   setSchedulerCoreServices({
       agent: agentExecutor,
+      executeAgent: executeAgent,
       getConfig: getConfig,
       log: log,
       registerService: registerService,

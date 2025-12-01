@@ -40,7 +40,9 @@ async function executeTask(item: ScheduleItem): Promise<void> {
 
   try {
     if (task_handler_type === 'AGENT_PROMPT') {
-      if (coreServices?.agent && payload) {
+      if (coreServices?.executeAgent && payload) {
+        await coreServices.executeAgent(payload, []);
+      } else if (coreServices?.agent && payload) {
         const agent = coreServices.agent as any;
         if (typeof agent.invoke === 'function') {
              await agent.invoke({ input: payload });

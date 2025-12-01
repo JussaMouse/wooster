@@ -24,6 +24,8 @@ export interface EmailService {
  */
 export interface CoreServices {
   agent?: AgentExecutor;
+  /** Optional wrapper to execute the agent with full context (history, date, etc.) */
+  executeAgent?: (userInput: string, chatHistory: any[]) => Promise<string>;
   /** Provides access to the global application configuration. */
   getConfig(): AppConfig;
   /** Provides a logging function. */

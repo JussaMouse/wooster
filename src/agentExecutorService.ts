@@ -216,7 +216,7 @@ To add content to an existing file (e.g., add an entry to a log file), you shoul
 TOOLS-USAGE POLICY:
 - Never output or print code when invoking tools. Call tools directly using the Tools API.
 - If the user says "Use the tool X ...", you MUST call tool X and not print example code.
-- For sending Signal messages: ALWAYS use the 'sendSignal' tool (alias: 'signal_notify'). Do not ask for a recipient; the plugin uses environment defaults (SIGNAL_GROUP_ID → SIGNAL_TO → Note-to-Self on SIGNAL_CLI_NUMBER). Provide the message as input (prefer JSON: {"message":"..."}).
+- For sending Signal messages: ALWAYS use the 'sendSignal' tool (alias: 'signal_notify'). Do not ask for a recipient; the plugin uses environment defaults (SIGNAL_GROUP_ID → SIGNAL_TO → Note-to-Self on SIGNAL_CLI_NUMBER). Provide the message as input (prefer JSON: {{"message":"..."}}).
 - If a tool returns an error, report it succinctly; otherwise confirm success.
 
 Current date and time: {current_date_time}`;
