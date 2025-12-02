@@ -4,7 +4,7 @@ import { AppConfig, getConfig } from './configLoader';
 import { getModelRouter } from './routing/ModelRouterService';
 import { CodeSandbox } from './codeAgent/CodeSandbox';
 import { createToolApi } from './codeAgent/tools';
-import { getRegisteredService } from './pluginManager';
+import { getRegisteredService, getPluginAgentTools } from './pluginManager';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -18,6 +18,10 @@ function extractJsCodeBlock(response: string): string | null {
 async function buildCodeAgentPrompt(userInput: string, chatHistory: BaseMessage[]): Promise<BaseMessage[]> {
   const baseSystemPrompt = await fs.readFile(path.join(process.cwd(), 'prompts', 'base_system_prompt.txt'), 'utf-8');
   
+  const pluginTools = getPluginAgentTools();
+  // Format plugin tools for prompt
+  const pluginToolSignatures = pluginTools.map(t => `      - ${t.name}(jsonInput?): ${t.description.replace(/\n/g, ' ').slice(0, 150)}`).join('\n');
+
     const codeAgentHeader = `You can solve tasks by emitting a single JavaScript code block, and nothing else.
     Rules:
     - Output exactly one fenced code block: \`\`\`js ... \`\`\` and no prose outside it.
@@ -30,12 +34,15 @@ async function buildCodeAgentPrompt(userInput: string, chatHistory: BaseMessage[
       - queryRAG(query): DEPRECATED (maps to kb_query).
       - writeNote(text): Append to daily journal.
       - capture(text), schedule(time, text)
-      - completeInboxItem(identifier): Mark an inbox item as done/archived. 'identifier' is the task text.
       - list_scheduled_tasks(): Returns an array of formatted strings (e.g. "ID: ... | Time: ...").
       - delete_scheduled_task(id): Delete a scheduled task by ID.
       - toggle_scheduled_task(id, active): Enable/Disable a task (boolean active).
-      - list_plugins(): List all active plugins (returns string[]). JOIN WITH '\n' for display.
+      - list_plugins(): List all active plugins (returns string[]). JOIN WITH '\\n' for display.
       - calendarList(opts?), calendarCreate(event), sendEmail(args), discordNotify(msg), signalNotify(msg), sendSignal(msg), finalAnswer(text).
+      
+      // Dynamic Plugin Tools:
+${pluginToolSignatures}
+
     - Keep code concise (≤ ~60 lines). Use try/catch and small helpers. Call finalAnswer once at the end.
     - Summarize long tool outputs before re-feeding them into the model. Do not print secrets.
     - When using kb_query or webSearch, READ the results (often JSON) and SYNTHESIZE a natural language answer. 
