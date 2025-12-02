@@ -30,6 +30,7 @@ async function buildCodeAgentPrompt(userInput: string, chatHistory: BaseMessage[
       - queryRAG(query): DEPRECATED (maps to kb_query).
       - writeNote(text): Append to daily journal.
       - capture(text), schedule(time, text)
+      - completeInboxItem(identifier): Mark an inbox item as done/archived. 'identifier' is the task text.
       - list_scheduled_tasks(): Returns an array of formatted strings (e.g. "ID: ... | Time: ...").
       - delete_scheduled_task(id): Delete a scheduled task by ID.
       - toggle_scheduled_task(id, active): Enable/Disable a task (boolean active).
