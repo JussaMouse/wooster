@@ -716,7 +716,40 @@ Enter code: `;
     }
     const viewInboxItemsToolInstance = new ViewInboxItemsTool(this);
 
-    return [sortInboxTool, addWaitingForItemTool, viewWaitingForItemsToolInstance, viewInboxItemsToolInstance];
+    const completeInboxItemTool = new DynamicTool({
+      name: "completeInboxItem",
+      description: "Marks an item in the inbox as complete (done) and archives it. This removes it from the active inbox. Input must be a JSON string with a single key 'identifier' which is the text (or part of the text) of the inbox item to complete.",
+      func: async (jsonInput: string) => {
+        this.logMsg(LogLevel.DEBUG, "completeInboxItemTool executed", { jsonInput });
+        try {
+            let identifier: string;
+            try {
+                const parsed = JSON.parse(jsonInput);
+                identifier = parsed.identifier;
+            } catch {
+                identifier = jsonInput; // Fallback if agent sends raw string
+            }
+
+            if (!identifier) return "Error: No identifier provided.";
+
+            const items = await this.readInboxItems();
+            // Find item matching identifier (fuzzy match on description or exact on rawText)
+            const item = items.find(i => i.description.toLowerCase().includes(identifier.toLowerCase()) || i.rawText.includes(identifier));
+            
+            if (!item) {
+                return `Item matching '${identifier}' not found in inbox.`;
+            }
+            this.archiveInboxItem(item);
+            this.removeLineFromFile(this.inboxFilePath, item.rawText);
+            return `Item '${item.description}' marked as complete and archived.`;
+        } catch (e: any) {
+            this.logMsg(LogLevel.ERROR, "Error in completeInboxItemTool", { error: e.message });
+            return `Error completing item: ${e.message}`;
+        }
+      }
+    });
+
+    return [sortInboxTool, addWaitingForItemTool, viewWaitingForItemsToolInstance, viewInboxItemsToolInstance, completeInboxItemTool];
   }
 }
 
