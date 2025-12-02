@@ -189,7 +189,7 @@ If your plugin isn't loading or you see warnings in the console:
 6.  **Configuration:**
     *   Ensure your plugin is enabled. Wooster automatically checks for an environment variable named `PLUGIN_YOURPLUGINNAME_ENABLED` (case-insensitive).
     *   For example, if your plugin name is `myPlugin`, adding `PLUGIN_MYPLUGIN_ENABLED=true` to `.env` will enable it.
-    *   For *other* configuration settings (like API keys), you **must** still map them in `config/custom-environment-variables.json`.
+    *   For *other* configuration settings (like API keys), you should define them in `src/configLoader.ts` and read them from environment variables directly.
 7.  **Dependency and Linter Checks (Recap from above):**
     *   Are all necessary npm packages, including LangChain modules and any peer dependencies (like `faiss-node` for `FaissStore`), installed correctly?
     *   Is your ESLint configuration (`eslint.config.js`) set up correctly for TypeScript, and are there any linting errors related to your plugin's imports or code? Run `pnpm eslint .` to check.
