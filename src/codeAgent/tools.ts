@@ -4,7 +4,7 @@ import { scheduleAgentTask } from '../schedulerTool';
 import { SchedulerService } from '../scheduler/schedulerService';
 import { TavilySearch } from '@langchain/tavily';
 import { AppConfig, getConfig } from '../configLoader';
-import { getRegisteredService } from '../pluginManager';
+import { getRegisteredService, getPluginAgentTools } from '../pluginManager';
 import * as fsPromises from 'fs/promises';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -104,7 +104,7 @@ export function createToolApi() {
     return s.slice(0, 2) + '***' + s.slice(-2);
   };
 
-  return {
+  const api: any = {
     webSearch: async (query: string) => {
       log(LogLevel.INFO, `[CodeAgent] webSearch called with: ${query}`);
       if (!tavilySearch) {
@@ -490,4 +490,37 @@ tags: ${JSON.stringify(tags)}
       }
     },
   };
+
+  // Inject plugin tools
+  const pluginTools = getPluginAgentTools();
+  for (const tool of pluginTools) {
+    // Avoid overwriting existing tools
+    if (!api[tool.name]) {
+        api[tool.name] = async (input: any) => {
+            log(LogLevel.INFO, `[CodeAgent] Plugin tool ${tool.name} called.`);
+            try {
+                // DynamicTool logic
+                if (typeof (tool as any).func === 'function') {
+                    let arg = input;
+                    if (typeof input === 'object' && input !== null) {
+                        arg = JSON.stringify(input);
+                    }
+                    return await (tool as any).func(arg);
+                } 
+                // StructuredTool logic
+                if (typeof (tool as any)._call === 'function') {
+                     return await (tool as any)._call(input);
+                }
+                return `Error: Tool ${tool.name} is not a valid DynamicTool or StructuredTool.`;
+            } catch (e: any) {
+                log(LogLevel.ERROR, `[CodeAgent] Plugin tool ${tool.name} failed`, { error: e });
+                return `Error executing tool ${tool.name}: ${e.message}`;
+            }
+        };
+    } else {
+        log(LogLevel.WARN, `[CodeAgent] Plugin tool conflict: ${tool.name} is already defined. Skipping.`);
+    }
+  }
+
+  return api;
 }
