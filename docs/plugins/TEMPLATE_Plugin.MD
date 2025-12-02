@@ -32,7 +32,7 @@ For the `[PluginName]` to function correctly and provide its tools, it needs to 
 -   **`PLUGIN_[PLUGINNAME_UPPERCASE]_ENABLED`**: This variable controls whether the `[PluginName]` itself is loaded by Wooster (e.g., `PLUGIN_MYCOOLPLUGIN_ENABLED`).
     -   Set to `true` (or omit, as plugins are enabled by default if found) to activate the plugin.
     -   Set to `false` to disable the plugin. If disabled, its tools will not be available, regardless of other settings.
-    -   *Reference*: See `06 CONFIG.MD` (section "Plugin Activation") for general plugin management.
+    -   *Reference*: See `docs/config.md` (section "Plugin Activation") for general plugin management.
 
 ### 3.2. [Service/Tool] Functionality & Credentials
 
@@ -56,7 +56,7 @@ Describe the specific environment variables needed for this plugin's tools to fu
     -   **Description**: [Explain purpose]
     -   **Required**: [Yes/No/If applicable]
 
-*Reference*: See the individual `docs/tools/TOOL_[ToolName].MD` files and `06 CONFIG.MD` for comprehensive details on all related settings.
+*Reference*: See the individual `docs/tools/TOOL_[ToolName].MD` files and `docs/config.md` for comprehensive details on all related settings.
 
 ## 4. Initialization
 

@@ -26,6 +26,8 @@ The final configuration object is built by merging settings from different sourc
 1.  `config/default.json` (Lowest priority, contains defaults)
 2.  `config/custom-environment-variables.json` & your `.env` file (Highest priority, contains your specific settings)
 
+**Special Exception for Plugins:** For plugin enablement *only*, Wooster automatically checks for `PLUGIN_<NAME>_ENABLED` in your environment, even if it's not mapped in `custom-environment-variables.json`. This simplifies adding new plugins. All other plugin settings (keys, ports, etc.) must still be mapped normally.
+
 This hierarchy ensures that any setting you specify in your `.env` file will always take precedence, giving you full control over the application's behavior.
 
 ## 4. Best Practices

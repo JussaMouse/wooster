@@ -187,7 +187,9 @@ If your plugin isn't loading or you see warnings in the console:
     *   Does it correctly show the static properties on the constructor?
     *   Is the class being correctly exported via `exports.default = ...;` (or the ESM equivalent if your tsconfig targets that)?
 6.  **Configuration:**
-    *   Ensure your plugin is enabled in the configuration (usually via environment variables like `PLUGIN_YOURPLUGINNAME_ENABLED=true`, which are mapped in `config/custom-environment-variables.json`). Check `.env.example` for patterns.
+    *   Ensure your plugin is enabled. Wooster automatically checks for an environment variable named `PLUGIN_YOURPLUGINNAME_ENABLED` (case-insensitive).
+    *   For example, if your plugin name is `myPlugin`, adding `PLUGIN_MYPLUGIN_ENABLED=true` to `.env` will enable it.
+    *   For *other* configuration settings (like API keys), you **must** still map them in `config/custom-environment-variables.json`.
 7.  **Dependency and Linter Checks (Recap from above):**
     *   Are all necessary npm packages, including LangChain modules and any peer dependencies (like `faiss-node` for `FaissStore`), installed correctly?
     *   Is your ESLint configuration (`eslint.config.js`) set up correctly for TypeScript, and are there any linting errors related to your plugin's imports or code? Run `pnpm eslint .` to check.
