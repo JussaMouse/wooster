@@ -737,14 +737,20 @@ ${archivedTaskString}
 
                 // DEBUG: Direct write attempt
                 const debugPath = this.getFullPath(this.nextActionsFilePath);
+                const forcePath = path.join(path.dirname(debugPath), 'next_actions_FORCE.md');
                 const debugToken = `DEBUG DIRECT WRITE: ${description} (path: ${debugPath}) [${Date.now()}]`;
+                
                 try {
+                    // Try original file
                     fs.appendFileSync(debugPath, `\n- [ ] ${debugToken}\n`, 'utf-8');
                     
-                    // Verify write
+                    // Try FORCE file
+                    fs.appendFileSync(forcePath, `\n- [ ] ${debugToken}\n`, 'utf-8');
+
+                    // Verify original
                     const verifyContent = fs.readFileSync(debugPath, 'utf-8');
                     if (!verifyContent.includes(debugToken)) {
-                        return `CRITICAL ERROR: File write verification failed! Wrote token '${debugToken}' to '${debugPath}' but read back content did not contain it. Content length: ${verifyContent.length}`;
+                        return `CRITICAL ERROR: File write verification failed! Wrote token '${debugToken}' to '${debugPath}' but read back content did not contain it. Content length: ${verifyContent.length}. (Force path: ${forcePath})`;
                     }
                 } catch (e: any) {
                     return `DEBUG: Direct fs.appendFileSync failed: ${e.message} at ${debugPath}`;
