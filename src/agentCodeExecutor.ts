@@ -243,6 +243,7 @@ export async function executeCodeAgent(
       continue;
     }
     logCodeAgentInteraction({ event: 'code_extracted', details: { code } });
+    log(LogLevel.INFO, `[CodeAgent] Executing code:\n${code}`); // Force visibility
 
     const sandbox = new CodeSandbox(stepTimeoutMs, totalTimeoutMs);
     const toolApi = createToolApi();

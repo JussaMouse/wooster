@@ -737,8 +737,15 @@ ${archivedTaskString}
 
                 // DEBUG: Direct write attempt
                 const debugPath = this.getFullPath(this.nextActionsFilePath);
+                const debugToken = `DEBUG DIRECT WRITE: ${description} (path: ${debugPath}) [${Date.now()}]`;
                 try {
-                    fs.appendFileSync(debugPath, `\n- [ ] DEBUG DIRECT WRITE: ${description} (path: ${debugPath})\n`, 'utf-8');
+                    fs.appendFileSync(debugPath, `\n- [ ] ${debugToken}\n`, 'utf-8');
+                    
+                    // Verify write
+                    const verifyContent = fs.readFileSync(debugPath, 'utf-8');
+                    if (!verifyContent.includes(debugToken)) {
+                        return `CRITICAL ERROR: File write verification failed! Wrote token '${debugToken}' to '${debugPath}' but read back content did not contain it. Content length: ${verifyContent.length}`;
+                    }
                 } catch (e: any) {
                     return `DEBUG: Direct fs.appendFileSync failed: ${e.message} at ${debugPath}`;
                 }
