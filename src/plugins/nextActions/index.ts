@@ -152,6 +152,7 @@ class NextActionsPluginDefinition implements WoosterPlugin {
 
   private async readNextActionsFromFile(): Promise<TaskItem[]> {
     const fullPath = this.getFullPath(this.nextActionsFilePath);
+    this.logMsg(LogLevel.DEBUG, `Reading Next Actions from: ${fullPath}`);
     if (!fs.existsSync(fullPath)) {
       this.logMsg(LogLevel.INFO, `Next Actions file not found at ${fullPath}. Returning empty list.`);
       return [];
@@ -171,6 +172,7 @@ class NextActionsPluginDefinition implements WoosterPlugin {
 
   private async writeNextActionsToFile(tasks: TaskItem[]): Promise<void> {
     const fullPath = this.getFullPath(this.nextActionsFilePath);
+    this.logMsg(LogLevel.DEBUG, `Writing ${tasks.length} tasks to: ${fullPath}`);
     const lines = tasks.map(task => TaskParser.serialize(task));
     fs.writeFileSync(fullPath, lines.join('\n') + '\n', 'utf-8'); // Add trailing newline
   }
@@ -678,7 +680,7 @@ ${archivedTaskString}
   getAgentTools?(): DynamicTool[] {
     const viewNextActionsTool = new DynamicTool({
       name: "viewNextActions",
-      description: "Views current next actions. This tool expects to be called with an object, which should contain a single key: 'input'. The value for the 'input' key must be a JSON string defining filters and/or sortOptions. To provide NO filters or sort options, the 'input' key's value should be an empty string (e.g., { input: '' }) or the 'input' key can be omitted entirely. The JSON string, if provided and not empty, should represent an object like: { filters?: NextActionFilters, sortOptions?: NextActionSortOptions }. Filters include context, project, dueDate ('today', 'tomorrow', 'YYYY-MM-DD'), status ('all', 'open', 'completed'). SortBy can be 'fileOrder', 'dueDate', 'project', 'context'. sortOrder can be 'asc' or 'desc'. Example for 'input' with filters: '{\"filters\": {\"context\": \"@work\"}}'. Example for 'input' with no options: ''",
+      description: "Views current next actions. Returns a formatted text string (bulleted list), NOT a JSON array. This tool expects to be called with an object, which should contain a single key: 'input'. The value for the 'input' key must be a JSON string defining filters and/or sortOptions. To provide NO filters or sort options, the 'input' key's value should be an empty string (e.g., { input: '' }) or the 'input' key can be omitted entirely. The JSON string, if provided and not empty, should represent an object like: { filters?: NextActionFilters, sortOptions?: NextActionSortOptions }. Filters include context, project, dueDate ('today', 'tomorrow', 'YYYY-MM-DD'), status ('all', 'open', 'completed'). SortBy can be 'fileOrder', 'dueDate', 'project', 'context'. sortOrder can be 'asc' or 'desc'. Example for 'input' with filters: '{\"filters\": {\"context\": \"@work\"}}'. Example for 'input' with no options: ''",
       func: async (jsonInput?: string) => {
         this.logMsg(LogLevel.DEBUG, "viewNextActionsTool executed", { receivedRawInput: jsonInput });
 
