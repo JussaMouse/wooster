@@ -89,8 +89,8 @@ async function classifyToolNeed(prompt: string): Promise<'NONE' | 'TOOLS'> {
   // Heuristic fast-path: if the user explicitly asks to send via Signal, force tools
   const p = (prompt || '').toLowerCase();
   
-  // Force tools for signal, library, search, notes
-  if (/(\bsendsignal\b|\bsignal_notify\b|send\s+via\s+signal|via\s+signal|signal\s+message|search\s+library|search\s+notes|my\s+notes|recall|what\s+does\s+.*mean)/.test(p)) {
+  // Force tools for signal, library, search, notes, tasks, schedule
+  if (/(\bsendsignal\b|\bsignal_notify\b|send\s+via\s+signal|via\s+signal|signal\s+message|search\s+library|search\s+notes|my\s+notes|recall|what\s+does\s+.*mean|next\s+action|add\s+task|new\s+task|todo|remind\s+me|schedule|capture)/i.test(p)) {
     return 'TOOLS';
   }
 
