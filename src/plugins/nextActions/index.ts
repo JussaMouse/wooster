@@ -172,14 +172,13 @@ class NextActionsPluginDefinition implements WoosterPlugin {
 
   private async writeNextActionsToFile(tasks: TaskItem[]): Promise<void> {
     const fullPath = this.getFullPath(this.nextActionsFilePath);
-    this.logMsg(LogLevel.INFO, `[DEBUG] Writing ${tasks.length} tasks to: ${fullPath}`);
-    console.log(`[NATIVE_LOG] Writing to ${fullPath}`); // Fallback in case logger is filtered
+    console.error(`[DEBUG_STDERR] Writing ${tasks.length} tasks to: ${fullPath}`);
     const lines = tasks.map(task => TaskParser.serialize(task));
     try {
         fs.writeFileSync(fullPath, lines.join('\n') + '\n', 'utf-8'); // Add trailing newline
-        this.logMsg(LogLevel.INFO, `[DEBUG] Write complete.`);
+        console.error(`[DEBUG_STDERR] Write complete. Check file content now.`);
     } catch (e: any) {
-        this.logMsg(LogLevel.ERROR, `[DEBUG] Write FAILED: ${e.message}`);
+        console.error(`[DEBUG_STDERR] Write FAILED: ${e.message}`);
         throw e;
     }
   }
@@ -735,6 +734,15 @@ ${archivedTaskString}
             try {
                 const { description, context, project, dueDate } = JSON.parse(jsonInput);
                 if (!description) return "Error: description is required.";
+
+                // DEBUG: Direct write attempt
+                const debugPath = this.getFullPath(this.nextActionsFilePath);
+                try {
+                    fs.appendFileSync(debugPath, `\n- [ ] DEBUG DIRECT WRITE: ${description} (path: ${debugPath})\n`, 'utf-8');
+                } catch (e: any) {
+                    return `DEBUG: Direct fs.appendFileSync failed: ${e.message} at ${debugPath}`;
+                }
+
                 const addedTask = await this.addTask(description, context, project, dueDate);
                 // Provide a more descriptive success message
                 let response = `Task "${addedTask.description}" added successfully.`;
