@@ -152,7 +152,6 @@ class NextActionsPluginDefinition implements WoosterPlugin {
 
   private async readNextActionsFromFile(): Promise<TaskItem[]> {
     const fullPath = this.getFullPath(this.nextActionsFilePath);
-    this.logMsg(LogLevel.INFO, `[DEBUG] Reading Next Actions from: ${fullPath}`);
     if (!fs.existsSync(fullPath)) {
       this.logMsg(LogLevel.INFO, `Next Actions file not found at ${fullPath}. Returning empty list.`);
       return [];
@@ -172,15 +171,8 @@ class NextActionsPluginDefinition implements WoosterPlugin {
 
   private async writeNextActionsToFile(tasks: TaskItem[]): Promise<void> {
     const fullPath = this.getFullPath(this.nextActionsFilePath);
-    console.error(`[DEBUG_STDERR] Writing ${tasks.length} tasks to: ${fullPath}`);
     const lines = tasks.map(task => TaskParser.serialize(task));
-    try {
-        fs.writeFileSync(fullPath, lines.join('\n') + '\n', 'utf-8'); // Add trailing newline
-        console.error(`[DEBUG_STDERR] Write complete. Check file content now.`);
-    } catch (e: any) {
-        console.error(`[DEBUG_STDERR] Write FAILED: ${e.message}`);
-        throw e;
-    }
+    fs.writeFileSync(fullPath, lines.join('\n') + '\n', 'utf-8'); // Add trailing newline
   }
   
   private prependContextIfNeeded(description: string, context?: string | null): string {
@@ -711,7 +703,7 @@ ${archivedTaskString}
             const totalTasks = tasks.length;
 
             if (totalTasks === 0) {
-                return `No next actions found matching criteria in ${this.getFullPath(this.nextActionsFilePath)}.`;
+                return "No next actions found matching criteria.";
             }
             
             const responseLines: string[] = [`Current Next Actions (${totalTasks} task${totalTasks === 1 ? '' : 's'}):`];
@@ -754,27 +746,6 @@ ${archivedTaskString}
 
                 if (!description) return "Error: description is required. (Input parsed as: " + JSON.stringify(parsed) + ")";
 
-                // DEBUG: Direct write attempt
-                const debugPath = this.getFullPath(this.nextActionsFilePath);
-                const forcePath = path.join(path.dirname(debugPath), 'next_actions_FORCE.md');
-                const debugToken = `DEBUG DIRECT WRITE: ${description} (path: ${debugPath}) [${Date.now()}]`;
-                
-                try {
-                    // Try original file
-                    fs.appendFileSync(debugPath, `\n- [ ] ${debugToken}\n`, 'utf-8');
-                    
-                    // Try FORCE file
-                    fs.appendFileSync(forcePath, `\n- [ ] ${debugToken}\n`, 'utf-8');
-
-                    // Verify original
-                    const verifyContent = fs.readFileSync(debugPath, 'utf-8');
-                    if (!verifyContent.includes(debugToken)) {
-                        return `CRITICAL ERROR: File write verification failed! Wrote token '${debugToken}' to '${debugPath}' but read back content did not contain it. Content length: ${verifyContent.length}. (Force path: ${forcePath})`;
-                    }
-                } catch (e: any) {
-                    return `DEBUG: Direct fs.appendFileSync failed: ${e.message} at ${debugPath}`;
-                }
-
                 const addedTask = await this.addTask(description, context, project, dueDate);
                 // Provide a more descriptive success message
                 let response = `Task "${addedTask.description}" added successfully.`;
@@ -789,8 +760,6 @@ ${archivedTaskString}
                 if (addedTask.dueDate) {
                     response += ` Due: ${addedTask.dueDate}.`;
                 }
-                response += ` [File: ${this.getFullPath(this.nextActionsFilePath)}]`;
-                response += ` [V2_STAMP]`;
                 return response;
             } catch (e: any) {
                 this.logMsg(LogLevel.ERROR, "Error in addNextActionTool", { error: e.message, jsonInput });
@@ -847,50 +816,11 @@ ${archivedTaskString}
       name: "debug_filesystem",
       description: "Debug tool to check filesystem state. Returns diagnostics.",
       func: async () => {
-        const version = "DEBUG_V2_TIMESTAMP_" + Date.now();
-        try {
-            const cwd = process.cwd();
-            const fullPath = this.getFullPath(this.nextActionsFilePath);
-            const targetDir = path.dirname(fullPath);
-            
-            let result = `[${version}] Filesystem Diagnostics:\n`;
-            result += `CWD: ${cwd}\nTarget File: ${fullPath}\nTarget Dir: ${targetDir}\n`;
-            
-            if (fs.existsSync(targetDir)) {
-                const files = fs.readdirSync(targetDir);
-                result += `Files in dir: ${files.join(', ')}\n`;
-            } else {
-                result += `Target dir does not exist! Creating...\n`;
-                fs.mkdirSync(targetDir, { recursive: true });
-                result += `Created dir.\n`;
-            }
-            
-            const testFile = path.join(targetDir, 'wooster_debug_write.txt');
-            fs.writeFileSync(testFile, `test write at ${new Date().toISOString()}`, 'utf-8');
-            result += `Write test to ${testFile}: Success\n`;
-            result += `Exists after write? ${fs.existsSync(testFile)}\n`;
-            
-            // Check next_actions.md specifically
-            result += `next_actions.md exists? ${fs.existsSync(fullPath)}\n`;
-            if (fs.existsSync(fullPath)) {
-                const content = fs.readFileSync(fullPath, 'utf-8');
-                result += `next_actions.md content length: ${content.length} chars\n`;
-                result += `next_actions.md line count: ${content.split('\n').length}\n`;
-                result += `next_actions.md preview: ${content.slice(0, 50)}...\n`;
-            } else {
-                result += `next_actions.md MISSING. Attempting creation...\n`;
-                fs.writeFileSync(fullPath, `# Next Actions\n`, 'utf-8');
-                result += `Created next_actions.md. Exists now? ${fs.existsSync(fullPath)}\n`;
-            }
-
-            return result;
-        } catch (e: any) {
-            return `Debug Error (${version}): ${e.message}\nStack: ${e.stack}`;
-        }
+        return "Debug tool removed.";
       }
     });
 
-    return [viewNextActionsTool, addNextActionTool, completeNextActionTool, editNextActionTool, debugFilesystemTool];
+    return [viewNextActionsTool, addNextActionTool, completeNextActionTool, editNextActionTool];
   }
 
   // --- Interactive Mode ---
