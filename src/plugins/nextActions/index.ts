@@ -758,6 +758,7 @@ ${archivedTaskString}
                     response += ` Due: ${addedTask.dueDate}.`;
                 }
                 response += ` [File: ${this.getFullPath(this.nextActionsFilePath)}]`;
+                response += ` [V2_STAMP]`;
                 return response;
             } catch (e: any) {
                 this.logMsg(LogLevel.ERROR, "Error in addNextActionTool", { error: e.message, jsonInput });
@@ -814,12 +815,14 @@ ${archivedTaskString}
       name: "debug_filesystem",
       description: "Debug tool to check filesystem state. Returns diagnostics.",
       func: async () => {
+        const version = "DEBUG_V2_TIMESTAMP_" + Date.now();
         try {
             const cwd = process.cwd();
             const fullPath = this.getFullPath(this.nextActionsFilePath);
             const targetDir = path.dirname(fullPath);
             
-            let result = `CWD: ${cwd}\nTarget File: ${fullPath}\nTarget Dir: ${targetDir}\n`;
+            let result = `[${version}] Filesystem Diagnostics:\n`;
+            result += `CWD: ${cwd}\nTarget File: ${fullPath}\nTarget Dir: ${targetDir}\n`;
             
             if (fs.existsSync(targetDir)) {
                 const files = fs.readdirSync(targetDir);
@@ -841,6 +844,7 @@ ${archivedTaskString}
                 const content = fs.readFileSync(fullPath, 'utf-8');
                 result += `next_actions.md content length: ${content.length} chars\n`;
                 result += `next_actions.md line count: ${content.split('\n').length}\n`;
+                result += `next_actions.md preview: ${content.slice(0, 50)}...\n`;
             } else {
                 result += `next_actions.md MISSING. Attempting creation...\n`;
                 fs.writeFileSync(fullPath, `# Next Actions\n`, 'utf-8');
@@ -849,7 +853,7 @@ ${archivedTaskString}
 
             return result;
         } catch (e: any) {
-            return `Debug Error: ${e.message}\nStack: ${e.stack}`;
+            return `Debug Error (${version}): ${e.message}\nStack: ${e.stack}`;
         }
       }
     });
