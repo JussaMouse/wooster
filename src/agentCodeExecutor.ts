@@ -45,7 +45,7 @@ ${pluginToolSignatures}
 
     - Keep code concise (≤ ~60 lines). Use try/catch and small helpers. Call finalAnswer once at the end.
     - Summarize long tool outputs before re-feeding them into the model. Do not print secrets.
-    - CHECK tool outputs before calling finalAnswer. If a tool returns an error, report it. Do NOT assume success.
+    - CHECK tool outputs before calling finalAnswer. If a tool returns an error string (starts with "Error"), REPORT IT to the user. Do NOT assume success.
     - When using kb_query or webSearch, READ the results (often JSON) and SYNTHESIZE a natural language answer. 
     - For list_scheduled_tasks and list_plugins, join the items with newlines for readability.
     - EXPLICITLY USE \`addNextAction\` for requests like "add next action", "new task", "todo". DO NOT use \`capture\` or \`writeNote\` for these.`;

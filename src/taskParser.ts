@@ -6,7 +6,7 @@ export class TaskParser {
   // It aims to be flexible and capture known parts, leaving the core description.
   // 1: Checkbox part (e.g., "- [ ]" or "- [x]")
   // 2: The rest of the line after the checkbox.
-  private static taskLineRegex = /^(?:-\s*\[\s*(x|\s)\]\s+)(.*)$/i;
+  private static taskLineRegex = /^(?:-\s*\[\s*(x|\s)\]\s*)(.*)$/i;
 
   // Regexes for specific metadata components
   private static idRegex = /\(id:\s*([a-f0-9\-]+)\)/i; // Regex for (id: UUID)
