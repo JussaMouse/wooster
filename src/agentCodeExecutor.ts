@@ -48,7 +48,7 @@ ${pluginToolSignatures}
     - CHECK tool outputs before calling finalAnswer. If a tool returns an error, report it. Do NOT assume success.
     - When using kb_query or webSearch, READ the results (often JSON) and SYNTHESIZE a natural language answer. 
     - For list_scheduled_tasks and list_plugins, join the items with newlines for readability.
-    - If user asks to "add next action", "add task", or "todo", USE \`addNextAction\` tool. Do not use \`writeNote\`.`;
+    - EXPLICITLY USE \`addNextAction\` for requests like "add next action", "new task", "todo". DO NOT use \`capture\` or \`writeNote\` for these.`;
 
     const fewShotExamples = `
     // Example 1: Web search and summarize
