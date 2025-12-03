@@ -155,17 +155,26 @@ Some LangChain modules depend on packages with native bindings (e.g., those that
 
 If you add a plugin that brings in a new native dependency, be aware that it may complicate the setup for users on different operating systems. Always prefer pure JavaScript or TypeScript libraries where possible.
 
-### Common Troubleshooting
+## Best Practices for Agent Tools
 
-*   **Plugin Not Loading:**
-    *   Check the Wooster startup logs for any errors related to your plugin.
-    *   Did you add a `default` export for your plugin class?
-*   **Tool Not Appearing:**
-    *   Ensure your `getAgentTools()` method correctly returns an array of `DynamicTool` instances.
-    *   Check for conflicting tool names. Wooster will log a warning if your tool name conflicts with a core tool or another plugin's tool.
-*   **Type Errors during Build (`tsc`):**
-    *   Are all necessary npm packages, including LangChain modules, installed correctly?
-    *   Have you added any new dependencies to `package.json`? Run `pnpm install`.
+Creating tools for the Code Agent requires specific attention to robustness and format.
+
+### 1. Robustness & Input Aliasing
+Agents (especially local 14B/7B models) often hallucinate property names or formats.
+-   **Massive Aliasing:** If your tool expects a JSON object, support multiple common property names for the same field.
+    -   *Example:* Support `title`, `description`, `text`, `body`, `content` all mapping to the main text content.
+-   **Input Unwrapping:** Agents might double-stringify JSON inputs. Always try to parse if the input is a string.
+
+### 2. Return Types
+-   **Prefer Primitive/Raw Data:** Return `string[]` or `Object[]` rather than pre-formatted strings (e.g., bulleted lists). The Code Agent is designed to process data (filter, sort, format) using JavaScript code.
+-   **Explicit Descriptions:** In your tool's description, explicitly state the return type (e.g., "(returns string[])"). This prevents the Agent from trying to call `.map()` on a string.
+
+### 3. State & Filesystem Safety
+-   **Never Assume Existence:** Always use `ensureDir` or `mkdir({ recursive: true })` before writing files.
+-   **Verify Writes:** Don't just rely on `fs.writeFileSync` succeeding. Check if the file exists afterwards if critical.
+
+### 4. Sandbox Injection
+-   Plugin tools are dynamically injected into the `isolated-vm` sandbox. This is handled by `src/codeAgent/tools.ts`. Ensure your tools function correctly in a strict environment (no access to global `process` or arbitrary `fs` without going through the provided API shim).
 
 ## Troubleshooting Plugin Loading
 
@@ -194,4 +203,4 @@ If your plugin isn't loading or you see warnings in the console:
     *   Are all necessary npm packages, including LangChain modules and any peer dependencies (like `faiss-node` for `FaissStore`), installed correctly?
     *   Is your ESLint configuration (`eslint.config.js`) set up correctly for TypeScript, and are there any linting errors related to your plugin's imports or code? Run `pnpm eslint .` to check.
 
-By following these guidelines, you can create robust and well-integrated plugins for Wooster. 
+By following these guidelines, you can create robust and well-integrated plugins for Wooster.

@@ -59,6 +59,23 @@ Notes:
 - Code‑heavy: Qwen2.5‑Coder‑7B/14B Instruct.
 - Fallback (cloud): GPT‑4o / Claude 3.5 Sonnet for hard queries.
 
+### Prompt Engineering & Debugging
+
+Lessons learned from real-world deployment with local models:
+
+#### 1. Explicit Instructions > Implicit Intent
+Local models can easily get confused or fall back to generic behaviors (e.g., "search" triggering web search instead of library search).
+-   **Negative Constraints:** Use "Do NOT use X for Y" (e.g., "Do NOT use `writeNote` for adding tasks").
+-   **Explicit Mapping:** "If user asks X, USE tool Y."
+
+#### 2. Handling Hallucinations
+-   **Input Validation:** Models may invent parameters (e.g., `scope` in `kb_query`). Tools must validate and normalize inputs.
+-   **Code Fallback:** If the classifier says "No Tool Needed" but the model outputs code anyway, execute it. This handles models that "over-think" or disregard instructions to be conversational.
+
+#### 3. Debugging "Silent Failures"
+-   **Log Generated Code:** Always log the *actual* code the agent generated (`[CodeAgent] Executing code:...`). This is the single most useful debug signal.
+-   **Check Tool Selection:** Often a "failure to write" is actually "wrote to the wrong place" because the agent chose `capture` instead of `addNextAction`.
+
 ### Troubleshooting
 - `await is only valid ...` → Ensure sandbox wraps code in an async IIFE.
 - `webSearch is not defined` → Verify Tool API injection and shims.
@@ -78,5 +95,3 @@ Notes:
 - Keep “answer‑first” policy as the outer guard.
 - Swap function‑calling for code emission; reuse existing plugin tools via the JS Tool API.
 - Start with a tiny catalog (search, RAG, write, notify). Expand after safety and stability.
-
-
