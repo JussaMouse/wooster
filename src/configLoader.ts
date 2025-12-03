@@ -254,7 +254,7 @@ function buildConfigFromEnv() {
       nextActionsArchiveDirPath: './gtd/archive/nextActions',
       inboxPath: './gtd/inbox.md',
       nextActionsPath: './gtd/next_actions.md',
-      nextActionsViewFormat: 'list',
+      nextActionsViewFormat: undefined, // Let plugin use its default
       somedayMaybePath: './gtd/someday_maybe.md',
       waitingForPath: './gtd/waiting_for.md'
     },

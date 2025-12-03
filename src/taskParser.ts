@@ -40,7 +40,7 @@ export class TaskParser {
     // Attempt to extract a persistent ID first
     const idMatch = descriptionContent.match(this.idRegex);
     if (idMatch) {
-      id = idMatch[2]; // Group 2 is the UUID itself
+      id = idMatch[1]; // Group 1 is the UUID itself
       descriptionContent = descriptionContent.replace(this.idRegex, '').trim();
     }
 
