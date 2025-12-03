@@ -749,7 +749,77 @@ Enter code: `;
       }
     });
 
-    return [sortInboxTool, addWaitingForItemTool, viewWaitingForItemsToolInstance, viewInboxItemsToolInstance, completeInboxItemTool];
+    const moveInboxItemTool = new DynamicTool({
+        name: "moveInboxItem",
+        description: "Moves an item from the inbox to another list (Next Actions, Waiting For, or Someday/Maybe). This automatically archives the item from the inbox. Input must be a JSON string with keys: 'identifier' (string, required: text or ID of item), 'destination' (string, required: 'next_actions', 'waiting_for', or 'someday_maybe'), and optional 'details' (string: e.g., context/project for next action, or person waiting for).",
+        func: async (jsonInput: string) => {
+            this.logMsg(LogLevel.DEBUG, "moveInboxItemTool executed", { jsonInput });
+            try {
+                let identifier: string;
+                let destination: string;
+                let details: string | undefined;
+                
+                try {
+                    const parsed = JSON.parse(jsonInput);
+                    identifier = parsed.identifier;
+                    destination = parsed.destination;
+                    details = parsed.details;
+                } catch {
+                    return "Error: Invalid JSON input. Please provide 'identifier' and 'destination'.";
+                }
+
+                if (!identifier) return "Error: No identifier provided.";
+                if (!destination) return "Error: No destination provided.";
+
+                const items = await this.readInboxItems();
+                const item = items.find(i => i.description.toLowerCase().includes(identifier.toLowerCase()) || i.rawText.includes(identifier));
+
+                if (!item) {
+                    return `Item matching '${identifier}' not found in inbox.`;
+                }
+
+                const timestamp = item.timestamp || new Date().toISOString();
+                let successMsg = "";
+
+                switch (destination.toLowerCase()) {
+                    case 'next_actions':
+                    case 'next':
+                    case 'nextaction':
+                    case 'next_action':
+                        const taskLine = `- [ ] ${this.prependContextIfNeeded(item.description)}${details ? ' ' + details : ''} (Captured: ${timestamp})`;
+                        this.appendToMdFile(this.nextActionsFilePath, taskLine);
+                        successMsg = `Moved '${item.description}' to Next Actions.`;
+                        break;
+                    case 'waiting_for':
+                    case 'waiting':
+                    case 'wait':
+                        const waitingLine = `- [ ] ${item.description} - Waiting For: ${details || '???'} (Logged: ${new Date().toISOString().split('T')[0]}, Captured: ${timestamp})`;
+                        this.appendToMdFile(this.waitingForFilePath, waitingLine);
+                        successMsg = `Moved '${item.description}' to Waiting For.`;
+                        break;
+                    case 'someday_maybe':
+                    case 'someday':
+                    case 'maybe':
+                        const somedayLine = `- [ ] ${item.description} (Captured: ${timestamp})`;
+                        this.appendToMdFile(this.somedayMaybeFilePath, somedayLine);
+                        successMsg = `Moved '${item.description}' to Someday/Maybe.`;
+                        break;
+                    default:
+                        return `Error: Unknown destination '${destination}'. Use 'next_actions', 'waiting_for', or 'someday_maybe'.`;
+                }
+
+                this.archiveInboxItem(item);
+                this.removeLineFromFile(this.inboxFilePath, item.rawText);
+                return successMsg;
+
+            } catch (e: any) {
+                this.logMsg(LogLevel.ERROR, "Error in moveInboxItemTool", { error: e.message });
+                return `Error moving item: ${e.message}`;
+            }
+        }
+    });
+
+    return [sortInboxTool, addWaitingForItemTool, viewWaitingForItemsToolInstance, viewInboxItemsToolInstance, completeInboxItemTool, moveInboxItemTool];
   }
 }
 
