@@ -794,7 +794,47 @@ ${archivedTaskString}
       },
     });
 
-    return [viewNextActionsTool, addNextActionTool, completeNextActionTool, editNextActionTool];
+    const debugFilesystemTool = new DynamicTool({
+      name: "debug_filesystem",
+      description: "Debug tool to check filesystem state. Returns diagnostics.",
+      func: async () => {
+        try {
+            const cwd = process.cwd();
+            const fullPath = this.getFullPath(this.nextActionsFilePath);
+            const targetDir = path.dirname(fullPath);
+            
+            let result = `CWD: ${cwd}\nTarget File: ${fullPath}\nTarget Dir: ${targetDir}\n`;
+            
+            if (fs.existsSync(targetDir)) {
+                const files = fs.readdirSync(targetDir);
+                result += `Files in dir: ${files.join(', ')}\n`;
+            } else {
+                result += `Target dir does not exist! Creating...\n`;
+                fs.mkdirSync(targetDir, { recursive: true });
+                result += `Created dir.\n`;
+            }
+            
+            const testFile = path.join(targetDir, 'wooster_debug_write.txt');
+            fs.writeFileSync(testFile, `test write at ${new Date().toISOString()}`, 'utf-8');
+            result += `Write test to ${testFile}: Success\n`;
+            result += `Exists after write? ${fs.existsSync(testFile)}\n`;
+            
+            // Check next_actions.md specifically
+            result += `next_actions.md exists? ${fs.existsSync(fullPath)}\n`;
+            if (fs.existsSync(fullPath)) {
+                const content = fs.readFileSync(fullPath, 'utf-8');
+                result += `next_actions.md content length: ${content.length} chars\n`;
+                result += `next_actions.md line count: ${content.split('\n').length}\n`;
+            }
+
+            return result;
+        } catch (e: any) {
+            return `Debug Error: ${e.message}\nStack: ${e.stack}`;
+        }
+      }
+    });
+
+    return [viewNextActionsTool, addNextActionTool, completeNextActionTool, editNextActionTool, debugFilesystemTool];
   }
 
   // --- Interactive Mode ---
