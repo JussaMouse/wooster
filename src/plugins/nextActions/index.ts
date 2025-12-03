@@ -712,7 +712,7 @@ ${archivedTaskString}
             const totalTasks = tasks.length;
 
             if (totalTasks === 0) {
-                return "No next actions found matching criteria.";
+                return `No next actions found matching criteria in ${this.getFullPath(this.nextActionsFilePath)}.`;
             }
             
             const responseLines: string[] = [`Current Next Actions (${totalTasks} task${totalTasks === 1 ? '' : 's'}):`];
@@ -749,6 +749,7 @@ ${archivedTaskString}
                 if (addedTask.dueDate) {
                     response += ` Due: ${addedTask.dueDate}.`;
                 }
+                response += ` [File: ${this.getFullPath(this.nextActionsFilePath)}]`;
                 return response;
             } catch (e: any) {
                 this.logMsg(LogLevel.ERROR, "Error in addNextActionTool", { error: e.message, jsonInput });
