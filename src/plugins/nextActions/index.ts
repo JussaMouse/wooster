@@ -152,7 +152,7 @@ class NextActionsPluginDefinition implements WoosterPlugin {
 
   private async readNextActionsFromFile(): Promise<TaskItem[]> {
     const fullPath = this.getFullPath(this.nextActionsFilePath);
-    this.logMsg(LogLevel.DEBUG, `Reading Next Actions from: ${fullPath}`);
+    this.logMsg(LogLevel.INFO, `[DEBUG] Reading Next Actions from: ${fullPath}`);
     if (!fs.existsSync(fullPath)) {
       this.logMsg(LogLevel.INFO, `Next Actions file not found at ${fullPath}. Returning empty list.`);
       return [];
@@ -172,9 +172,16 @@ class NextActionsPluginDefinition implements WoosterPlugin {
 
   private async writeNextActionsToFile(tasks: TaskItem[]): Promise<void> {
     const fullPath = this.getFullPath(this.nextActionsFilePath);
-    this.logMsg(LogLevel.DEBUG, `Writing ${tasks.length} tasks to: ${fullPath}`);
+    this.logMsg(LogLevel.INFO, `[DEBUG] Writing ${tasks.length} tasks to: ${fullPath}`);
+    console.log(`[NATIVE_LOG] Writing to ${fullPath}`); // Fallback in case logger is filtered
     const lines = tasks.map(task => TaskParser.serialize(task));
-    fs.writeFileSync(fullPath, lines.join('\n') + '\n', 'utf-8'); // Add trailing newline
+    try {
+        fs.writeFileSync(fullPath, lines.join('\n') + '\n', 'utf-8'); // Add trailing newline
+        this.logMsg(LogLevel.INFO, `[DEBUG] Write complete.`);
+    } catch (e: any) {
+        this.logMsg(LogLevel.ERROR, `[DEBUG] Write FAILED: ${e.message}`);
+        throw e;
+    }
   }
   
   private prependContextIfNeeded(description: string, context?: string | null): string {
@@ -825,6 +832,10 @@ ${archivedTaskString}
                 const content = fs.readFileSync(fullPath, 'utf-8');
                 result += `next_actions.md content length: ${content.length} chars\n`;
                 result += `next_actions.md line count: ${content.split('\n').length}\n`;
+            } else {
+                result += `next_actions.md MISSING. Attempting creation...\n`;
+                fs.writeFileSync(fullPath, `# Next Actions\n`, 'utf-8');
+                result += `Created next_actions.md. Exists now? ${fs.existsSync(fullPath)}\n`;
             }
 
             return result;
