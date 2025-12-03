@@ -166,6 +166,15 @@ export async function executeCodeAgent(
              logCodeAgentInteraction({ event: 'finish', details: { finalAnswer: result.finalAnswer, status: 'success' } });
              return result.finalAnswer;
          }
+         
+         // Fallback: Use return value if available
+         if (result.returnValue !== undefined) {
+             const retStr = typeof result.returnValue === 'string' ? result.returnValue : JSON.stringify(result.returnValue, null, 2);
+             logCodeAgentInteraction({ event: 'final_answer', details: { finalAnswer: retStr, source: 'return_value' } });
+             logCodeAgentInteraction({ event: 'finish', details: { finalAnswer: retStr, status: 'success' } });
+             return retStr;
+         }
+
          // If execution failed, we could return the error or let the loop retry.
          // For now, let's return the error message if any, or the original text if nothing else.
          if (result.error) {
@@ -256,6 +265,14 @@ export async function executeCodeAgent(
       logCodeAgentInteraction({ event: 'final_answer', details: { finalAnswer: result.finalAnswer } });
       logCodeAgentInteraction({ event: 'finish', details: { finalAnswer: result.finalAnswer, status: 'success' } });
       return result.finalAnswer;
+    }
+
+    // Fallback: Use return value if available
+    if (result.returnValue !== undefined) {
+        const retStr = typeof result.returnValue === 'string' ? result.returnValue : JSON.stringify(result.returnValue, null, 2);
+        logCodeAgentInteraction({ event: 'final_answer', details: { finalAnswer: retStr, source: 'return_value' } });
+        logCodeAgentInteraction({ event: 'finish', details: { finalAnswer: retStr, status: 'success' } });
+        return retStr;
     }
 
     if (result.error) {

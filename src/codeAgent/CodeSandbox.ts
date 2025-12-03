@@ -4,6 +4,7 @@ import { getConfig } from '../configLoader';
 
 export interface SandboxResult {
   finalAnswer?: string;
+  returnValue?: any; // Captured return value of the script
   error?: string;
   stdout: string[];
   stderr: string[];
@@ -142,10 +143,24 @@ export class CodeSandbox {
         log(LogLevel.DEBUG, '[CODE_AGENT][DEBUG] Emitted code (first 400 chars)', { code: wrappedCode.slice(0, 400) });
       }
       const script = await isolate.compileScript(wrappedCode);
-      await script.run(context, { timeout, promise: true });
+      const scriptResult = await script.run(context, { timeout, promise: true });
       
+      // If scriptResult is a reference (handle), try to copy it out
+      let returnValue: any;
+      try {
+          if (scriptResult && typeof scriptResult === 'object' && 'copy' in scriptResult) {
+              returnValue = await scriptResult.copy(); // If it's an ivm.Reference or Transferable
+          } else {
+              returnValue = scriptResult;
+          }
+      } catch (e) {
+          // If copy fails (e.g. non-transferable), just ignore return value
+          log(LogLevel.WARN, '[CodeSandbox] Could not copy return value from sandbox', { error: String(e) });
+      }
+
       return {
         finalAnswer,
+        returnValue,
         stdout,
         stderr,
       };
