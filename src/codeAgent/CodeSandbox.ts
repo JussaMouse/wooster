@@ -138,7 +138,26 @@ export class CodeSandbox {
         await probeScript.run(context, { timeout });
       }
 
-      const wrappedCode = `(async () => { ${code} })();`;
+      // Heuristic: If code is a single expression/call without explicit return or finalAnswer,
+      // prepend 'return ' to the last line to ensure we capture the result.
+      // This handles "lazy" agent code like `await viewInboxItems();` which otherwise returns undefined.
+      let codeToRun = code;
+      if (!code.includes('finalAnswer') && !code.includes('return ')) {
+          const lines = code.trim().split('\n');
+          if (lines.length > 0) {
+              const lastLine = lines[lines.length - 1].trim();
+              // Check if last line looks like a function call or await expression
+              if (/^(?:await\s+)?[\w\.]+\s*\(/.test(lastLine)) {
+                   lines[lines.length - 1] = 'return ' + lines[lines.length - 1];
+                   codeToRun = lines.join('\n');
+                   if (debug) {
+                       log(LogLevel.DEBUG, '[CODE_AGENT] Applied lazy-return heuristic.', { original: lastLine, modified: lines[lines.length - 1] });
+                   }
+              }
+          }
+      }
+
+      const wrappedCode = `(async () => { ${codeToRun} })();`;
       if (debug) {
         log(LogLevel.DEBUG, '[CODE_AGENT][DEBUG] Emitted code (first 400 chars)', { code: wrappedCode.slice(0, 400) });
       }
