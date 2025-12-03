@@ -171,8 +171,10 @@ class NextActionsPluginDefinition implements WoosterPlugin {
 
   private async writeNextActionsToFile(tasks: TaskItem[]): Promise<void> {
     const fullPath = this.getFullPath(this.nextActionsFilePath);
+    this.ensureDirExists(fullPath); // Ensure directory exists before write
     const lines = tasks.map(task => TaskParser.serialize(task));
     fs.writeFileSync(fullPath, lines.join('\n') + '\n', 'utf-8'); // Add trailing newline
+    this.logMsg(LogLevel.INFO, `Wrote ${tasks.length} tasks to ${fullPath}`);
   }
   
   private prependContextIfNeeded(description: string, context?: string | null): string {
