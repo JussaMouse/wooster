@@ -207,11 +207,17 @@ class NextActionsPluginDefinition implements WoosterPlugin {
     // Apply Filtering
     if (filters) {
       if (filters.context) {
-        const lc = filters.context.toLowerCase();
+        let lc = filters.context.toLowerCase();
+        if (!lc.startsWith('@')) {
+             lc = '@' + lc;
+        }
         tasks = tasks.filter(t => t.context && t.context.toLowerCase() === lc);
       }
       if (filters.project) {
-        const lp = filters.project.toLowerCase();
+        let lp = filters.project.toLowerCase();
+        if (!lp.startsWith('+')) {
+             lp = '+' + lp;
+        }
         tasks = tasks.filter(t => t.project && t.project.toLowerCase() === lp);
       }
       if (filters.status) {
