@@ -103,30 +103,38 @@ this.timeout = options.timeout || 10000;
 | GPU Cores | 40-core | Excellent for MLX inference |
 | ANE | 16-core | Embeddings, lightweight models |
 
-### Recommended Model Upgrades
+### Recommended Models (January 2026)
 
-#### Chat/Reasoning Model (Primary)
+#### Primary Recommendation: Qwen3-30B-A3B (MoE Architecture)
 
-| Model | Size | Speed | Quality | RAM Usage |
-|-------|------|-------|---------|-----------|
-| **Qwen2.5-72B-Instruct-4bit** | 72B | ~15-25 tok/s | ⭐⭐⭐⭐⭐ | ~45 GB |
-| Qwen2.5-32B-Instruct-4bit | 32B | ~35-50 tok/s | ⭐⭐⭐⭐ | ~20 GB |
-| DeepSeek-V3-0324 (via exo) | 671B | ~3-8 tok/s | ⭐⭐⭐⭐⭐+ | Distributed |
-| Llama-3.3-70B-Instruct-4bit | 70B | ~15-25 tok/s | ⭐⭐⭐⭐⭐ | ~42 GB |
+The **Qwen3-30B-A3B** family uses Mixture-of-Experts (MoE) architecture - a game-changer for Wooster:
 
-**Recommendation**: **Qwen2.5-72B-Instruct-4bit** for daily use, with DeepSeek-V3 via exo for complex reasoning tasks.
+| Spec | Value | Why It Matters |
+|------|-------|----------------|
+| **Total params** | 30.5B | Large knowledge base |
+| **Activated params** | **3.3B** | ⚡ Fast like a 3B model! |
+| **Experts** | 128 (8 active) | Specialization per task |
+| **Context** | 256K native | Excellent for memory/RAG |
+| **RAM Usage** | ~18-20 GB | Room for multiple models |
 
-```bash
-# Download via mlx-lm
-mlx_lm.server --model mlx-community/Qwen2.5-72B-Instruct-4bit --port 8080
-```
+#### Model Variants
 
-#### Fast Model (Quick Tasks)
+| Model | Released | Best For | Speed | RAM |
+|-------|----------|----------|-------|-----|
+| **Qwen3-30B-A3B-Thinking-2507** | July 2025 | Complex reasoning, code, planning | ~50-80 tok/s | ~20 GB |
+| **Qwen3-30B-A3B** | April 2025 | Quick responses, simple tasks | ~100-150 tok/s | ~18 GB |
+| **Qwen3-0.6B** | April 2025 | Routing/classification only | ~300+ tok/s | ~1 GB |
 
-| Model | Size | Speed | Use Case |
-|-------|------|-------|----------|
-| **Qwen2.5-7B-Instruct-4bit** | 7B | ~100-150 tok/s | Classification, routing |
-| Llama-3.2-3B-Instruct-4bit | 3B | ~200+ tok/s | Ultra-fast triage |
+#### Why Thinking-2507 for Wooster's Agent Tasks
+
+From [Qwen3-30B-A3B-Thinking-2507 benchmarks](https://huggingface.co/Qwen/Qwen3-30B-A3B-Thinking-2507):
+
+| Capability | Base A3B | Thinking-2507 | Relevance to Wooster |
+|------------|----------|---------------|---------------------|
+| **Agent/Tool Use** (BFCL-v3) | 69.1 | **72.4** | ✅ Tool calling |
+| **Coding** (LiveCodeBench) | 57.4 | **66.0** | ✅ Code agent mode |
+| **Reasoning** (AIME25) | 70.9 | **85.0** | ✅ Planning tasks |
+| **Instruction Following** | 86.5 | **88.9** | ✅ Command parsing |
 
 #### Embedding Model
 
@@ -134,7 +142,6 @@ mlx_lm.server --model mlx-community/Qwen2.5-72B-Instruct-4bit --port 8080
 |-------|------|---------|-------|
 | **Qwen3-Embedding-8B** | 4096 | ⭐⭐⭐⭐⭐ | ~500 emb/s |
 | Qwen3-Embedding-4B | 2560 | ⭐⭐⭐⭐ | ~1000 emb/s |
-| nomic-embed-text-v1.5 | 768 | ⭐⭐⭐ | ~2000 emb/s |
 
 **Recommendation**: **Qwen3-Embedding-8B** - your RAM supports it easily.
 
@@ -173,18 +180,364 @@ For **single Mac Studio**, stick with **mlx-lm** via mlx-box.
 
 ---
 
+## Part 2.5: Intelligent Routing Architecture
+
+### The Problem with Current Routing
+
+Wooster's current routing is binary (local vs cloud) with no task-aware model selection. This wastes resources:
+- Simple "what time is it?" uses the same model as complex planning
+- No fast-path for trivial queries
+- Thinking model overhead for non-reasoning tasks
+
+### 3-Tier Routing Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        User Input                                │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   TIER 0: Router Model                           │
+│              Qwen3-0.6B-4bit (~300+ tok/s)                       │
+│                                                                  │
+│  Classifies into: TRIVIAL | SIMPLE | COMPLEX | REASONING         │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+           ┌──────────────────┼──────────────────┐
+           │                  │                  │
+           ▼                  ▼                  ▼
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│   TIER 1: Fast  │ │  TIER 2: Smart  │ │ TIER 3: Thinking│
+│                 │ │                 │ │                 │
+│ Qwen3-30B-A3B   │ │ Qwen3-30B-A3B   │ │ Qwen3-30B-A3B   │
+│    (base)       │ │    (base)       │ │  Thinking-2507  │
+│                 │ │                 │ │                 │
+│ • Weather       │ │ • Single tool   │ │ • Multi-tool    │
+│ • Time          │ │ • Simple RAG    │ │ • Code agent    │
+│ • Greetings     │ │ • Add to list   │ │ • Planning      │
+│ • Yes/No        │ │ • Quick lookup  │ │ • Reasoning     │
+│                 │ │ • Summarize     │ │ • Creative      │
+│  ~100+ tok/s    │ │  ~100+ tok/s    │ │  ~50-80 tok/s   │
+└─────────────────┘ └─────────────────┘ └─────────────────┘
+```
+
+### Task Classification Matrix
+
+| Category | Examples | Complexity | Model Tier |
+|----------|----------|------------|------------|
+| **Routing/Classification** | "Is this calendar or GTD?" | Trivial | Router (0.6B) |
+| **Quick Info** | "What's the weather?", "What time?" | Low | Fast (A3B base) |
+| **RAG Retrieval** | "What did I say about X?" | Low | Fast + Embeddings |
+| **Simple Tool Calls** | "Add milk to shopping list" | Medium | Fast (A3B base) |
+| **Multi-Tool Orchestration** | "Schedule meeting and email attendees" | High | Thinking |
+| **Code Agent** | Generate JS for sandbox execution | High | Thinking |
+| **Reasoning/Planning** | "Help me plan my week" | High | Thinking |
+| **Fact Extraction** | Extract user preferences | Medium | Fast |
+| **Summarization** | Daily review, conversation summary | Medium | Fast |
+| **Creative/Writing** | Draft emails, documents | Medium-High | Thinking |
+
+### Implementation Steps
+
+#### Step 1: Create Task Complexity Enum
+
+File: `src/routing/TaskComplexity.ts`
+
+```typescript
+export enum TaskComplexity {
+  TRIVIAL = 'trivial',    // Router can answer directly
+  SIMPLE = 'simple',      // Fast model, no reasoning needed
+  COMPLEX = 'complex',    // Fast model with tools
+  REASONING = 'reasoning' // Thinking model required
+}
+
+export interface RoutingDecision {
+  complexity: TaskComplexity;
+  model: string;
+  tier: 'router' | 'fast' | 'thinking';
+  reasoning: string;
+  confidence: number;
+}
+```
+
+#### Step 2: Create Intelligent Router Service
+
+File: `src/routing/IntelligentRouter.ts`
+
+```typescript
+import { TaskComplexity, RoutingDecision } from './TaskComplexity';
+
+const ROUTING_PROMPT = `Classify this user request into one category:
+
+TRIVIAL: Greetings, time, simple facts you know
+SIMPLE: Weather, quick lookups, yes/no questions, single-step tasks
+COMPLEX: Multi-step tasks, tool orchestration, summarization
+REASONING: Planning, code generation, analysis, creative writing, debugging
+
+User request: {input}
+
+Respond with JSON: {"category": "...", "confidence": 0.0-1.0, "reason": "..."}`;
+
+export class IntelligentRouter {
+  private config = {
+    router: {
+      model: 'mlx-community/Qwen3-0.6B-4bit',
+      maxTokens: 100
+    },
+    fast: {
+      model: 'mlx-community/Qwen3-30B-A3B-4bit',
+      maxTokens: 2048
+    },
+    thinking: {
+      model: 'mlx-community/Qwen3-30B-A3B-Thinking-2507-4bit',
+      maxTokens: 8192,
+      thinkingBudget: 4096
+    }
+  };
+  
+  async route(input: string): Promise<RoutingDecision> {
+    // Quick pattern matching for obvious cases (no LLM call)
+    const quickMatch = this.quickClassify(input);
+    if (quickMatch) return quickMatch;
+    
+    // Use router model for ambiguous cases
+    return await this.classifyWithLLM(input);
+  }
+  
+  private quickClassify(input: string): RoutingDecision | null {
+    const lower = input.toLowerCase().trim();
+    
+    // TRIVIAL patterns - router answers directly
+    const trivialPatterns = [
+      /^(hi|hello|hey|good morning|good evening|thanks|thank you)/,
+      /^(what time|what's the time|current time)/,
+      /^(what day|what's the date|today's date)/
+    ];
+    if (trivialPatterns.some(p => p.test(lower))) {
+      return {
+        complexity: TaskComplexity.TRIVIAL,
+        model: this.config.router.model,
+        tier: 'router',
+        reasoning: 'Trivial query - router can handle',
+        confidence: 0.95
+      };
+    }
+    
+    // SIMPLE patterns - fast model
+    const simplePatterns = [
+      /^(what's the weather|weather in|forecast)/,
+      /^(add|remove|delete) .+ (to|from) (list|inbox|shopping)/,
+      /^(show|list|get) (my )?(tasks|events|calendar|inbox)/
+    ];
+    if (simplePatterns.some(p => p.test(lower))) {
+      return {
+        complexity: TaskComplexity.SIMPLE,
+        model: this.config.fast.model,
+        tier: 'fast',
+        reasoning: 'Simple query - single tool or lookup',
+        confidence: 0.9
+      };
+    }
+    
+    // REASONING triggers - thinking model
+    const reasoningTriggers = [
+      /help me (plan|think|decide|figure out|organize)/,
+      /write (a |an |some )?(code|script|function|program)/,
+      /create a (plan|schedule|strategy|outline)/,
+      /analyze|compare|evaluate|debug|review/,
+      /step by step|walk me through/,
+      /why (did|does|is|are|should|would)/,
+      /how (can|do|should|would) (i|we)/,
+      /(schedule|book|arrange).+(and|then|also)/  // Multi-step
+    ];
+    if (reasoningTriggers.some(r => r.test(lower))) {
+      return {
+        complexity: TaskComplexity.REASONING,
+        model: this.config.thinking.model,
+        tier: 'thinking',
+        reasoning: 'Complex query requiring reasoning',
+        confidence: 0.85
+      };
+    }
+    
+    return null; // Needs LLM classification
+  }
+  
+  private async classifyWithLLM(input: string): Promise<RoutingDecision> {
+    // Call router model for classification
+    const prompt = ROUTING_PROMPT.replace('{input}', input);
+    const response = await this.callRouterModel(prompt);
+    
+    const parsed = JSON.parse(response);
+    const complexity = this.mapCategory(parsed.category);
+    
+    return {
+      complexity,
+      model: this.selectModel(complexity),
+      tier: this.selectTier(complexity),
+      reasoning: parsed.reason,
+      confidence: parsed.confidence
+    };
+  }
+  
+  private selectModel(complexity: TaskComplexity): string {
+    switch (complexity) {
+      case TaskComplexity.TRIVIAL:
+        return this.config.router.model;
+      case TaskComplexity.SIMPLE:
+      case TaskComplexity.COMPLEX:
+        return this.config.fast.model;
+      case TaskComplexity.REASONING:
+        return this.config.thinking.model;
+    }
+  }
+  
+  private selectTier(complexity: TaskComplexity): 'router' | 'fast' | 'thinking' {
+    switch (complexity) {
+      case TaskComplexity.TRIVIAL:
+        return 'router';
+      case TaskComplexity.SIMPLE:
+      case TaskComplexity.COMPLEX:
+        return 'fast';
+      case TaskComplexity.REASONING:
+        return 'thinking';
+    }
+  }
+}
+```
+
+#### Step 3: Update Configuration Schema
+
+File: `src/configLoader.ts` - Add to `ModelRoutingConfig`:
+
+```typescript
+export interface ModelRoutingConfig {
+  enabled: boolean;
+  strategy: 'cost' | 'speed' | 'quality' | 'availability' | 'privacy' | 'intelligent';
+  tiers: {
+    router: {
+      model: string;
+      serverUrl: string;
+      maxTokens: number;
+    };
+    fast: {
+      model: string;
+      serverUrl: string;
+      maxTokens: number;
+    };
+    thinking: {
+      model: string;
+      serverUrl: string;
+      maxTokens: number;
+      thinkingBudget: number;
+    };
+  };
+  rules: {
+    codeAgent: 'fast' | 'thinking';
+    multiToolCall: 'fast' | 'thinking';
+    singleToolCall: 'fast' | 'thinking';
+    ragQuery: 'fast' | 'thinking';
+    planning: 'fast' | 'thinking';
+    creative: 'fast' | 'thinking';
+    default: 'fast' | 'thinking';
+  };
+  // ... existing fields
+}
+```
+
+#### Step 4: Update Environment Variables
+
+Add to `.env`:
+
+```bash
+# Intelligent Routing
+ROUTING_STRATEGY=intelligent
+
+# Tier 0: Router (classification only)
+ROUTING_ROUTER_MODEL=mlx-community/Qwen3-0.6B-4bit
+ROUTING_ROUTER_MAX_TOKENS=100
+
+# Tier 1-2: Fast (simple + complex tasks)
+ROUTING_FAST_MODEL=mlx-community/Qwen3-30B-A3B-4bit
+ROUTING_FAST_MAX_TOKENS=2048
+
+# Tier 3: Thinking (reasoning tasks)
+ROUTING_THINKING_MODEL=mlx-community/Qwen3-30B-A3B-Thinking-2507-4bit
+ROUTING_THINKING_MAX_TOKENS=8192
+ROUTING_THINKING_BUDGET=4096
+
+# Task-specific overrides
+ROUTING_RULE_CODE_AGENT=thinking
+ROUTING_RULE_MULTI_TOOL=thinking
+ROUTING_RULE_SINGLE_TOOL=fast
+ROUTING_RULE_PLANNING=thinking
+```
+
+#### Step 5: Integrate with Agent Executor
+
+File: `src/agentExecutorService.ts` - Modify to use router:
+
+```typescript
+import { IntelligentRouter } from './routing/IntelligentRouter';
+
+export class AgentExecutorService {
+  private router: IntelligentRouter;
+  
+  constructor() {
+    this.router = new IntelligentRouter();
+  }
+  
+  async execute(input: string): Promise<string> {
+    // Route to appropriate model
+    const decision = await this.router.route(input);
+    
+    log(LogLevel.DEBUG, `Routing decision: ${decision.tier} (${decision.reasoning})`);
+    
+    // Select model client based on tier
+    const model = this.getModelForTier(decision.tier);
+    
+    // Execute with selected model
+    return await this.runWithModel(model, input, decision);
+  }
+}
+```
+
+### Expected Performance by Tier
+
+| Tier | Model | Latency | Tokens/sec | Use Case |
+|------|-------|---------|------------|----------|
+| Router | Qwen3-0.6B | <100ms | 300+ | Classification |
+| Fast | Qwen3-30B-A3B | 200-500ms | 100-150 | Most queries |
+| Thinking | Qwen3-30B-A3B-Thinking | 1-5s | 50-80 | Complex tasks |
+
+### RAM Usage (All Models Loaded)
+
+| Component | RAM | Notes |
+|-----------|-----|-------|
+| Router (0.6B) | ~1 GB | Always loaded |
+| Fast (30B-A3B) | ~18 GB | Same weights as Thinking |
+| Thinking (30B-A3B) | ~0 GB* | *Shares weights with Fast |
+| Embeddings (8B) | ~16 GB | Separate model |
+| Wooster + Node | ~1 GB | Application overhead |
+| **Total** | **~36 GB** | **92 GB headroom!** |
+
+*Note: A3B base and Thinking-2507 share the same MoE architecture - you may be able to hot-swap modes rather than loading two separate models.
+
+---
+
 ## Part 3: Optimizing mlx-box
 
 ### Current mlx-box Assessment
 
-Your mlx-box setup is solid but can be optimized:
+Your mlx-box setup is solid but can be optimized for the new routing architecture:
 
 | Component | Current | Recommended |
 |-----------|---------|-------------|
-| Chat Model | Likely small | Qwen2.5-72B-Instruct-4bit |
+| Chat Model | Likely small | Qwen3-30B-A3B + Thinking-2507 |
+| Router Model | None | Qwen3-0.6B |
 | Embed Model | Qwen3-4B | Qwen3-Embedding-8B |
 | Quantization | 4-bit | 4-bit (optimal for speed/quality) |
-| Context Length | Default | 32K+ |
+| Context Length | Default | 256K (native for Qwen3-A3B) |
 
 ### mlx-box Optimizations
 
@@ -193,17 +546,59 @@ Your mlx-box setup is solid but can be optimized:
 Edit `config/settings.toml`:
 
 ```toml
+[router]
+model = "mlx-community/Qwen3-0.6B-4bit"
+max_tokens = 100
+port = 8082  # Separate port for router
+
 [chat]
-model = "mlx-community/Qwen2.5-72B-Instruct-4bit"
+model = "mlx-community/Qwen3-30B-A3B-4bit"
 max_tokens = 4096
-context_length = 32768
+context_length = 65536  # Can go up to 256K
+port = 8080
+
+[thinking]
+model = "mlx-community/Qwen3-30B-A3B-Thinking-2507-4bit"
+max_tokens = 8192
+thinking_budget = 4096
+port = 8081  # Or same as chat if hot-swapping
 
 [embed]
 model = "Qwen/Qwen3-Embedding-8B"
-batch_size = 64  # Batch embeddings for speed
+batch_size = 64
+port = 8083
 ```
 
-#### 2. Enable KV-Cache Quantization (Memory Savings)
+#### 2. Multi-Model Server Setup
+
+Option A: **Separate servers per model** (simplest)
+
+```bash
+# Terminal 1: Router
+mlx_lm.server --model mlx-community/Qwen3-0.6B-4bit --port 8082
+
+# Terminal 2: Fast/Thinking (same model, different configs)
+mlx_lm.server --model mlx-community/Qwen3-30B-A3B-4bit --port 8080
+
+# Terminal 3: Embeddings
+python embed-server.py --port 8083
+```
+
+Option B: **Single server with model switching** (advanced)
+
+```python
+# In chat-server.py - support model parameter in requests
+MODELS = {
+    'router': 'mlx-community/Qwen3-0.6B-4bit',
+    'fast': 'mlx-community/Qwen3-30B-A3B-4bit',
+    'thinking': 'mlx-community/Qwen3-30B-A3B-Thinking-2507-4bit'
+}
+
+# Load all models at startup (MoE models share weights)
+loaded_models = {name: load(path) for name, path in MODELS.items()}
+```
+
+#### 3. Enable KV-Cache Quantization (Memory Savings)
 
 In `models/chat-server.py`, add:
 
@@ -211,26 +606,27 @@ In `models/chat-server.py`, add:
 from mlx_lm import load, generate
 
 model, tokenizer = load(
-    "mlx-community/Qwen2.5-72B-Instruct-4bit",
+    "mlx-community/Qwen3-30B-A3B-4bit",
     kv_cache_quant="8bit"  # Reduces context memory by 50%
 )
 ```
 
-#### 3. Pre-warm the Model
+#### 4. Pre-warm Models
 
-Add to LaunchDaemon to keep model hot:
+Add to LaunchDaemon to keep models hot:
 
 ```python
 # In chat-server.py startup
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Pre-generate a token to load model into memory
-    _ = generate(model, tokenizer, prompt="Hello", max_tokens=1)
-    logger.info("Model pre-warmed")
+    for name, (model, tokenizer) in loaded_models.items():
+        _ = generate(model, tokenizer, prompt="Hello", max_tokens=1)
+        logger.info(f"Model {name} pre-warmed")
     yield
 ```
 
-#### 4. Increase Embedding Batch Size
+#### 5. Increase Embedding Batch Size
 
 In `models/embed-server.py`:
 
@@ -514,10 +910,18 @@ static getEmbeddings(config: AppConfig): Embeddings {
 
 #### Day 5: Model Upgrade
 
-1. **Update mlx-box to use Qwen2.5-72B**:
+1. **Download Qwen3 models for mlx-box**:
 ```bash
 cd /Users/lon/projects/mlx-box
-./update-model.sh mlx-community/Qwen2.5-72B-Instruct-4bit
+
+# Router model (tiny, fast classification)
+./update-model.sh mlx-community/Qwen3-0.6B-4bit
+
+# Fast model (MoE - only 3.3B activated)
+./update-model.sh mlx-community/Qwen3-30B-A3B-4bit
+
+# Thinking model (for complex reasoning)
+./update-model.sh mlx-community/Qwen3-30B-A3B-Thinking-2507-4bit
 ```
 
 2. **Update embedding model to Qwen3-8B**:
@@ -531,6 +935,33 @@ model = "Qwen/Qwen3-Embedding-8B"
 ```bash
 # In Wooster REPL
 > rebuild embeddings
+```
+
+#### Day 6-7: Implement Intelligent Routing
+
+1. **Create routing files**:
+```bash
+cd /Users/lon/projects/wooster
+touch src/routing/TaskComplexity.ts
+touch src/routing/IntelligentRouter.ts
+```
+
+2. **Implement TaskComplexity enum** (see Part 2.5 above)
+
+3. **Implement IntelligentRouter** with:
+   - Quick pattern matching (no LLM call for obvious cases)
+   - LLM-based classification for ambiguous inputs
+   - Model selection based on task tier
+
+4. **Update AgentExecutorService** to use router:
+   - Call `router.route(input)` before processing
+   - Select appropriate model based on `RoutingDecision`
+   - Log routing decisions for debugging
+
+5. **Test routing decisions**:
+```bash
+# Add test cases
+pnpm test src/routing/__tests__/IntelligentRouter.test.ts
 ```
 
 ### Phase 2: Memory System (Week 2)
@@ -724,24 +1155,50 @@ const LIFE_AREAS: LifeArea[] = [
     "enabled": true,
     "strategy": "intelligent",
     "fallbackChain": ["local", "openai"],
+    "tiers": {
+      "router": {
+        "model": "mlx-community/Qwen3-0.6B-4bit",
+        "serverUrl": "http://127.0.0.1:8082",
+        "maxTokens": 100,
+        "purpose": "Fast classification and trivial responses"
+      },
+      "fast": {
+        "model": "mlx-community/Qwen3-30B-A3B-4bit",
+        "serverUrl": "http://127.0.0.1:8080",
+        "maxTokens": 2048,
+        "purpose": "Simple queries and single tool calls"
+      },
+      "thinking": {
+        "model": "mlx-community/Qwen3-30B-A3B-Thinking-2507-4bit",
+        "serverUrl": "http://127.0.0.1:8081",
+        "maxTokens": 8192,
+        "thinkingBudget": 4096,
+        "purpose": "Complex reasoning, code, multi-step planning"
+      }
+    },
+    "rules": {
+      "codeAgent": "thinking",
+      "multiToolCall": "thinking",
+      "singleToolCall": "fast",
+      "ragQuery": "fast",
+      "factExtraction": "fast",
+      "planning": "thinking",
+      "creative": "thinking",
+      "default": "fast"
+    },
     "providers": {
       "local": {
         "enabled": true,
-        "serverUrl": "http://127.0.0.1:8080",
-        "models": {
-          "fast": "mlx-community/Qwen2.5-7B-Instruct-4bit",
-          "quality": "mlx-community/Qwen2.5-72B-Instruct-4bit"
-        },
         "embeddings": {
           "enabled": true,
-          "serverUrl": "http://127.0.0.1:8081",
+          "serverUrl": "http://127.0.0.1:8083",
           "model": "Qwen/Qwen3-Embedding-8B",
           "dimensions": 4096,
           "batchSize": 64
         }
       },
       "openai": {
-        "enabled": true,
+        "enabled": false,
         "models": {
           "fast": "gpt-4o-mini",
           "quality": "gpt-4o"
@@ -774,6 +1231,48 @@ const LIFE_AREAS: LifeArea[] = [
 }
 ```
 
+### Updated `.env` for Intelligent Routing
+
+```bash
+# Disable OpenAI (fully local)
+OPENAI_ENABLED=false
+
+# Enable intelligent routing
+ROUTING_ENABLED=true
+ROUTING_STRATEGY=intelligent
+
+# Tier 0: Router (classification only)
+ROUTING_ROUTER_MODEL=mlx-community/Qwen3-0.6B-4bit
+ROUTING_ROUTER_URL=http://127.0.0.1:8082
+ROUTING_ROUTER_MAX_TOKENS=100
+
+# Tier 1-2: Fast (simple + complex tasks)
+ROUTING_FAST_MODEL=mlx-community/Qwen3-30B-A3B-4bit
+ROUTING_FAST_URL=http://127.0.0.1:8080
+ROUTING_FAST_MAX_TOKENS=2048
+
+# Tier 3: Thinking (reasoning tasks)
+ROUTING_THINKING_MODEL=mlx-community/Qwen3-30B-A3B-Thinking-2507-4bit
+ROUTING_THINKING_URL=http://127.0.0.1:8081
+ROUTING_THINKING_MAX_TOKENS=8192
+ROUTING_THINKING_BUDGET=4096
+
+# Task-specific routing rules
+ROUTING_RULE_CODE_AGENT=thinking
+ROUTING_RULE_MULTI_TOOL=thinking
+ROUTING_RULE_SINGLE_TOOL=fast
+ROUTING_RULE_RAG_QUERY=fast
+ROUTING_RULE_PLANNING=thinking
+ROUTING_RULE_CREATIVE=thinking
+ROUTING_RULE_DEFAULT=fast
+
+# Local embeddings
+MLX_EMBEDDINGS_ENABLED=true
+MLX_EMBEDDINGS_URL=http://127.0.0.1:8083/v1
+MLX_EMBEDDINGS_MODEL=Qwen/Qwen3-Embedding-8B
+MLX_EMBEDDINGS_DIMENSIONS=4096
+```
+
 ---
 
 ## Part 8: Expected Performance Improvements
@@ -783,44 +1282,85 @@ const LIFE_AREAS: LifeArea[] = [
 | Metric | Before | After | Improvement |
 |--------|--------|-------|-------------|
 | Startup time | 5-15s | <1s | 10-15x |
-| Query latency | 200-500ms | 10-50ms | 10-20x |
+| Simple query latency | 500-2000ms | <100ms | 10-20x |
+| Complex query latency | 2-5s | 1-3s | 2x + better quality |
 | Embedding cost | $0.02/1K tokens | $0 (local) | ∞ |
 | Memory recall | None | Semantic | New capability |
 | Vector search | O(n) | O(log n) | Exponential |
-| Context window | 4K-8K | 32K+ | 4-8x |
+| Context window | 4K-8K | 256K | 32-64x |
 | Model quality | GPT-3.5 level | GPT-4+ level | Significant |
+| Routing overhead | None | ~50ms | Smart model selection |
+
+### Performance by Routing Tier
+
+| Tier | Model | Latency | Tokens/sec | RAM |
+|------|-------|---------|------------|-----|
+| **Router** | Qwen3-0.6B | <100ms | 300+ | ~1 GB |
+| **Fast** | Qwen3-30B-A3B | 200-500ms | 100-150 | ~18 GB |
+| **Thinking** | Qwen3-30B-A3B-Thinking | 1-5s | 50-80 | ~20 GB |
+| **Embeddings** | Qwen3-Embedding-8B | <50ms | 500+ emb/s | ~16 GB |
 
 ### Resource Usage on M4 Max 128GB
 
-| Resource | Idle | Active | Peak |
-|----------|------|--------|------|
-| RAM (Chat Model) | 45 GB | 50 GB | 60 GB |
-| RAM (Embed Model) | 16 GB | 18 GB | 20 GB |
-| RAM (Wooster) | 500 MB | 1 GB | 2 GB |
-| **Total** | ~62 GB | ~70 GB | ~82 GB |
-| **Headroom** | 66 GB | 58 GB | 46 GB |
+| Component | RAM | Notes |
+|-----------|-----|-------|
+| Router (0.6B) | ~1 GB | Always loaded, instant responses |
+| Fast (30B-A3B) | ~18 GB | MoE - only 3.3B activated |
+| Thinking (30B-A3B) | ~20 GB | Can share weights with Fast* |
+| Embeddings (8B) | ~16 GB | High-quality local embeddings |
+| Wooster + Node | ~1 GB | Application overhead |
+| **Total (all loaded)** | **~56 GB** | |
+| **Headroom** | **72 GB** | Room for larger contexts |
 
-You have plenty of capacity for both models simultaneously plus room for growth.
+*The A3B base and Thinking-2507 share the same MoE architecture - potential for weight sharing.
 
 ---
 
 ## Quick Start Commands
 
 ```bash
-# 1. Update mlx-box models
+# 1. Download Qwen3 models for mlx-box
 cd /Users/lon/projects/mlx-box
-./update-model.sh mlx-community/Qwen2.5-72B-Instruct-4bit
+./update-model.sh mlx-community/Qwen3-0.6B-4bit           # Router
+./update-model.sh mlx-community/Qwen3-30B-A3B-4bit        # Fast
+./update-model.sh mlx-community/Qwen3-30B-A3B-Thinking-2507-4bit  # Thinking
 
 # 2. Install Wooster dependencies
 cd /Users/lon/projects/wooster
 pnpm add hnswlib-node
 
-# 3. Rebuild vector stores after updating embeddings
-pnpm run build
-node -e "require('./dist/index.js').rebuildAllVectorStores()"
+# 3. Create routing files
+touch src/routing/TaskComplexity.ts
+touch src/routing/IntelligentRouter.ts
 
-# 4. Start Wooster with local inference
+# 4. Update .env for intelligent routing
+cat >> .env << 'EOF'
+OPENAI_ENABLED=false
+ROUTING_STRATEGY=intelligent
+ROUTING_ROUTER_MODEL=mlx-community/Qwen3-0.6B-4bit
+ROUTING_FAST_MODEL=mlx-community/Qwen3-30B-A3B-4bit
+ROUTING_THINKING_MODEL=mlx-community/Qwen3-30B-A3B-Thinking-2507-4bit
+EOF
+
+# 5. Rebuild and start
+pnpm run build
 pnpm start
+```
+
+### Verify Models Are Working
+
+```bash
+# Test router model
+curl http://127.0.0.1:8082/v1/models
+
+# Test fast model
+curl http://127.0.0.1:8080/v1/models
+
+# Test thinking model  
+curl http://127.0.0.1:8081/v1/models
+
+# Test embeddings
+curl http://127.0.0.1:8083/health
 ```
 
 ---
@@ -834,6 +1374,13 @@ If you acquire additional Macs, exo enables:
 - **Tensor Parallelism**: 1.8-3.2x speedup across devices
 - **RDMA over Thunderbolt 5**: 99% latency reduction
 
+### Model Hot-Swapping (Advanced)
+
+Since Qwen3-30B-A3B and Thinking-2507 share the same MoE architecture, investigate:
+- Loading base weights once
+- Swapping LoRA/adapter layers for thinking mode
+- Single server supporting both modes via API parameter
+
 ### Tutoring Mode (Future)
 
 Architecture for kid tutoring:
@@ -845,6 +1392,23 @@ Architecture for kid tutoring:
 
 ---
 
+## Summary: Model Selection Quick Reference
+
+| Task Type | Model | Why |
+|-----------|-------|-----|
+| "Hi", "Thanks" | Router (0.6B) | Instant, no inference |
+| "What's the weather?" | Fast (A3B) | Single tool call |
+| "Add X to list" | Fast (A3B) | Simple GTD operation |
+| "Show my tasks" | Fast (A3B) | Query + format |
+| "Help me plan my week" | Thinking | Reasoning required |
+| "Write code to..." | Thinking | Code agent mode |
+| "Schedule X and email Y" | Thinking | Multi-tool orchestration |
+| "Why isn't X working?" | Thinking | Analysis/debugging |
+| "Draft an email about..." | Thinking | Creative writing |
+
+---
+
 *Generated: January 2026*
+*Updated: January 2026 (Qwen3 MoE + Intelligent Routing)*
 *Hardware: Mac Studio M4 Max 128GB*
-*Wooster Version: Current*
+*Recommended Models: Qwen3-30B-A3B family (MoE)*
