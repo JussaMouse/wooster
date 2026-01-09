@@ -245,7 +245,7 @@ function buildConfigFromEnv() {
       fileLogLevel: (process.env.LOGGING_FILE_LOG_LEVEL || 'info') as LogLevel,
       logFile: process.env.LOGGING_LOG_FILE || 'logs/wooster_session.log',
       logAgentLLMInteractions: process.env.LOGGING_LOG_AGENT_LLM_INTERACTIONS === 'true',
-      consoleQuietMode: process.env.LOGGING_CONSOLE_QUIET_MODE === 'true' || true // Default true per old config
+      consoleQuietMode: process.env.LOGGING_CONSOLE_QUIET_MODE !== 'false' // Default true, set LOGGING_CONSOLE_QUIET_MODE=false to see INFO/DEBUG
     },
 
     openai: {
