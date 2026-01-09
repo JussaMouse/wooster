@@ -26,6 +26,7 @@ import {
   initializeIntelligentRouter 
 } from './routing/IntelligentRouter';
 import { ModelTier, IntelligentRoutingConfig } from './routing/TaskComplexity';
+import { initializeModelRouter } from './routing/ModelRouterService';
 
 let projectVectorStoreInstance: MemoryVectorStore | null = null;
 let tools: any[] = [];
@@ -102,7 +103,6 @@ async function initializeTools() {
   appConfig = await getConfig();
   
   // Always initialize ModelRouterService (needed by agentCodeExecutor and other modules)
-  const { initializeModelRouter } = await import('./routing/ModelRouterService');
   const modelRouter = initializeModelRouter(appConfig);
   
   // Check if intelligent routing is enabled
