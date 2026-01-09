@@ -210,6 +210,8 @@ export async function loadPlugins() {
       log(LogLevel.INFO, `PluginManager: Successfully imported module from "${actualEntryPoint}". Has default export: ${!!mod.default}`);
       
       if (mod.default) {
+        const cls = mod.default;
+        log(LogLevel.DEBUG, `PluginManager: mod.default type=${typeof cls}, name=${cls?.name}, pluginName=${cls?.pluginName}, version=${cls?.version}, description=${cls?.description?.slice(0,30)}`);
         await processPlugin(mod.default, config, actualEntryPoint);
       } else {
         log(LogLevel.WARN, `PluginManager: Module from "${actualEntryPoint}" does not have a default export. Skipping.`);
