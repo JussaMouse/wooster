@@ -24,15 +24,18 @@ export class LocalModelClient {
    */
   async isHealthy(): Promise<boolean> {
     const url = `${this.serverUrl}/v1/models`;
-    log(LogLevel.DEBUG, `LocalModelClient: checking health at ${url}`);
+    const startTime = Date.now();
+    log(LogLevel.DEBUG, `LocalModelClient: checking health at ${url} (timeout=${this.timeout}ms)`);
     try {
       // MLX OpenAI-compatible servers reliably expose /v1/models
       const res = await axios.get(url, { timeout: this.timeout });
+      const elapsed = Date.now() - startTime;
       const healthy = res.status === 200 && Array.isArray(res.data?.data);
-      log(LogLevel.DEBUG, `LocalModelClient: health check result: ${healthy} (status=${res.status})`);
+      log(LogLevel.DEBUG, `LocalModelClient: health check result: ${healthy} (status=${res.status}, took ${elapsed}ms)`);
       return healthy;
     } catch (err: any) {
-      log(LogLevel.DEBUG, `LocalModelClient: health check failed: ${err.message}`);
+      const elapsed = Date.now() - startTime;
+      log(LogLevel.DEBUG, `LocalModelClient: health check failed after ${elapsed}ms: ${err.message}`);
       return false;
     }
   }
