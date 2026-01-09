@@ -301,8 +301,18 @@ export function getModelRouter(config?: AppConfig): ModelRouterService {
 
 /**
  * Initialize the router (called during Wooster startup)
+ * Also runs initial health check so subsequent requests are instant
  */
-export function initializeModelRouter(config: AppConfig): ModelRouterService {
+export async function initializeModelRouter(config: AppConfig): Promise<ModelRouterService> {
   routerInstance = new ModelRouterService(config);
+  
+  // Run health check at startup so first user request is instant
+  if (routerInstance['localModelClient']) {
+    log(LogLevel.INFO, 'ModelRouter: Running startup health check...');
+    routerInstance['localModelHealthy'] = await routerInstance['localModelClient'].isHealthy();
+    routerInstance['lastHealthCheck'] = Date.now();
+    log(LogLevel.INFO, `ModelRouter: Startup health check result: ${routerInstance['localModelHealthy']}`);
+  }
+  
   return routerInstance;
 } 

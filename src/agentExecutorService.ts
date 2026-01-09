@@ -103,7 +103,8 @@ async function initializeTools() {
   appConfig = await getConfig();
   
   // Always initialize ModelRouterService (needed by agentCodeExecutor and other modules)
-  const modelRouter = initializeModelRouter(appConfig);
+  // This also runs the startup health check so first user request is instant
+  const modelRouter = await initializeModelRouter(appConfig);
   
   // Check if intelligent routing is enabled
   log(LogLevel.INFO, `Routing config: strategy='${appConfig.routing?.strategy}', tiers=${!!appConfig.routing?.tiers}, healthTimeout=${appConfig.routing?.healthCheck?.timeout}ms`);
