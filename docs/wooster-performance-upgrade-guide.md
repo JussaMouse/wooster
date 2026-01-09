@@ -4,6 +4,15 @@
 - **Hardware**: Mac Studio M4 Max (16-core: 12P+4E), 128GB Unified Memory
 - **Current Stack**: mlx-box (MLX-based local inference) + Wooster (TypeScript/LangChain agent)
 
+## mlx-box Service Ports (Quick Reference)
+
+| Service | Port | Model | Purpose |
+|---------|------|-------|---------|
+| **Router** | 8080 | Qwen3-0.6B-4bit | Request classification, trivial queries |
+| **Fast** | 8081 | Qwen3-30B-A3B-4bit | Simple queries, single tool calls |
+| **Thinking** | 8083 | Qwen3-30B-A3B-Thinking-2507-4bit | Complex reasoning, code, planning |
+| **Embedding** | 8084 | Qwen3-Embedding-8B | Vector embeddings for RAG/memory |
+
 ---
 
 ## Part 1: Performance Bottleneck Analysis
@@ -543,30 +552,38 @@ Your mlx-box setup is solid but can be optimized for the new routing architectur
 
 #### 1. Update Model Configuration
 
-Edit `config/settings.toml`:
+Edit `config/settings.toml` (aligned with your mlx-box configuration):
 
 ```toml
-[router]
+# --- 3-Tier Intelligent Routing Configuration ---
+
+# Tier 0: Router Service
+# Lightweight model for request classification and trivial queries
+[services.router]
+port = 8080
 model = "mlx-community/Qwen3-0.6B-4bit"
 max_tokens = 100
-port = 8082  # Separate port for router
 
-[chat]
+# Tier 1 & 2: Fast Service
+# General purpose, low-latency model for most queries and simple tools
+[services.fast]
+port = 8081
 model = "mlx-community/Qwen3-30B-A3B-4bit"
 max_tokens = 4096
-context_length = 65536  # Can go up to 256K
-port = 8080
 
-[thinking]
+# Tier 3: Thinking Service
+# High-reasoning model for complex tasks, coding, and planning
+[services.thinking]
+port = 8083
 model = "mlx-community/Qwen3-30B-A3B-Thinking-2507-4bit"
 max_tokens = 8192
 thinking_budget = 4096
-port = 8081  # Or same as chat if hot-swapping
 
-[embed]
+# --- Embedding Service ---
+[services.embedding]
+port = 8084
 model = "Qwen/Qwen3-Embedding-8B"
 batch_size = 64
-port = 8083
 ```
 
 #### 2. Multi-Model Server Setup
@@ -574,14 +591,17 @@ port = 8083
 Option A: **Separate servers per model** (simplest)
 
 ```bash
-# Terminal 1: Router
-mlx_lm.server --model mlx-community/Qwen3-0.6B-4bit --port 8082
+# Terminal 1: Router (port 8080)
+mlx_lm.server --model mlx-community/Qwen3-0.6B-4bit --port 8080
 
-# Terminal 2: Fast/Thinking (same model, different configs)
-mlx_lm.server --model mlx-community/Qwen3-30B-A3B-4bit --port 8080
+# Terminal 2: Fast (port 8081)
+mlx_lm.server --model mlx-community/Qwen3-30B-A3B-4bit --port 8081
 
-# Terminal 3: Embeddings
-python embed-server.py --port 8083
+# Terminal 3: Thinking (port 8083)
+mlx_lm.server --model mlx-community/Qwen3-30B-A3B-Thinking-2507-4bit --port 8083
+
+# Terminal 4: Embeddings (port 8084)
+python embed-server.py --port 8084
 ```
 
 Option B: **Single server with model switching** (advanced)
@@ -714,7 +734,7 @@ import axios from 'axios';
 export class HttpEmbeddings {
   private baseUrl: string;
   
-  constructor(baseUrl: string = 'http://127.0.0.1:8081') {
+  constructor(baseUrl: string = 'http://127.0.0.1:8084') {
     this.baseUrl = baseUrl;
   }
   
@@ -893,7 +913,7 @@ pnpm add hnswlib-node
 
 1. **Create HTTP embeddings client**:
    - File: `src/embeddings/HttpEmbeddings.ts`
-   - Connect to mlx-box embed server at `http://127.0.0.1:8081`
+   - Connect to mlx-box embed server at `http://127.0.0.1:8084`
 
 2. **Update EmbeddingService** to prefer local:
 ```typescript
@@ -1158,19 +1178,19 @@ const LIFE_AREAS: LifeArea[] = [
     "tiers": {
       "router": {
         "model": "mlx-community/Qwen3-0.6B-4bit",
-        "serverUrl": "http://127.0.0.1:8082",
+        "serverUrl": "http://127.0.0.1:8080",
         "maxTokens": 100,
         "purpose": "Fast classification and trivial responses"
       },
       "fast": {
         "model": "mlx-community/Qwen3-30B-A3B-4bit",
-        "serverUrl": "http://127.0.0.1:8080",
-        "maxTokens": 2048,
+        "serverUrl": "http://127.0.0.1:8081",
+        "maxTokens": 4096,
         "purpose": "Simple queries and single tool calls"
       },
       "thinking": {
         "model": "mlx-community/Qwen3-30B-A3B-Thinking-2507-4bit",
-        "serverUrl": "http://127.0.0.1:8081",
+        "serverUrl": "http://127.0.0.1:8083",
         "maxTokens": 8192,
         "thinkingBudget": 4096,
         "purpose": "Complex reasoning, code, multi-step planning"
@@ -1191,7 +1211,7 @@ const LIFE_AREAS: LifeArea[] = [
         "enabled": true,
         "embeddings": {
           "enabled": true,
-          "serverUrl": "http://127.0.0.1:8083",
+          "serverUrl": "http://127.0.0.1:8084",
           "model": "Qwen/Qwen3-Embedding-8B",
           "dimensions": 4096,
           "batchSize": 64
@@ -1241,19 +1261,19 @@ OPENAI_ENABLED=false
 ROUTING_ENABLED=true
 ROUTING_STRATEGY=intelligent
 
-# Tier 0: Router (classification only)
+# Tier 0: Router (classification only) - mlx-box port 8080
 ROUTING_ROUTER_MODEL=mlx-community/Qwen3-0.6B-4bit
-ROUTING_ROUTER_URL=http://127.0.0.1:8082
+ROUTING_ROUTER_URL=http://127.0.0.1:8080
 ROUTING_ROUTER_MAX_TOKENS=100
 
-# Tier 1-2: Fast (simple + complex tasks)
+# Tier 1-2: Fast (simple + complex tasks) - mlx-box port 8081
 ROUTING_FAST_MODEL=mlx-community/Qwen3-30B-A3B-4bit
-ROUTING_FAST_URL=http://127.0.0.1:8080
-ROUTING_FAST_MAX_TOKENS=2048
+ROUTING_FAST_URL=http://127.0.0.1:8081
+ROUTING_FAST_MAX_TOKENS=4096
 
-# Tier 3: Thinking (reasoning tasks)
+# Tier 3: Thinking (reasoning tasks) - mlx-box port 8083
 ROUTING_THINKING_MODEL=mlx-community/Qwen3-30B-A3B-Thinking-2507-4bit
-ROUTING_THINKING_URL=http://127.0.0.1:8081
+ROUTING_THINKING_URL=http://127.0.0.1:8083
 ROUTING_THINKING_MAX_TOKENS=8192
 ROUTING_THINKING_BUDGET=4096
 
@@ -1266,9 +1286,9 @@ ROUTING_RULE_PLANNING=thinking
 ROUTING_RULE_CREATIVE=thinking
 ROUTING_RULE_DEFAULT=fast
 
-# Local embeddings
+# Local embeddings - mlx-box port 8084
 MLX_EMBEDDINGS_ENABLED=true
-MLX_EMBEDDINGS_URL=http://127.0.0.1:8083/v1
+MLX_EMBEDDINGS_URL=http://127.0.0.1:8084/v1
 MLX_EMBEDDINGS_MODEL=Qwen/Qwen3-Embedding-8B
 MLX_EMBEDDINGS_DIMENSIONS=4096
 ```
@@ -1350,17 +1370,17 @@ pnpm start
 ### Verify Models Are Working
 
 ```bash
-# Test router model
-curl http://127.0.0.1:8082/v1/models
-
-# Test fast model
+# Test router model (port 8080)
 curl http://127.0.0.1:8080/v1/models
 
-# Test thinking model  
+# Test fast model (port 8081)
 curl http://127.0.0.1:8081/v1/models
 
-# Test embeddings
-curl http://127.0.0.1:8083/health
+# Test thinking model (port 8083)
+curl http://127.0.0.1:8083/v1/models
+
+# Test embeddings (port 8084)
+curl http://127.0.0.1:8084/health
 ```
 
 ---
