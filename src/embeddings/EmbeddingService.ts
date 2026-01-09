@@ -2,35 +2,83 @@ import { HuggingFaceTransformersEmbeddings } from '@langchain/community/embeddin
 import { OpenAIEmbeddings } from '@langchain/openai';
 import { AppConfig } from '../configLoader';
 import { log, LogLevel } from '../logger';
+import { HttpEmbeddings } from './HttpEmbeddings';
 
-export type EmbeddingProvider = 'openai' | 'local' | 'server';
+export type EmbeddingProvider = 'openai' | 'local' | 'server' | 'http';
 
 export interface EmbeddingConfig {
   provider: EmbeddingProvider;
   model: string;
   dimensions?: number;
+  serverUrl?: string;
+}
+
+/**
+ * Unified embeddings interface for LangChain compatibility
+ */
+export interface Embeddings {
+  embedDocuments(texts: string[]): Promise<number[][]>;
+  embedQuery(text: string): Promise<number[]>;
+}
+
+/**
+ * Wrapper to make HttpEmbeddings compatible with LangChain interfaces
+ */
+class HttpEmbeddingsWrapper implements Embeddings {
+  private httpEmbeddings: HttpEmbeddings;
+
+  constructor(config: { baseUrl: string; model?: string; dimensions?: number }) {
+    this.httpEmbeddings = new HttpEmbeddings(config);
+  }
+
+  async embedDocuments(texts: string[]): Promise<number[][]> {
+    return this.httpEmbeddings.embedDocuments(texts);
+  }
+
+  async embedQuery(text: string): Promise<number[]> {
+    return this.httpEmbeddings.embedQuery(text);
+  }
+
+  async isHealthy(): Promise<boolean> {
+    return this.httpEmbeddings.isHealthy();
+  }
+
+  getDimensions(): number {
+    return this.httpEmbeddings.getDimensions();
+  }
+
+  getModel(): string {
+    return this.httpEmbeddings.getModel();
+  }
 }
 
 export class EmbeddingService {
   private static instances = new Map<string, EmbeddingService>();
-  private embeddings: HuggingFaceTransformersEmbeddings | OpenAIEmbeddings;
+  private embeddings: Embeddings;
   private config: EmbeddingConfig;
 
   private constructor(config: EmbeddingConfig, appConfig: AppConfig) {
     this.config = config;
 
-    if (config.provider === 'openai') {
+    if (config.provider === 'http') {
+      // Direct HTTP connection to local embedding server (preferred for mlx-box)
+      this.embeddings = new HttpEmbeddingsWrapper({
+        baseUrl: config.serverUrl || 'http://127.0.0.1:8084',
+        model: config.model,
+        dimensions: config.dimensions
+      });
+    } else if (config.provider === 'openai') {
       this.embeddings = new OpenAIEmbeddings({
         modelName: config.model,
         openAIApiKey: appConfig.openai.apiKey,
       });
     } else if (config.provider === 'server') {
-      // OpenAI-compatible local server (e.g., MLX embed server)
+      // OpenAI-compatible local server (e.g., MLX embed server) via LangChain
       this.embeddings = new OpenAIEmbeddings({
         modelName: config.model,
         openAIApiKey: appConfig.openai.apiKey || 'local-key',
         configuration: {
-          baseURL: appConfig.routing?.providers?.local?.embeddings?.serverUrl,
+          baseURL: config.serverUrl || appConfig.routing?.providers?.local?.embeddings?.serverUrl,
         } as any,
       });
     } else {
@@ -54,16 +102,61 @@ export class EmbeddingService {
   }
 
   /**
+   * Get the best available embedding service based on configuration
+   * Priority: http (mlx-box) > server (OpenAI-compatible) > openai > local
+   */
+  static getBestAvailable(appConfig: AppConfig): EmbeddingService {
+    const localConfig = appConfig.routing?.providers?.local?.embeddings;
+    
+    // Priority 1: Direct HTTP to mlx-box (fastest, no OpenAI dependency)
+    if (localConfig?.enabled) {
+      return this.getInstance('http-default', {
+        provider: 'http',
+        model: localConfig.projects?.model || 'Qwen/Qwen3-Embedding-8B',
+        dimensions: localConfig.projects?.dimensions || 4096,
+        serverUrl: localConfig.serverUrl || 'http://127.0.0.1:8084'
+      }, appConfig);
+    }
+
+    // Priority 2: OpenAI (if enabled and API key available)
+    if (appConfig.openai?.enabled && appConfig.openai?.apiKey) {
+      return this.getInstance('openai-default', {
+        provider: 'openai',
+        model: appConfig.openai.embeddingModelName || 'text-embedding-3-small',
+      }, appConfig);
+    }
+
+    // Priority 3: Local HuggingFace model (slowest, but works offline)
+    return this.getInstance('local-default', {
+      provider: 'local',
+      model: 'sentence-transformers/all-mpnet-base-v2',
+      dimensions: 768
+    }, appConfig);
+  }
+
+  /**
    * Get embedding service for projects
    */
   static getProjectEmbeddings(appConfig: AppConfig): EmbeddingService {
     const localConfig = appConfig.routing?.providers?.local?.embeddings;
     
+    // Prefer HTTP connection to mlx-box
     if (localConfig?.enabled && localConfig.projects?.enabled) {
-      return this.getInstance('projects', {
-        provider: 'server',
+      return this.getInstance('projects-http', {
+        provider: 'http',
         model: localConfig.projects.model,
-        dimensions: localConfig.projects.dimensions
+        dimensions: localConfig.projects.dimensions,
+        serverUrl: localConfig.serverUrl || 'http://127.0.0.1:8084'
+      }, appConfig);
+    }
+
+    // Legacy: OpenAI-compatible server via LangChain
+    if (localConfig?.enabled) {
+      return this.getInstance('projects-server', {
+        provider: 'server',
+        model: localConfig.projects?.model || 'Qwen/Qwen3-Embedding-8B',
+        dimensions: localConfig.projects?.dimensions || 4096,
+        serverUrl: localConfig.serverUrl
       }, appConfig);
     }
 
@@ -80,11 +173,13 @@ export class EmbeddingService {
   static getUserProfileEmbeddings(appConfig: AppConfig): EmbeddingService {
     const localConfig = appConfig.routing?.providers?.local?.embeddings;
     
+    // Prefer HTTP connection to mlx-box
     if (localConfig?.enabled && localConfig.userProfile?.enabled) {
-      return this.getInstance('userProfile', {
-        provider: 'server',
+      return this.getInstance('userProfile-http', {
+        provider: 'http',
         model: localConfig.userProfile.model,
-        dimensions: localConfig.userProfile.dimensions
+        dimensions: localConfig.userProfile.dimensions,
+        serverUrl: localConfig.serverUrl || 'http://127.0.0.1:8084'
       }, appConfig);
     }
 
@@ -99,7 +194,7 @@ export class EmbeddingService {
   /**
    * Get the underlying embeddings instance
    */
-  getEmbeddings(): HuggingFaceTransformersEmbeddings | OpenAIEmbeddings {
+  getEmbeddings(): Embeddings {
     return this.embeddings;
   }
 
@@ -108,6 +203,16 @@ export class EmbeddingService {
    */
   getConfig(): EmbeddingConfig {
     return this.config;
+  }
+
+  /**
+   * Get dimensions for this embedding model
+   */
+  getDimensions(): number {
+    if (this.embeddings instanceof HttpEmbeddingsWrapper) {
+      return this.embeddings.getDimensions();
+    }
+    return this.config.dimensions || 1536; // OpenAI default
   }
 
   /**
@@ -122,4 +227,22 @@ export class EmbeddingService {
       return false;
     }
   }
-} 
+
+  /**
+   * Check health (only for HTTP embeddings)
+   */
+  async isHealthy(): Promise<boolean> {
+    if (this.embeddings instanceof HttpEmbeddingsWrapper) {
+      return this.embeddings.isHealthy();
+    }
+    // For other providers, assume healthy if test passes
+    return this.test();
+  }
+
+  /**
+   * Clear all cached instances (useful for testing or reconfiguration)
+   */
+  static clearInstances(): void {
+    this.instances.clear();
+  }
+}

@@ -85,3 +85,6 @@ config/local-*.json
 # Local backup directories
 personal-backup/
 /personal-backup/
+
+# User notes (personal content)
+notes/

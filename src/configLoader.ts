@@ -91,10 +91,39 @@ export interface PersonalHealthConfig {
     healthDir?: string;
 }
 
+export interface TierConfig {
+  model: string;
+  serverUrl: string;
+  maxTokens: number;
+  thinkingBudget?: number; // Only for thinking tier
+}
+
+export interface IntelligentRoutingTiers {
+  router: TierConfig;
+  fast: TierConfig;
+  thinking: TierConfig;
+}
+
+export interface RoutingRules {
+  codeAgent: 'fast' | 'thinking';
+  multiToolCall: 'fast' | 'thinking';
+  singleToolCall: 'fast' | 'thinking';
+  ragQuery: 'fast' | 'thinking';
+  factExtraction: 'fast' | 'thinking';
+  planning: 'fast' | 'thinking';
+  creative: 'fast' | 'thinking';
+  default: 'fast' | 'thinking';
+}
+
 export interface ModelRoutingConfig {
   enabled: boolean;
-  strategy: 'cost' | 'speed' | 'quality' | 'availability' | 'privacy';
+  strategy: 'cost' | 'speed' | 'quality' | 'availability' | 'privacy' | 'intelligent';
   fallbackChain: string[];
+  
+  // New: 3-tier intelligent routing configuration
+  tiers?: IntelligentRoutingTiers;
+  rules?: RoutingRules;
+  
   providers: {
     openai: {
       enabled: boolean;
@@ -297,8 +326,41 @@ function buildConfigFromEnv() {
 
     routing: {
       enabled: process.env.ROUTING_ENABLED !== 'false', // Default true
-      strategy: 'speed',
-      fallbackChain: ["gpt-4o-mini", "gpt-4o"],
+      strategy: (process.env.ROUTING_STRATEGY as any) || 'intelligent',
+      fallbackChain: ["local", "openai"],
+      
+      // 3-tier intelligent routing configuration
+      tiers: {
+        router: {
+          model: process.env.ROUTING_ROUTER_MODEL || "mlx-community/Qwen3-0.6B-4bit",
+          serverUrl: process.env.ROUTING_ROUTER_URL || "http://127.0.0.1:8080",
+          maxTokens: parseInt(process.env.ROUTING_ROUTER_MAX_TOKENS || '100', 10)
+        },
+        fast: {
+          model: process.env.ROUTING_FAST_MODEL || "mlx-community/Qwen3-30B-A3B-4bit",
+          serverUrl: process.env.ROUTING_FAST_URL || "http://127.0.0.1:8081",
+          maxTokens: parseInt(process.env.ROUTING_FAST_MAX_TOKENS || '4096', 10)
+        },
+        thinking: {
+          model: process.env.ROUTING_THINKING_MODEL || "mlx-community/Qwen3-30B-A3B-Thinking-2507-4bit",
+          serverUrl: process.env.ROUTING_THINKING_URL || "http://127.0.0.1:8083",
+          maxTokens: parseInt(process.env.ROUTING_THINKING_MAX_TOKENS || '8192', 10),
+          thinkingBudget: parseInt(process.env.ROUTING_THINKING_BUDGET || '4096', 10)
+        }
+      },
+      
+      // Task-specific routing rules
+      rules: {
+        codeAgent: (process.env.ROUTING_RULE_CODE_AGENT as 'fast' | 'thinking') || 'thinking',
+        multiToolCall: (process.env.ROUTING_RULE_MULTI_TOOL as 'fast' | 'thinking') || 'thinking',
+        singleToolCall: (process.env.ROUTING_RULE_SINGLE_TOOL as 'fast' | 'thinking') || 'fast',
+        ragQuery: (process.env.ROUTING_RULE_RAG_QUERY as 'fast' | 'thinking') || 'fast',
+        factExtraction: (process.env.ROUTING_RULE_FACT_EXTRACTION as 'fast' | 'thinking') || 'fast',
+        planning: (process.env.ROUTING_RULE_PLANNING as 'fast' | 'thinking') || 'thinking',
+        creative: (process.env.ROUTING_RULE_CREATIVE as 'fast' | 'thinking') || 'thinking',
+        default: (process.env.ROUTING_RULE_DEFAULT as 'fast' | 'thinking') || 'fast'
+      },
+      
       providers: {
         openai: {
           enabled: process.env.OPENAI_ENABLED !== 'false', // Default true
@@ -310,31 +372,40 @@ function buildConfigFromEnv() {
           costTracking: false
         },
         local: {
-          enabled: process.env.ROUTING_LOCAL_ENABLED === 'true', // Default false in old config, but env.example said true? sticking to safe defaults
+          enabled: process.env.ROUTING_LOCAL_ENABLED === 'true' || process.env.ROUTING_STRATEGY === 'intelligent',
           serverUrl: process.env.ROUTING_LOCAL_SERVER_URL || "http://127.0.0.1:8080",
           autoStart: false,
           models: {
-            "fast": process.env.ROUTING_LOCAL_MODEL_FAST || "mlx-community/Qwen3-14B-4bit-AWQ"
+            "fast": process.env.ROUTING_FAST_MODEL || "mlx-community/Qwen3-30B-A3B-4bit",
+            "thinking": process.env.ROUTING_THINKING_MODEL || "mlx-community/Qwen3-30B-A3B-Thinking-2507-4bit"
           },
           embeddings: {
             enabled: process.env.MLX_EMBEDDINGS_ENABLED === 'true',
-            serverUrl: process.env.MLX_EMBEDDINGS_URL || "http://127.0.0.1:8081/v1",
+            serverUrl: process.env.MLX_EMBEDDINGS_URL || "http://127.0.0.1:8084/v1",
             projects: {
-              enabled: process.env.MLX_PROJECT_EMBEDDINGS_ENABLED === 'true',
-              model: process.env.MLX_EMBEDDINGS_MODEL || "Qwen/Qwen3-Embedding-4B",
-              dimensions: parseInt(process.env.MLX_EMBEDDINGS_DIMENSIONS || '2560', 10)
+              enabled: process.env.MLX_PROJECT_EMBEDDINGS_ENABLED === 'true' || process.env.MLX_EMBEDDINGS_ENABLED === 'true',
+              model: process.env.MLX_EMBEDDINGS_MODEL || "Qwen/Qwen3-Embedding-8B",
+              dimensions: parseInt(process.env.MLX_EMBEDDINGS_DIMENSIONS || '4096', 10)
             },
             userProfile: {
-              enabled: process.env.MLX_USER_EMBEDDINGS_ENABLED === 'true',
-              model: process.env.MLX_EMBEDDINGS_MODEL || "Qwen/Qwen3-Embedding-4B",
-              dimensions: parseInt(process.env.MLX_EMBEDDINGS_DIMENSIONS || '2560', 10)
+              enabled: process.env.MLX_USER_EMBEDDINGS_ENABLED === 'true' || process.env.MLX_EMBEDDINGS_ENABLED === 'true',
+              model: process.env.MLX_EMBEDDINGS_MODEL || "Qwen/Qwen3-Embedding-8B",
+              dimensions: parseInt(process.env.MLX_EMBEDDINGS_DIMENSIONS || '4096', 10)
             }
           }
         }
       },
       profiles: {},
-      healthCheck: { interval: 30000, timeout: 5000, retries: 3 },
-      logging: { decisions: false, performance: false, errors: true }
+      healthCheck: { 
+        interval: parseInt(process.env.ROUTING_HEALTH_INTERVAL || '30000', 10), 
+        timeout: parseInt(process.env.ROUTING_HEALTH_TIMEOUT || '2000', 10), 
+        retries: 1 
+      },
+      logging: { 
+        decisions: process.env.ROUTING_LOG_DECISIONS === 'true', 
+        performance: process.env.ROUTING_LOG_PERFORMANCE === 'true', 
+        errors: true 
+      }
     },
     
     personalLibrary: {

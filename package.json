@@ -31,6 +31,7 @@
     "googleapis": "^149.0.0",
     "gray-matter": "^4.0.3",
     "hf_transformers": "link:@langchain/community/embeddings/hf_transformers",
+    "hnswlib-node": "^3.0.0",
     "isolated-vm": "^6.0.1",
     "langchain": "^0.3.27",
     "node-fetch": "^2.7.0",

@@ -13,7 +13,7 @@ importers:
     dependencies:
       '@langchain/community':
         specifier: ^0.3.43
-        version: 0.3.43(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/credential-provider-node@3.799.0)(@browserbasehq/sdk@2.6.0(encoding@0.1.13))(@browserbasehq/stagehand@1.14.0(@playwright/test@1.52.0)(deepmerge@4.3.1)(dotenv@16.5.0)(encoding@0.1.13)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(zod@3.25.28))(@ibm-cloud/watsonx-ai@1.6.5)(@langchain/core@0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28)))(@smithy/util-utf8@2.3.0)(axios@1.10.0)(better-sqlite3@12.5.0)(chromadb@2.3.0(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(cohere-ai@7.17.1(encoding@0.1.13))(encoding@0.1.13)(fast-xml-parser@4.4.1)(google-auth-library@9.15.1(encoding@0.1.13))(googleapis@149.0.0(encoding@0.1.13))(ibm-cloud-sdk-core@5.3.2)(ignore@5.3.2)(jsonwebtoken@9.0.2)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(playwright@1.52.0)(ws@8.18.2)
+        version: 0.3.43(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/credential-provider-node@3.799.0)(@browserbasehq/sdk@2.6.0(encoding@0.1.13))(@browserbasehq/stagehand@1.14.0(@playwright/test@1.52.0)(deepmerge@4.3.1)(dotenv@16.5.0)(encoding@0.1.13)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(zod@3.25.28))(@ibm-cloud/watsonx-ai@1.6.5)(@langchain/core@0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28)))(@smithy/util-utf8@2.3.0)(axios@1.10.0)(better-sqlite3@12.5.0)(chromadb@2.3.0(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(cohere-ai@7.17.1(encoding@0.1.13))(encoding@0.1.13)(fast-xml-parser@4.4.1)(google-auth-library@9.15.1(encoding@0.1.13))(googleapis@149.0.0(encoding@0.1.13))(hnswlib-node@3.0.0)(ibm-cloud-sdk-core@5.3.2)(ignore@5.3.2)(jsonwebtoken@9.0.2)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(playwright@1.52.0)(ws@8.18.2)
       '@langchain/core':
         specifier: ^0.3.57
         version: 0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))
@@ -23,9 +23,6 @@ importers:
       '@langchain/tavily':
         specifier: ^0.1.2
         version: 0.1.2(@langchain/core@0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28)))
-      '@types/sql.js':
-        specifier: ^1.4.9
-        version: 1.4.9
       axios:
         specifier: ^1.10.0
         version: 1.10.0(debug@4.4.0)
@@ -68,6 +65,9 @@ importers:
       hf_transformers:
         specifier: link:@langchain/community/embeddings/hf_transformers
         version: link:@langchain/community/embeddings/hf_transformers
+      hnswlib-node:
+        specifier: ^3.0.0
+        version: 3.0.0
       isolated-vm:
         specifier: ^6.0.1
         version: 6.0.1
@@ -89,9 +89,6 @@ importers:
       slugify:
         specifier: ^1.6.6
         version: 1.6.6
-      sql.js:
-        specifier: ^1.13.0
-        version: 1.13.0
       trash:
         specifier: ^9.0.0
         version: 9.0.0
@@ -1575,9 +1572,6 @@ packages:
   '@types/diff@5.2.3':
     resolution: {integrity: sha512-K0Oqlrq3kQMaO2RhfrNQX5trmt+XLyom88zS0u84nnIcLvFnRUMRRHmrGny5GSM+kNO9IZLARsdQHDzkhAgmrQ==}
 
-  '@types/emscripten@1.40.1':
-    resolution: {integrity: sha512-sr53lnYkQNhjHNN0oJDdUm5564biioI5DuOpycufDVK7D3y+GR3oUswe2rlwY1nPNyusHbrJ9WoTyIHl4/Bpwg==}
-
   '@types/estree@1.0.7':
     resolution: {integrity: sha512-w28IoSUCJpidD/TGviZwwMJckNESJZXFu7NBZ5YJ4mEUnNraUn9Pm8HSZm/jDF1pDWYKspWE7oVphigUPRakIQ==}
 
@@ -1646,9 +1640,6 @@ packages:
 
   '@types/serve-static@1.15.7':
     resolution: {integrity: sha512-W8Ym+h8nhuRwaKPaDw34QUkwsGi6Rc4yYqvKFo5rm2FUEhCFbzVWrxXUxuKK8TASjWsysJY0nsmNCGhCOIsrOw==}
-
-  '@types/sql.js@1.4.9':
-    resolution: {integrity: sha512-ep8b36RKHlgWPqjNG9ToUrPiwkhwh0AEzy883mO5Xnd+cL6VBH1EvSjBAAuxLUFF2Vn/moE3Me6v9E1Lo+48GQ==}
 
   '@types/stack-utils@2.0.3':
     resolution: {integrity: sha512-9aEbYZ3TbYMznPdcdr3SmIrLXwC/AKZXQeCf9Pgao5CKb8CyHuEX5jzWPTkvregvhRJHcpRO6BFoGW9ycaOkYw==}
@@ -2720,6 +2711,9 @@ packages:
     resolution: {integrity: sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==}
     engines: {node: '>= 0.4'}
 
+  hnswlib-node@3.0.0:
+    resolution: {integrity: sha512-fypn21qvVORassppC8/qNfZ5KAOspZpm/IbUkAtlqvbtDNnF5VVk5RWF7O5V6qwr7z+T3s1ePej6wQt5wRQ4Cg==}
+
   html-escaper@2.0.2:
     resolution: {integrity: sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg==}
 
@@ -3476,6 +3470,10 @@ packages:
   node-addon-api@6.1.0:
     resolution: {integrity: sha512-+eawOlIgy680F0kBzPUNFhMZGtJ1YmqM6l4+Crf4IkImjYrO/mqPwRMh352g23uIaQKFItcQ64I7KMaJxHgAVA==}
 
+  node-addon-api@8.5.0:
+    resolution: {integrity: sha512-/bRZty2mXUIFY/xU5HLvveNHlswNJej+RnxBjOMkidWfwZzgTbPG1E3K5TOxRLOR+5hX7bSofy8yf1hZevMS8A==}
+    engines: {node: ^18 || ^20 || >= 21}
+
   node-domexception@1.0.0:
     resolution: {integrity: sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ==}
     engines: {node: '>=10.5.0'}
@@ -3994,9 +3992,6 @@ packages:
 
   sprintf-js@1.0.3:
     resolution: {integrity: sha512-D9cPgkvLlV3t3IzL0D0YLvGA9Ahk4PcvVwUbN0dSGr1aP0Nrt4AEnTUbuGvquEC0mA64Gqt1fzirlRs5ibXx8g==}
-
-  sql.js@1.13.0:
-    resolution: {integrity: sha512-RJbVP1HRDlUUXahJ7VMTcu9Rm1Nzw+EBpoPr94vnbD4LwR715F3CcxE2G2k45PewcaZ57pjetYa+LoSJLAASgA==}
 
   stack-utils@2.0.6:
     resolution: {integrity: sha512-XlkWvfIm6RmsWtNJx+uqtKLS8eqFbxUg0ZzLXqY0caEy9l7hruX8IpiDnjsLavoBgqCCR71TqWO8MaXYheJ3RQ==}
@@ -5480,7 +5475,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.0
 
-  '@langchain/community@0.3.43(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/credential-provider-node@3.799.0)(@browserbasehq/sdk@2.6.0(encoding@0.1.13))(@browserbasehq/stagehand@1.14.0(@playwright/test@1.52.0)(deepmerge@4.3.1)(dotenv@16.5.0)(encoding@0.1.13)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(zod@3.25.28))(@ibm-cloud/watsonx-ai@1.6.5)(@langchain/core@0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28)))(@smithy/util-utf8@2.3.0)(axios@1.10.0)(better-sqlite3@12.5.0)(chromadb@2.3.0(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(cohere-ai@7.17.1(encoding@0.1.13))(encoding@0.1.13)(fast-xml-parser@4.4.1)(google-auth-library@9.15.1(encoding@0.1.13))(googleapis@149.0.0(encoding@0.1.13))(ibm-cloud-sdk-core@5.3.2)(ignore@5.3.2)(jsonwebtoken@9.0.2)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(playwright@1.52.0)(ws@8.18.2)':
+  '@langchain/community@0.3.43(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/credential-provider-node@3.799.0)(@browserbasehq/sdk@2.6.0(encoding@0.1.13))(@browserbasehq/stagehand@1.14.0(@playwright/test@1.52.0)(deepmerge@4.3.1)(dotenv@16.5.0)(encoding@0.1.13)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(zod@3.25.28))(@ibm-cloud/watsonx-ai@1.6.5)(@langchain/core@0.3.57(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28)))(@smithy/util-utf8@2.3.0)(axios@1.10.0)(better-sqlite3@12.5.0)(chromadb@2.3.0(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(cohere-ai@7.17.1(encoding@0.1.13))(encoding@0.1.13)(fast-xml-parser@4.4.1)(google-auth-library@9.15.1(encoding@0.1.13))(googleapis@149.0.0(encoding@0.1.13))(hnswlib-node@3.0.0)(ibm-cloud-sdk-core@5.3.2)(ignore@5.3.2)(jsonwebtoken@9.0.2)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(playwright@1.52.0)(ws@8.18.2)':
     dependencies:
       '@browserbasehq/stagehand': 1.14.0(@playwright/test@1.52.0)(deepmerge@4.3.1)(dotenv@16.5.0)(encoding@0.1.13)(openai@4.96.2(encoding@0.1.13)(ws@8.18.2)(zod@3.25.28))(zod@3.25.28)
       '@ibm-cloud/watsonx-ai': 1.6.5
@@ -5508,6 +5503,7 @@ snapshots:
       fast-xml-parser: 4.4.1
       google-auth-library: 9.15.1(encoding@0.1.13)
       googleapis: 149.0.0(encoding@0.1.13)
+      hnswlib-node: 3.0.0
       ignore: 5.3.2
       jsonwebtoken: 9.0.2
       playwright: 1.52.0
@@ -6074,8 +6070,6 @@ snapshots:
 
   '@types/diff@5.2.3': {}
 
-  '@types/emscripten@1.40.1': {}
-
   '@types/estree@1.0.7': {}
 
   '@types/express-serve-static-core@5.0.6':
@@ -6158,11 +6152,6 @@ snapshots:
       '@types/http-errors': 2.0.4
       '@types/node': 22.15.3
       '@types/send': 0.17.4
-
-  '@types/sql.js@1.4.9':
-    dependencies:
-      '@types/emscripten': 1.40.1
-      '@types/node': 22.15.3
 
   '@types/stack-utils@2.0.3': {}
 
@@ -7426,6 +7415,11 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
+  hnswlib-node@3.0.0:
+    dependencies:
+      bindings: 1.5.0
+      node-addon-api: 8.5.0
+
   html-escaper@2.0.2: {}
 
   http-errors@2.0.0:
@@ -8497,6 +8491,8 @@ snapshots:
   node-addon-api@6.1.0:
     optional: true
 
+  node-addon-api@8.5.0: {}
+
   node-domexception@1.0.0: {}
 
   node-fetch@2.7.0(encoding@0.1.13):
@@ -9040,8 +9036,6 @@ snapshots:
   source-map@0.6.1: {}
 
   sprintf-js@1.0.3: {}
-
-  sql.js@1.13.0: {}
 
   stack-utils@2.0.6:
     dependencies:

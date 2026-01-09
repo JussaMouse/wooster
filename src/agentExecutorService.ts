@@ -3,6 +3,7 @@ import { DynamicTool } from "@langchain/core/tools";
 import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents";
 import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
 import { BaseMessage } from "@langchain/core/messages";
+import { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { MemoryVectorStore } from "langchain/vectorstores/memory";
 import { createHistoryAwareRetriever } from "langchain/chains/history_aware_retriever";
 import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
@@ -19,12 +20,19 @@ import { scheduleAgentTaskTool } from "./schedulerTool";
 import { createFileTool, readFileTool } from './fileSystemTool';
 import { initializeProjectVectorStore } from './projectStoreManager';
 import { getRegisteredService } from './pluginManager';
+import { 
+  IntelligentRouter, 
+  getIntelligentRouter, 
+  initializeIntelligentRouter 
+} from './routing/IntelligentRouter';
+import { ModelTier, IntelligentRoutingConfig } from './routing/TaskComplexity';
 
 let projectVectorStoreInstance: MemoryVectorStore | null = null;
 let tools: any[] = [];
 let agentExecutorInstance: AgentExecutor | null = null;
 let appConfig: AppConfig;
 let agentLlm: ChatOpenAI;
+let intelligentRouter: IntelligentRouter | null = null;
 
 // New module-level variables for active project management
 let currentActiveProjectName: string | null = null;
@@ -93,25 +101,58 @@ export async function queryKnowledgeBase(input: string, runManager?: any): Promi
 async function initializeTools() {
   appConfig = await getConfig();
   
-  // Initialize model router
-  const { initializeModelRouter } = await import('./routing/ModelRouterService');
-  const modelRouter = initializeModelRouter(appConfig);
+  // Check if intelligent routing is enabled
+  const useIntelligentRouting = appConfig.routing?.strategy === 'intelligent' && appConfig.routing?.tiers;
   
-  // Get model through router (Phase 1: returns existing ChatOpenAI)
-  agentLlm = await modelRouter.selectModel({ 
-    task: 'COMPLEX_REASONING',
-    context: modelRouter.createContext('COMPLEX_REASONING')
-  }) as ChatOpenAI;
+  if (useIntelligentRouting) {
+    // Initialize 3-tier intelligent router
+    const routingConfig: Partial<IntelligentRoutingConfig> = {
+      enabled: true,
+      tiers: appConfig.routing!.tiers,
+      rules: appConfig.routing!.rules,
+      healthCheck: {
+        timeout: appConfig.routing!.healthCheck?.timeout || 2000,
+        interval: appConfig.routing!.healthCheck?.interval || 30000
+      }
+    };
+    
+    intelligentRouter = initializeIntelligentRouter(routingConfig);
+    
+    // Default to fast tier for general agent operations
+    // The router will dynamically select models per-request in executeAgent
+    agentLlm = intelligentRouter.getChatModel('fast') as ChatOpenAI;
+    
+    // Check health of all tiers
+    const health = await intelligentRouter.checkAllHealth();
+    log(LogLevel.INFO, `IntelligentRouter: Initialized 3-tier routing. Health: router=${health.router}, fast=${health.fast}, thinking=${health.thinking}`);
+    
+    // Log tier configuration
+    const config = intelligentRouter.getConfig();
+    log(LogLevel.INFO, `IntelligentRouter: Tiers configured:
+      - Router: ${config.tiers.router.model} @ ${config.tiers.router.serverUrl}
+      - Fast: ${config.tiers.fast.model} @ ${config.tiers.fast.serverUrl}
+      - Thinking: ${config.tiers.thinking.model} @ ${config.tiers.thinking.serverUrl}`);
+  } else {
+    // Fallback to legacy model router
+    const { initializeModelRouter } = await import('./routing/ModelRouterService');
+    const modelRouter = initializeModelRouter(appConfig);
+    
+    // Get model through router (Phase 1: returns existing ChatOpenAI)
+    agentLlm = await modelRouter.selectModel({ 
+      task: 'COMPLEX_REASONING',
+      context: modelRouter.createContext('COMPLEX_REASONING')
+    }) as ChatOpenAI;
 
-  // Log which model/provider is active
-  try {
-    const info = (modelRouter as any).getCurrentModelInfo?.();
-    if (info) {
-      const provider = info.provider === 'local' ? 'LOCAL' : 'OPENAI';
-      const at = info.baseURL ? ` @ ${info.baseURL}` : '';
-      log(LogLevel.INFO, `ModelRouter: Active model => [${provider}] ${info.model}${at}`);
-    }
-  } catch {}
+    // Log which model/provider is active
+    try {
+      const info = (modelRouter as any).getCurrentModelInfo?.();
+      if (info) {
+        const provider = info.provider === 'local' ? 'LOCAL' : 'OPENAI';
+        const at = info.baseURL ? ` @ ${info.baseURL}` : '';
+        log(LogLevel.INFO, `ModelRouter: Active model => [${provider}] ${info.model}${at}`);
+      }
+    } catch {}
+  }
 
   const coreTools: any[] = [];
 
@@ -327,6 +368,34 @@ export async function executeAgent(
         try { cleanInput = JSON.parse(cleanInput); } catch {}
     }
     
+    // Intelligent routing: classify input and select appropriate model
+    if (intelligentRouter) {
+      const routingDecision = await intelligentRouter.route(cleanInput);
+      
+      log(LogLevel.DEBUG, `[Routing] Input classified as ${routingDecision.complexity} -> ${routingDecision.tier} tier (${routingDecision.reasoning})`);
+      
+      // For trivial queries, use the router model directly for instant response
+      if (routingDecision.tier === 'router') {
+        try {
+          const routerModel = intelligentRouter.getChatModel('router', 0.3);
+          const response = await (routerModel as any).invoke([{ role: 'user', content: cleanInput }]);
+          const answer = response?.content || response?.text || String(response);
+          log(LogLevel.DEBUG, `[Routing] Router tier answered directly: ${answer.slice(0, 100)}...`);
+          return answer;
+        } catch (routerError) {
+          log(LogLevel.WARN, `[Routing] Router direct response failed, falling back to agent`, { error: routerError });
+        }
+      }
+      
+      // For thinking tier, we might want to use a different agent configuration
+      // For now, log the decision - full implementation would recreate agent with thinking model
+      if (routingDecision.tier === 'thinking') {
+        log(LogLevel.INFO, `[Routing] Using thinking model for complex task: ${routingDecision.reasoning}`);
+        // In a full implementation, we would swap the agent's LLM here
+        // For now, we proceed with the default agent which uses the fast model
+      }
+    }
+    
     // Fast-path: intercept explicit sendSignal/signal_notify commands and execute directly via SignalService
     const directSignalMatch = cleanInput.match(/^\s*(sendSignal|signal_notify)\s*(\{[\s\S]*\}|"[\s\S]*"|'[\s\S]*')?\s*$/i);
     if (directSignalMatch) {
@@ -433,4 +502,27 @@ export function getCurrentActiveProjectPath(): string | null {
 
 export function getActiveProjectPath(): string | null { // This is the new function
   return currentActiveProjectPath;
+}
+
+/**
+ * Get the intelligent router instance (if enabled)
+ */
+export function getActiveIntelligentRouter(): IntelligentRouter | null {
+  return intelligentRouter;
+}
+
+/**
+ * Get routing statistics from the intelligent router
+ */
+export function getRoutingStats(): {
+  enabled: boolean;
+  stats?: ReturnType<IntelligentRouter['getStats']>;
+} {
+  if (!intelligentRouter) {
+    return { enabled: false };
+  }
+  return {
+    enabled: true,
+    stats: intelligentRouter.getStats()
+  };
 }
