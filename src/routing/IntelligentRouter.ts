@@ -345,14 +345,18 @@ export class IntelligentRouter {
 
     try {
       const baseURL = tierConfig.serverUrl.replace(/\/$/, '');
-      const response = await axios.get(`${baseURL}/v1/models`, {
+      const url = `${baseURL}/v1/models`;
+      log(LogLevel.INFO, `IntelligentRouter: checking health for tier '${tier}' at ${url} (timeout=${this.config.healthCheck.timeout}ms)`);
+      const response = await axios.get(url, {
         timeout: this.config.healthCheck.timeout
       });
       
       const healthy = response.status === 200 && Array.isArray(response.data?.data);
+      log(LogLevel.INFO, `IntelligentRouter: tier '${tier}' health=${healthy} (status=${response.status})`);
       this.healthStatus.set(tier, { healthy, lastCheck: now });
       return healthy;
-    } catch {
+    } catch (err: any) {
+      log(LogLevel.WARN, `IntelligentRouter: tier '${tier}' health check failed: ${err.message}`);
       this.healthStatus.set(tier, { healthy: false, lastCheck: now });
       return false;
     }
