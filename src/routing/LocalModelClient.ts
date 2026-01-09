@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { log, LogLevel } from '../logger';
 
 export interface LocalModelClientOptions {
   serverUrl: string;
@@ -15,17 +16,23 @@ export class LocalModelClient {
     this.serverUrl = options.serverUrl;
     this.model = options.model;
     this.timeout = options.timeout || 10000;
+    log(LogLevel.DEBUG, `LocalModelClient: initialized with serverUrl=${this.serverUrl}, model=${this.model}, timeout=${this.timeout}`);
   }
 
   /**
    * Health check: returns true if the local model server is up
    */
   async isHealthy(): Promise<boolean> {
+    const url = `${this.serverUrl}/v1/models`;
+    log(LogLevel.DEBUG, `LocalModelClient: checking health at ${url}`);
     try {
       // MLX OpenAI-compatible servers reliably expose /v1/models
-      const res = await axios.get(`${this.serverUrl}/v1/models`, { timeout: this.timeout });
-      return res.status === 200 && Array.isArray(res.data?.data);
-    } catch (err) {
+      const res = await axios.get(url, { timeout: this.timeout });
+      const healthy = res.status === 200 && Array.isArray(res.data?.data);
+      log(LogLevel.DEBUG, `LocalModelClient: health check result: ${healthy} (status=${res.status})`);
+      return healthy;
+    } catch (err: any) {
+      log(LogLevel.DEBUG, `LocalModelClient: health check failed: ${err.message}`);
       return false;
     }
   }
