@@ -373,7 +373,7 @@ function buildConfigFromEnv() {
         },
         local: {
           enabled: process.env.ROUTING_LOCAL_ENABLED === 'true' || process.env.ROUTING_STRATEGY === 'intelligent',
-          serverUrl: process.env.ROUTING_LOCAL_SERVER_URL || "http://127.0.0.1:8080",
+          serverUrl: process.env.ROUTING_LOCAL_SERVER_URL || "http://127.0.0.1:8081",
           autoStart: false,
           models: {
             "fast": process.env.ROUTING_FAST_MODEL || "mlx-community/Qwen3-30B-A3B-4bit",
