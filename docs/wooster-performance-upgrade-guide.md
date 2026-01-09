@@ -1385,6 +1385,52 @@ curl http://127.0.0.1:8084/health
 
 ---
 
+## Dependencies & Build System
+
+### Build System: esbuild (via tsx)
+
+The project uses **esbuild** (via `tsx`) for compilation instead of `tsc`:
+
+```bash
+# Fast build (48ms)
+pnpm run build
+
+# Type checking (separate, if needed)
+pnpm run typecheck
+
+# Traditional tsc build (requires 12GB+ heap for LangChain)
+pnpm run build:tsc
+```
+
+**Why esbuild?** LangChain's complex TypeScript types require 8-12GB+ heap for `tsc`, causing OOM errors on typical systems. esbuild transpiles without type checking, completing in ~48ms.
+
+### LangChain Version Strategy
+
+**Current: LangChain 0.3.x** (stable, actively maintained)
+
+| Package | Version | Notes |
+|---------|---------|-------|
+| @langchain/core | 0.3.x | Stable API |
+| @langchain/openai | 0.3.x | Stable API |
+| @langchain/community | 0.3.x | Stable API |
+| langchain | 0.3.x | Stable API |
+
+**LangChain 1.x Migration (Deferred)**
+
+LangChain 1.x introduces breaking changes that require significant refactoring:
+- `MemoryVectorStore` removed (use custom implementations)
+- `AgentExecutor` moved to `@langchain/langgraph/prebuilt`
+- `createOpenAIToolsAgent` replaced with `createReactAgent`
+- Many chain functions relocated or removed
+- TypeScript types even more complex (12GB+ heap required)
+
+The 0.3.x branch remains actively maintained. Migration to 1.x should be done as a dedicated task when:
+1. All APIs stabilize
+2. Migration guides mature
+3. TypeScript compilation improves
+
+---
+
 ## Future Considerations
 
 ### exo for Multi-Mac Setup
