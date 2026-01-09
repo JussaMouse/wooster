@@ -101,6 +101,10 @@ export async function queryKnowledgeBase(input: string, runManager?: any): Promi
 async function initializeTools() {
   appConfig = await getConfig();
   
+  // Always initialize ModelRouterService (needed by agentCodeExecutor and other modules)
+  const { initializeModelRouter } = await import('./routing/ModelRouterService');
+  const modelRouter = initializeModelRouter(appConfig);
+  
   // Check if intelligent routing is enabled
   const useIntelligentRouting = appConfig.routing?.strategy === 'intelligent' && appConfig.routing?.tiers;
   
@@ -133,11 +137,7 @@ async function initializeTools() {
       - Fast: ${config.tiers.fast.model} @ ${config.tiers.fast.serverUrl}
       - Thinking: ${config.tiers.thinking.model} @ ${config.tiers.thinking.serverUrl}`);
   } else {
-    // Fallback to legacy model router
-    const { initializeModelRouter } = await import('./routing/ModelRouterService');
-    const modelRouter = initializeModelRouter(appConfig);
-    
-    // Get model through router (Phase 1: returns existing ChatOpenAI)
+    // Use legacy model router
     agentLlm = await modelRouter.selectModel({ 
       task: 'COMPLEX_REASONING',
       context: modelRouter.createContext('COMPLEX_REASONING')
