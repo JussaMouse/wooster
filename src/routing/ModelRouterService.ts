@@ -127,22 +127,24 @@ export class ModelRouterService {
   }
 
   /**
-   * Health check for local model (every 30s)
+   * Health check for local model - only runs once at startup, then uses cached result
    */
   private async checkLocalModelHealth() {
-    const now = Date.now();
     if (!this.localModelClient) {
       log(LogLevel.DEBUG, 'ModelRouter: No local model client configured');
       return;
     }
-    if (now - this.lastHealthCheck < 30000) {
-      log(LogLevel.DEBUG, `ModelRouter: Skipping health check (cached result: ${this.localModelHealthy})`);
+    
+    // After first health check, always use cached result (skip expensive re-checks)
+    if (this.lastHealthCheck > 0) {
+      log(LogLevel.DEBUG, `ModelRouter: Using cached health status: ${this.localModelHealthy}`);
       return;
     }
-    log(LogLevel.INFO, `ModelRouter: Checking local model health at ${this.routingConfig.providers.local.serverUrl}`);
+    
+    log(LogLevel.INFO, `ModelRouter: Initial health check at ${this.routingConfig.providers.local.serverUrl}`);
     this.localModelHealthy = await this.localModelClient.isHealthy();
-    this.lastHealthCheck = now;
-    log(LogLevel.INFO, `ModelRouter: Local model health check result: ${this.localModelHealthy}`);
+    this.lastHealthCheck = Date.now();
+    log(LogLevel.INFO, `ModelRouter: Initial health check result: ${this.localModelHealthy} (subsequent checks skipped)`);
   }
 
   /**
