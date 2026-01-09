@@ -58,7 +58,7 @@ export class ModelRouterService {
       this.localModelClient = new LocalModelClient({
         serverUrl: this.routingConfig.providers.local.serverUrl,
         model: localModelName,
-        timeout: 10000
+        timeout: this.routingConfig.healthCheck?.timeout || 35000
       });
     }
 
