@@ -131,10 +131,18 @@ export class ModelRouterService {
    */
   private async checkLocalModelHealth() {
     const now = Date.now();
-    if (!this.localModelClient) return;
-    if (now - this.lastHealthCheck < 30000) return;
+    if (!this.localModelClient) {
+      log(LogLevel.DEBUG, 'ModelRouter: No local model client configured');
+      return;
+    }
+    if (now - this.lastHealthCheck < 30000) {
+      log(LogLevel.DEBUG, `ModelRouter: Skipping health check (cached result: ${this.localModelHealthy})`);
+      return;
+    }
+    log(LogLevel.INFO, `ModelRouter: Checking local model health at ${this.routingConfig.providers.local.serverUrl}`);
     this.localModelHealthy = await this.localModelClient.isHealthy();
     this.lastHealthCheck = now;
+    log(LogLevel.INFO, `ModelRouter: Local model health check result: ${this.localModelHealthy}`);
   }
 
   /**

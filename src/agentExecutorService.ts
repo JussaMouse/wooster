@@ -106,7 +106,12 @@ async function initializeTools() {
   const modelRouter = initializeModelRouter(appConfig);
   
   // Check if intelligent routing is enabled
+  log(LogLevel.INFO, `Routing config: strategy='${appConfig.routing?.strategy}', tiers=${!!appConfig.routing?.tiers}, healthTimeout=${appConfig.routing?.healthCheck?.timeout}ms`);
+  if (appConfig.routing?.tiers) {
+    log(LogLevel.INFO, `Tier URLs: router=${appConfig.routing.tiers.router?.serverUrl}, fast=${appConfig.routing.tiers.fast?.serverUrl}, thinking=${appConfig.routing.tiers.thinking?.serverUrl}`);
+  }
   const useIntelligentRouting = appConfig.routing?.strategy === 'intelligent' && appConfig.routing?.tiers;
+  log(LogLevel.INFO, `Using intelligent routing: ${useIntelligentRouting}`);
   
   if (useIntelligentRouting) {
     // Initialize 3-tier intelligent router
