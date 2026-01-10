@@ -53,6 +53,12 @@ For the complete upgrade guide, see [Performance Upgrade Guide](docs/wooster-per
     ```bash
     pnpm install
     ```
+    
+    If prompted about build scripts, approve them (required for native modules like `hnswlib-node`):
+    ```bash
+    pnpm approve-builds
+    pnpm install
+    ```
 
 3.  **Set up environment variables:**
     

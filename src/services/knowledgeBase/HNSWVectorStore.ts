@@ -1,8 +1,22 @@
-import HierarchicalNSW from 'hnswlib-node';
 import fs from 'fs/promises';
 import path from 'path';
 import { log, LogLevel } from '../../logger';
 import { VectorStore, VectorRecord } from './VectorStore';
+
+// Lazy import hnswlib-node to avoid crashing if native module isn't available
+let HierarchicalNSW: any = null;
+let hnswlibAvailable = false;
+
+try {
+  HierarchicalNSW = require('hnswlib-node').default || require('hnswlib-node');
+  hnswlibAvailable = true;
+} catch (err: any) {
+  log(LogLevel.WARN, `HNSWVectorStore: hnswlib-node not available (${err.message}). Falling back to brute-force search.`);
+}
+
+export function isHNSWAvailable(): boolean {
+  return hnswlibAvailable;
+}
 
 export interface HNSWVectorStoreOptions {
   dimensions: number;
@@ -25,7 +39,7 @@ export interface HNSWVectorStoreOptions {
  * Uses HNSW (Hierarchical Navigable Small World) algorithm
  */
 export class HNSWVectorStore implements VectorStore {
-  private index: HierarchicalNSW.HierarchicalNSW;
+  private index: any; // HierarchicalNSW.HierarchicalNSW
   private idToLabel: Map<string, number> = new Map();
   private labelToId: Map<number, string> = new Map();
   private metadata: Map<string, Record<string, unknown>> = new Map();
@@ -37,6 +51,10 @@ export class HNSWVectorStore implements VectorStore {
   private metadataPath: string;
 
   constructor(options: HNSWVectorStoreOptions) {
+    if (!hnswlibAvailable) {
+      throw new Error('HNSWVectorStore: hnswlib-node is not available. Install it or use Node.js 22 LTS.');
+    }
+    
     this.options = {
       dimensions: options.dimensions,
       maxElements: options.maxElements || 100000,
