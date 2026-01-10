@@ -22,6 +22,27 @@ For the complete upgrade guide, see [Performance Upgrade Guide](docs/wooster-per
 
 ## Installation and Configuration
 
+### Prerequisites
+
+- **Node.js 22 LTS** (recommended) - Native modules like `hnswlib-node` and `better-sqlite3` have prebuilt binaries for LTS versions. Node 24+ may require building from source.
+  
+  ```bash
+  # Using nvm (recommended)
+  nvm install 22
+  nvm use 22
+  nvm alias default 22
+  
+  # Verify
+  node --version  # Should show v22.x.x
+  ```
+
+- **pnpm** - Package manager
+  ```bash
+  npm install -g pnpm
+  ```
+
+### Setup
+
 1.  **Clone the repository:**
     ```bash
     git clone https://github.com/JussaMouse/wooster.git
@@ -29,8 +50,6 @@ For the complete upgrade guide, see [Performance Upgrade Guide](docs/wooster-per
     ```
 
 2.  **Install dependencies:**
-    
-    Wooster uses `pnpm` for package management.
     ```bash
     pnpm install
     ```
