@@ -210,9 +210,30 @@ export async function loadPlugins() {
       log(LogLevel.INFO, `PluginManager: Successfully imported module from "${actualEntryPoint}". Has default export: ${!!mod.default}`);
       
       if (mod.default) {
-        const cls = mod.default;
-        log(LogLevel.DEBUG, `PluginManager: mod.default type=${typeof cls}, name=${cls?.name}, pluginName=${cls?.pluginName}, version=${cls?.version}, description=${cls?.description?.slice(0,30)}`);
-        await processPlugin(mod.default, config, actualEntryPoint);
+        // Handle ESM/CJS interop issues
+        let cls = mod.default;
+        
+        // Case 1: Double-wrapped default export (mod.default.default)
+        if (typeof cls === 'object' && cls.default && typeof cls.default === 'function') {
+          log(LogLevel.DEBUG, `PluginManager: Unwrapping double-wrapped default export`);
+          cls = cls.default;
+        }
+        
+        // Case 2: The class might be on a named property matching the file/class name
+        if (typeof cls === 'object' && !cls.pluginName) {
+          // Look for a class-like property on the object
+          for (const key of Object.keys(cls)) {
+            const val = cls[key];
+            if (typeof val === 'function' && (val.pluginName || val.name)) {
+              log(LogLevel.DEBUG, `PluginManager: Found class on property '${key}'`);
+              cls = val;
+              break;
+            }
+          }
+        }
+        
+        log(LogLevel.DEBUG, `PluginManager: Final cls type=${typeof cls}, name=${cls?.name}, pluginName=${cls?.pluginName}, version=${cls?.version}, description=${cls?.description?.slice(0,30)}`);
+        await processPlugin(cls, config, actualEntryPoint);
       } else {
         log(LogLevel.WARN, `PluginManager: Module from "${actualEntryPoint}" does not have a default export. Skipping.`);
       }
